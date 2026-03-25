@@ -7,7 +7,7 @@
 
 > Your Playwright tests already capture everything — traces, screenshots, network activity, cursor positions. **playwright-recast** turns those artifacts into polished, narrated product videos with a single fluent pipeline.
 
-https://github.com/user-attachments/assets/demo-final.mp4
+https://github.com/ThePatriczek/playwright-recast/releases/download/v0.1.0/demo.mp4
 
 ---
 
