@@ -30,26 +30,26 @@ async function main() {
   // Step 1: Navigate to Playwright homepage
   await page.goto('https://playwright.dev/')
   await page.waitForLoadState('networkidle')
-  await page.waitForTimeout(3000)
+  await page.waitForTimeout(4000)
 
   // Step 2: Click "Get started" button
   await page.locator('a:has-text("Get started")').first().click()
   await page.waitForLoadState('networkidle')
-  await page.waitForTimeout(3000)
+  await page.waitForTimeout(4000)
 
   // Step 3: Click on "Writing tests" in the sidebar
   await page.locator('a:has-text("Writing tests")').first().click()
   await page.waitForLoadState('networkidle')
-  await page.waitForTimeout(3000)
+  await page.waitForTimeout(4500)
 
   // Step 4: Scroll down to see code examples
   await page.mouse.wheel(0, 600)
-  await page.waitForTimeout(3000)
+  await page.waitForTimeout(4500)
 
   // Step 5: Click "Generating tests" in sidebar
   await page.locator('a:has-text("Generating tests")').first().click()
   await page.waitForLoadState('networkidle')
-  await page.waitForTimeout(4000)
+  await page.waitForTimeout(6000)
 
   // Stop tracing
   await context.tracing.stop({ path: path.join(OUTPUT_DIR, 'trace.zip') })
