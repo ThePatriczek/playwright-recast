@@ -1,5 +1,5 @@
-import type { MonotonicMs } from '../types/trace'
-import type { SpeedSegment, TimeRemapFn } from '../types/speed'
+import type { MonotonicMs } from '../types/trace.js'
+import type { SpeedSegment, TimeRemapFn } from '../types/speed.js'
 
 /**
  * Compute cumulative output start/end times for each speed segment.

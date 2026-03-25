@@ -1,8 +1,8 @@
-import type { TraceAction } from '../types/trace'
-import type { SpeedConfig } from '../types/speed'
-import type { SubtitleOptions } from '../types/subtitle'
-import type { TtsProvider } from '../types/voiceover'
-import type { RenderConfig } from '../types/render'
+import type { TraceAction } from '../types/trace.js'
+import type { SpeedConfig } from '../types/speed.js'
+import type { SubtitleOptions } from '../types/subtitle.js'
+import type { TtsProvider } from '../types/voiceover.js'
+import type { RenderConfig } from '../types/render.js'
 
 export type StageDescriptor =
   | { type: 'parse' }

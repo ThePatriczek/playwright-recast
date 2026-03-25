@@ -1,12 +1,12 @@
 // Public API
-export { Pipeline as Recast } from './pipeline/pipeline'
+export { Pipeline as Recast } from './pipeline/pipeline.js'
 
 // Step helpers (narrate, zoom, pace)
-export { setupRecast, narrate, zoom, pace } from './helpers'
+export { setupRecast, narrate, zoom, pace } from './helpers.js'
 
 // Providers
-export { OpenAIProvider } from './voiceover/providers/openai'
-export { ElevenLabsProvider } from './voiceover/providers/elevenlabs'
+export { OpenAIProvider } from './voiceover/providers/openai.js'
+export { ElevenLabsProvider } from './voiceover/providers/elevenlabs.js'
 
 // Types
 export type {
@@ -21,7 +21,7 @@ export type {
   CursorPosition,
   FrameReader,
   MonotonicMs,
-} from './types/trace'
+} from './types/trace.js'
 
 export type {
   SpeedConfig,
@@ -31,14 +31,14 @@ export type {
   ActivityType,
   TimeRemapFn,
   SpeedMappedTrace,
-} from './types/speed'
+} from './types/speed.js'
 
 export type {
   SubtitleEntry,
   SubtitleFormat,
   SubtitleOptions,
   SubtitledTrace,
-} from './types/subtitle'
+} from './types/subtitle.js'
 
 export type {
   TtsProvider,
@@ -46,6 +46,6 @@ export type {
   AudioSegment,
   VoiceoverEntry,
   VoiceoveredTrace,
-} from './types/voiceover'
+} from './types/voiceover.js'
 
-export type { RenderConfig, SubtitleStyle, ZoomKeyframe } from './types/render'
+export type { RenderConfig, SubtitleStyle, ZoomKeyframe } from './types/render.js'

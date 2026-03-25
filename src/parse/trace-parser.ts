@@ -7,9 +7,9 @@ import type {
   CursorPosition,
   FrameReader,
   MonotonicMs,
-} from '../types/trace'
-import { toMonotonic } from '../types/trace'
-import { ZipReader } from './zip-reader'
+} from '../types/trace.js'
+import { toMonotonic } from '../types/trace.js'
+import { ZipReader } from './zip-reader.js'
 import {
   parseJsonl,
   type ContextOptionsEvent,
@@ -19,7 +19,7 @@ import {
   type ScreencastFrameEvent,
   type ResourceSnapshotEvent,
   type ConsoleEvent,
-} from './jsonl-parser'
+} from './jsonl-parser.js'
 
 /**
  * Parse a Playwright trace zip into structured data.

@@ -1,4 +1,4 @@
-import type { ParsedTrace, FilteredTrace, TraceAction, MonotonicMs } from '../types/trace'
+import type { ParsedTrace, FilteredTrace, TraceAction, MonotonicMs } from '../types/trace.js'
 
 /**
  * Filter out actions matching the predicate.

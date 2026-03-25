@@ -1,4 +1,4 @@
-import type { SpeedMappedTrace } from './speed'
+import type { SpeedMappedTrace } from './speed.js'
 
 /** Zoom instruction for a subtitle/step */
 export interface StepZoom {

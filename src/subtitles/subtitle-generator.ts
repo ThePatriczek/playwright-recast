@@ -1,6 +1,6 @@
-import type { TraceAction } from '../types/trace'
-import type { SpeedMappedTrace } from '../types/speed'
-import type { SubtitleEntry, SubtitleOptions, SubtitledTrace } from '../types/subtitle'
+import type { TraceAction } from '../types/trace.js'
+import type { SpeedMappedTrace } from '../types/speed.js'
+import type { SubtitleEntry, SubtitleOptions, SubtitledTrace } from '../types/subtitle.js'
 
 /**
  * Generate subtitle entries from trace actions using a text extraction function.

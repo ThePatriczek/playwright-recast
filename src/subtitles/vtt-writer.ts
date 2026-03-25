@@ -1,4 +1,4 @@
-import type { SubtitleEntry } from '../types/subtitle'
+import type { SubtitleEntry } from '../types/subtitle.js'
 
 function formatVttTime(ms: number): string {
   const totalSeconds = Math.floor(ms / 1000)

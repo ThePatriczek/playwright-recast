@@ -1,8 +1,8 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { execFileSync } from 'node:child_process'
-import type { SubtitledTrace } from '../types/subtitle'
-import type { TtsProvider, VoiceoveredTrace, VoiceoverEntry } from '../types/voiceover'
+import type { SubtitledTrace } from '../types/subtitle.js'
+import type { TtsProvider, VoiceoveredTrace, VoiceoverEntry } from '../types/voiceover.js'
 
 function getAudioDurationMs(filePath: string): number {
   const output = execFileSync('ffprobe', [

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util'
-import { Pipeline as Recast } from './pipeline/pipeline'
+import { Pipeline as Recast } from './pipeline/pipeline.js'
 
 const help = `
 playwright-recast — Convert Playwright traces to polished demo videos
@@ -110,7 +110,7 @@ async function main(): Promise<void> {
     }
 
     if (providerName === 'openai') {
-      const { OpenAIProvider } = await import('./voiceover/providers/openai')
+      const { OpenAIProvider } = await import('./voiceover/providers/openai.js')
       pipeline = pipeline.voiceover(
         OpenAIProvider({
           voice: values.voice,
@@ -119,7 +119,7 @@ async function main(): Promise<void> {
         }),
       )
     } else if (providerName === 'elevenlabs') {
-      const { ElevenLabsProvider } = await import('./voiceover/providers/elevenlabs')
+      const { ElevenLabsProvider } = await import('./voiceover/providers/elevenlabs.js')
       pipeline = pipeline.voiceover(
         ElevenLabsProvider({
           voiceId: values.voice,

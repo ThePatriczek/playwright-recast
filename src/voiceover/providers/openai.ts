@@ -1,4 +1,4 @@
-import type { TtsProvider, TtsOptions, AudioSegment } from '../../types/voiceover'
+import type { TtsProvider, TtsOptions, AudioSegment } from '../../types/voiceover.js'
 
 export interface OpenAIProviderConfig {
   apiKey?: string

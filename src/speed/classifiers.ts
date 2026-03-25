@@ -1,5 +1,5 @@
-import type { MonotonicMs, TraceAction, TraceResource } from '../types/trace'
-import type { ActivityType } from '../types/speed'
+import type { MonotonicMs, TraceAction, TraceResource } from '../types/trace.js'
+import type { ActivityType } from '../types/speed.js'
 
 const USER_ACTION_METHODS = new Set([
   'click', 'dblclick', 'fill', 'type', 'press', 'check', 'uncheck',

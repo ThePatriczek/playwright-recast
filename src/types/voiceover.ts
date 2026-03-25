@@ -1,4 +1,4 @@
-import type { SubtitleEntry, SubtitledTrace } from './subtitle'
+import type { SubtitleEntry, SubtitledTrace } from './subtitle.js'
 
 /** A chunk of synthesized audio */
 export interface AudioSegment {

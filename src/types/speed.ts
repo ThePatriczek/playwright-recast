@@ -1,4 +1,4 @@
-import type { MonotonicMs, TraceAction, TraceResource, FilteredTrace } from './trace'
+import type { MonotonicMs, TraceAction, TraceResource, FilteredTrace } from './trace.js'
 
 /** A contiguous time segment with a single speed multiplier */
 export interface SpeedSegment {

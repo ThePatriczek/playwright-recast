@@ -1,11 +1,11 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { execFileSync } from 'node:child_process'
-import type { RenderConfig } from '../types/render'
-import { resolveResolution } from '../types/render'
-import type { SubtitleEntry } from '../types/subtitle'
-import type { ParsedTrace } from '../types/trace'
-import { writeSrt } from '../subtitles/srt-writer'
+import type { RenderConfig } from '../types/render.js'
+import { resolveResolution } from '../types/render.js'
+import type { SubtitleEntry } from '../types/subtitle.js'
+import type { ParsedTrace } from '../types/trace.js'
+import { writeSrt } from '../subtitles/srt-writer.js'
 
 /**
  * Detect blank/white frames at the start of a video and return the timestamp

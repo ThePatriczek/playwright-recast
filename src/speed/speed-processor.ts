@@ -1,8 +1,8 @@
-import type { FilteredTrace } from '../types/trace'
-import { toMonotonic } from '../types/trace'
-import type { SpeedConfig, SpeedSegment, SpeedMappedTrace } from '../types/speed'
-import { classifyTimepoint } from './classifiers'
-import { computeOutputTimes, buildTimeRemap } from './time-remap'
+import type { FilteredTrace } from '../types/trace.js'
+import { toMonotonic } from '../types/trace.js'
+import type { SpeedConfig, SpeedSegment, SpeedMappedTrace } from '../types/speed.js'
+import { classifyTimepoint } from './classifiers.js'
+import { computeOutputTimes, buildTimeRemap } from './time-remap.js'
 
 const DEFAULTS: Required<Omit<SpeedConfig, 'rules'>> = {
   duringIdle: 4.0,

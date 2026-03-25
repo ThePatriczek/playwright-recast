@@ -1,4 +1,4 @@
-import type { SubtitleEntry } from '../types/subtitle'
+import type { SubtitleEntry } from '../types/subtitle.js'
 
 function parseSrtTime(time: string): number {
   const parts = time.split(':')
