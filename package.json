@@ -1,0 +1,84 @@
+{
+  "name": "playwright-recast",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Fluent pipeline library for processing Playwright traces into polished demo videos — TTS voiceover, subtitles, speed control, and zoom.",
+  "license": "MIT",
+  "author": "Patrik Szewczyk <Patrik.Szewczyk@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ThePatriczek/playwright-recast.git"
+  },
+  "homepage": "https://github.com/ThePatriczek/playwright-recast",
+  "keywords": [
+    "playwright",
+    "trace",
+    "video",
+    "demo",
+    "tts",
+    "voiceover",
+    "subtitles",
+    "srt",
+    "bdd",
+    "automation"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "playwright-recast": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./helpers": {
+      "types": "./dist/helpers.d.ts",
+      "default": "./dist/helpers.js"
+    },
+    "./providers/openai": {
+      "types": "./dist/voiceover/providers/openai.d.ts",
+      "default": "./dist/voiceover/providers/openai.js"
+    },
+    "./providers/elevenlabs": {
+      "types": "./dist/voiceover/providers/elevenlabs.d.ts",
+      "default": "./dist/voiceover/providers/elevenlabs.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest watch",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "fflate": "^0.8.2"
+  },
+  "peerDependencies": {
+    "@playwright/test": ">=1.40.0",
+    "openai": ">=5.0.0",
+    "@elevenlabs/elevenlabs-js": ">=2.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@playwright/test": {
+      "optional": true
+    },
+    "openai": {
+      "optional": true
+    },
+    "@elevenlabs/elevenlabs-js": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.0",
+    "typescript": "^5.9.0",
+    "vitest": "^4.0.0"
+  }
+}
