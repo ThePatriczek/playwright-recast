@@ -260,6 +260,7 @@ await base.subtitlesFromSrt('./cs.srt').render({ burnSubtitles: true }).toFile('
 
 ## Roadmap
 
+- [ ] **Burned-in subtitles** — Render styled subtitles directly into the video with customizable font, size, color, and position
 - [ ] **Smooth zoom transitions** — Animated crop-and-zoom on elements during specific steps
 - [ ] **Edge TTS provider** — Free TTS without API key using Microsoft Edge's online voices
 - [ ] **Playwright Reporter plugin** — Auto-generate demo videos as part of your test run
