@@ -16,12 +16,7 @@ async function main() {
   const context = await browser.newContext({
     viewport: { width: 1920, height: 1080 },
     locale: 'en-US',
-    timezoneId: 'America/New_York',
     colorScheme: 'light',
-    extraHTTPHeaders: {
-      'Accept-Language': 'en-US,en;q=0.9',
-    },
-    userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
     recordVideo: {
       dir: OUTPUT_DIR,
       size: { width: 1920, height: 1080 },
@@ -30,48 +25,31 @@ async function main() {
 
   await context.tracing.start({ screenshots: true, snapshots: true })
   const page = await context.newPage()
+  await page.emulateMedia({ colorScheme: 'light' })
 
-  // Step 1: Navigate to Google homepage
-  await page.goto('https://www.google.com/?hl=en')
-  await page.waitForTimeout(1500)
-
-  // Accept cookies — try multiple selectors
-  try {
-    const acceptBtn = page.locator('button').filter({ hasText: /Accept all|I agree|Přijmout/i }).first()
-    await acceptBtn.waitFor({ state: 'visible', timeout: 5000 })
-    await acceptBtn.click()
-    await page.waitForTimeout(1500)
-  } catch {
-    // Try ID-based selector as fallback
-    try {
-      await page.click('#L2AGLb', { timeout: 2000 })
-      await page.waitForTimeout(1500)
-    } catch {
-      // No dialog
-    }
-  }
-
-  await page.waitForTimeout(1500)
-
-  // Step 2: Click search box and type query
-  await page.locator('textarea[name="q"], input[name="q"]').first().click({ force: true })
-  await page.waitForTimeout(500)
-  await page.keyboard.type('Playwright browser automation framework', { delay: 50 })
-  await page.waitForTimeout(2500)
-
-  // Step 3: Submit search
-  await page.keyboard.press('Enter')
+  // Step 1: Navigate to Playwright homepage
+  await page.goto('https://playwright.dev/')
   await page.waitForLoadState('networkidle')
-  await page.waitForTimeout(3500)
+  await page.waitForTimeout(3000)
 
-  // Step 4: Click first organic result
-  try {
-    await page.locator('h3').first().click({ timeout: 5000 })
-    await page.waitForLoadState('networkidle')
-    await page.waitForTimeout(5000)
-  } catch {
-    await page.waitForTimeout(4000)
-  }
+  // Step 2: Click "Get started" button
+  await page.locator('a:has-text("Get started")').first().click()
+  await page.waitForLoadState('networkidle')
+  await page.waitForTimeout(3000)
+
+  // Step 3: Click on "Writing tests" in the sidebar
+  await page.locator('a:has-text("Writing tests")').first().click()
+  await page.waitForLoadState('networkidle')
+  await page.waitForTimeout(3000)
+
+  // Step 4: Scroll down to see code examples
+  await page.mouse.wheel(0, 600)
+  await page.waitForTimeout(3000)
+
+  // Step 5: Click "Generating tests" in sidebar
+  await page.locator('a:has-text("Generating tests")').first().click()
+  await page.waitForLoadState('networkidle')
+  await page.waitForTimeout(4000)
 
   // Stop tracing
   await context.tracing.stop({ path: path.join(OUTPUT_DIR, 'trace.zip') })

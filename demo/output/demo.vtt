@@ -2,20 +2,20 @@ WEBVTT
 
 1
 00:00:00.000 --> 00:00:03.500
-Let's explore how Playwright browser automation works.
+Welcome to the Playwright documentation — the modern testing framework.
 
 2
-00:00:03.500 --> 00:00:07.500
-We open Google and type our search query for Playwright.
+00:00:03.500 --> 00:00:07.000
+Let's click Get Started to explore the installation guide.
 
 3
-00:00:07.500 --> 00:00:11.500
-The search results show Playwright's official resources and documentation.
+00:00:07.000 --> 00:00:10.500
+Now we navigate to Writing Tests to see real code examples.
 
 4
-00:00:11.500 --> 00:00:15.500
-We click the first result to explore Playwright's capabilities.
+00:00:10.500 --> 00:00:14.500
+Here's a test example — Playwright makes assertions simple and reliable.
 
 5
-00:00:15.500 --> 00:00:19.000
-And here we are — the Playwright documentation, ready to automate.
+00:00:14.500 --> 00:00:19.000
+Finally, we check out test generation — Playwright can write tests for you.
