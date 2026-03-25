@@ -7,7 +7,7 @@
 
 > Your Playwright tests already capture everything — traces, screenshots, network activity, cursor positions. **playwright-recast** turns those artifacts into polished, narrated product videos with a single fluent pipeline.
 
-<video src="demo/output/demo.mp4" width="100%" controls></video>
+![Demo — Google Search with ElevenLabs voiceover](demo/output/demo.mp4)
 
 ---
 
@@ -255,16 +255,12 @@ await base.subtitlesFromSrt('./cs.srt').render({ burnSubtitles: true }).toFile('
 
 ## Roadmap
 
-- [ ] **Animated cursor overlay** — Render cursor movement from trace `input` events as a smooth animated pointer in the output video
-- [ ] **Smooth zoom transitions** — Animated crop-and-zoom on elements during specific steps (zoom in on a button click, zoom out for overview)
+- [ ] **Smooth zoom transitions** — Animated crop-and-zoom on elements during specific steps
 - [ ] **Edge TTS provider** — Free TTS without API key using Microsoft Edge's online voices
-- [ ] **Playwright Reporter plugin** — Auto-generate demo videos as part of your test run (`RecastReporter` in playwright.config.ts)
+- [ ] **Playwright Reporter plugin** — Auto-generate demo videos as part of your test run
 - [ ] **Multi-language support** — Generate video variants from the same trace with different SRT/voiceover per language
 - [ ] **Intro/outro cards** — Configurable title cards, branding overlays, and end screens
 - [ ] **Background music** — Mix ambient music track under voiceover with auto-ducking
-- [ ] **GIF output** — Export key moments as animated GIFs for docs and READMEs
-- [ ] **Web viewer** — Browser-based viewer for trace-to-video previews without ffmpeg
-- [ ] **GitHub Action** — CI/CD action that generates demo videos on every push
 
 ---
 
