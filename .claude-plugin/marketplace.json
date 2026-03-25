@@ -1,0 +1,26 @@
+{
+    "name": "playwright-recast-plugins",
+    "owner": {
+        "name": "Patrik Szewczyk",
+        "email": "Patrik.Szewczyk@gmail.com"
+    },
+    "plugins": [
+        {
+            "name": "playwright-recast",
+            "description": "Convert Playwright traces into polished demo videos with TTS voiceover, subtitles, speed control — fluent pipeline API and CLI",
+            "source": "./.claude/playwright-recast",
+            "category": "development",
+            "keywords": [
+                "playwright",
+                "trace",
+                "video",
+                "demo",
+                "tts",
+                "voiceover",
+                "subtitles",
+                "bdd",
+                "automation"
+            ]
+        }
+    ]
+}

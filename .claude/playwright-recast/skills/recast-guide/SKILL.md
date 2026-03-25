@@ -15,11 +15,16 @@ You help users convert Playwright test traces into polished demo videos using th
 - User mentions "demo video", "product video", "trace to video", "TTS voiceover"
 - User has a `trace.zip` or `test-results/` directory they want to turn into a video
 
-## Core Concepts
+## Prerequisites
 
-### Pipeline API (Fluent Chain)
+- `ffmpeg` and `ffprobe` on PATH
+- Playwright trace.zip (from `trace: 'on'` in playwright.config.ts)
+- Optional: video recording (from `recordVideo` in browser context)
+- Optional: TTS API key (`OPENAI_API_KEY` or `ELEVENLABS_API_KEY`)
 
-playwright-recast uses an immutable, fluent pipeline. Every method returns a new pipeline.
+## Core API — Fluent Pipeline
+
+playwright-recast uses an immutable, fluent pipeline. Every method returns a new pipeline. Nothing executes until `.toFile()`.
 
 ```typescript
 import { Recast, OpenAIProvider } from 'playwright-recast'
@@ -45,7 +50,7 @@ await Recast
   .toFile('demo.mp4')                  // Execute and save
 ```
 
-### CLI Usage
+## CLI
 
 ```bash
 # Basic
@@ -61,34 +66,21 @@ npx playwright-recast -i trace.zip --speed-idle 4 --speed-action 1
 npx playwright-recast -i ./traces --srt narration.srt --burn-subs
 ```
 
-### Step Helpers for playwright-bdd
+## Pipeline Stages
 
-When users have playwright-bdd tests, they can use helpers in step definitions:
+| Method | Purpose |
+|--------|---------|
+| `.parse()` | Parse trace.zip into actions, frames, network, cursor data |
+| `.hideSteps(fn)` | Remove steps matching predicate (login, setup) |
+| `.speedUp(config)` | Adjust speed by activity type |
+| `.subtitles(textFn)` | Generate subtitles from trace actions |
+| `.subtitlesFromSrt(path)` | Load external SRT file |
+| `.subtitlesFromTrace()` | Auto-generate from BDD step titles |
+| `.voiceover(provider)` | Generate TTS from subtitle text |
+| `.render(config)` | Configure output format/resolution |
+| `.toFile(path)` | Execute pipeline and save output |
 
-```typescript
-import { setupRecast, narrate, pace, zoom } from 'playwright-recast'
-
-// In fixtures.ts — initialize once:
-setupRecast(test)
-
-// In step definitions:
-Given('the user opens dashboard', async ({ page }, docString?: string) => {
-  narrate(docString)              // Record voiceover text from Gherkin doc string
-  await page.goto('/dashboard')
-  await pace(page, 4000)          // Pause for voiceover timing
-})
-```
-
-Feature file with voiceover text in doc strings:
-```gherkin
-Scenario: View analytics
-  Given the user opens dashboard
-    """
-    Let's open the dashboard to see real-time metrics.
-    """
-```
-
-### TTS Providers
+## TTS Providers
 
 **OpenAI TTS** (requires `OPENAI_API_KEY`):
 ```typescript
@@ -102,35 +94,38 @@ import { ElevenLabsProvider } from 'playwright-recast/providers/elevenlabs'
 ElevenLabsProvider({ voiceId: 'onwK4e9ZLuTAKqWW03F9', modelId: 'eleven_multilingual_v2' })
 ```
 
-### Available Pipeline Stages
+## playwright-bdd Integration
 
-| Method | Purpose |
-|--------|---------|
-| `.parse()` | Parse trace.zip into actions, frames, network, cursor data |
-| `.hideSteps(fn)` | Remove steps matching predicate (login, setup) |
-| `.speedUp(config)` | Adjust speed by activity type |
-| `.subtitles(textFn)` | Generate subtitles from trace actions |
-| `.subtitlesFromSrt(path)` | Load external SRT file |
-| `.subtitlesFromTrace()` | Auto-generate from BDD step titles |
-| `.autoZoom(config)` | Zoom into cursor positions from trace |
-| `.voiceover(provider)` | Generate TTS from subtitle text |
-| `.render(config)` | Configure output format/resolution |
-| `.toFile(path)` | Execute pipeline and save output |
+Step helpers for BDD test definitions:
 
-## Prerequisites
+```typescript
+import { setupRecast, narrate, pace } from 'playwright-recast'
 
-- `ffmpeg` and `ffprobe` on PATH
-- Playwright trace.zip (from `trace: 'on'` in playwright.config.ts)
-- Optional: video recording (from `recordVideo` in browser context)
+// In fixtures.ts — initialize once:
+setupRecast(test)
+
+// In step definitions:
+Given('the user opens dashboard', async ({ page }, docString?: string) => {
+  narrate(docString)              // Record voiceover text from Gherkin doc string
+  await page.goto('/dashboard')
+  await pace(page, 4000)          // Pause for voiceover timing
+})
+```
+
+Feature file with voiceover text:
+```gherkin
+Scenario: View analytics
+  Given the user opens dashboard
+    """
+    Let's open the dashboard to see real-time metrics.
+    """
+```
 
 ## Common Patterns
 
 ### Generate video from existing test run
 ```bash
-# 1. Run tests with tracing enabled
 npx playwright test --trace on
-
-# 2. Process trace into demo
 npx playwright-recast -i ./test-results -o demo.mp4 --srt narration.srt --provider openai --voice nova
 ```
 
@@ -139,7 +134,7 @@ npx playwright-recast -i ./test-results -o demo.mp4 --srt narration.srt --provid
 .hideSteps(s => s.keyword === 'Given' && s.text?.includes('logged in'))
 ```
 
-### Create multiple language versions
+### Multi-language versions from one trace
 ```typescript
 const base = Recast.from('./traces').parse().speedUp({ duringIdle: 3.0 })
 

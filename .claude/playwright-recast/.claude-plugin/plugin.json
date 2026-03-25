@@ -1,0 +1,24 @@
+{
+    "name": "playwright-recast",
+    "version": "0.1.0",
+    "description": "Convert Playwright traces into polished demo videos with TTS voiceover, subtitles, and speed control",
+    "author": {
+        "name": "Patrik Szewczyk",
+        "email": "Patrik.Szewczyk@gmail.com"
+    },
+    "keywords": [
+        "playwright",
+        "trace",
+        "video",
+        "demo",
+        "tts",
+        "voiceover",
+        "subtitles",
+        "bdd",
+        "automation"
+    ],
+    "license": "MIT",
+    "commands": [],
+    "agents": [],
+    "skills": "./skills"
+}
