@@ -8,19 +8,16 @@ async function main() {
   fs.rmSync(OUTPUT_DIR, { recursive: true, force: true })
   fs.mkdirSync(OUTPUT_DIR, { recursive: true })
 
-  // Use headed mode with slowMo — more natural, avoids bot detection
   const browser = await chromium.launch({
-    headless: false,
-    args: [
-      '--disable-blink-features=AutomationControlled',
-      '--window-size=1920,1080',
-    ],
+    headless: true,
+    args: ['--disable-blink-features=AutomationControlled'],
   })
 
   const context = await browser.newContext({
     viewport: { width: 1920, height: 1080 },
     locale: 'en-US',
     timezoneId: 'America/New_York',
+    colorScheme: 'light',
     extraHTTPHeaders: {
       'Accept-Language': 'en-US,en;q=0.9',
     },
@@ -34,22 +31,40 @@ async function main() {
   await context.tracing.start({ screenshots: true, snapshots: true })
   const page = await context.newPage()
 
-  // Navigate to Google in English
-  await page.goto('https://www.google.com/search?hl=en&q=Playwright+browser+automation+framework')
-  await page.waitForLoadState('networkidle')
-  await page.waitForTimeout(1000)
+  // Step 1: Navigate to Google homepage
+  await page.goto('https://www.google.com/?hl=en')
+  await page.waitForTimeout(1500)
 
-  // Accept cookies if dialog appears
+  // Accept cookies — try multiple selectors
   try {
-    await page.click('button:has-text("Accept all")', { timeout: 3000 })
+    const acceptBtn = page.locator('button').filter({ hasText: /Accept all|I agree|Přijmout/i }).first()
+    await acceptBtn.waitFor({ state: 'visible', timeout: 5000 })
+    await acceptBtn.click()
     await page.waitForTimeout(1500)
   } catch {
-    // No dialog
+    // Try ID-based selector as fallback
+    try {
+      await page.click('#L2AGLb', { timeout: 2000 })
+      await page.waitForTimeout(1500)
+    } catch {
+      // No dialog
+    }
   }
 
-  await page.waitForTimeout(3000)
+  await page.waitForTimeout(1500)
 
-  // Click first organic result
+  // Step 2: Click search box and type query
+  await page.locator('textarea[name="q"], input[name="q"]').first().click({ force: true })
+  await page.waitForTimeout(500)
+  await page.keyboard.type('Playwright browser automation framework', { delay: 50 })
+  await page.waitForTimeout(2500)
+
+  // Step 3: Submit search
+  await page.keyboard.press('Enter')
+  await page.waitForLoadState('networkidle')
+  await page.waitForTimeout(3500)
+
+  // Step 4: Click first organic result
   try {
     await page.locator('h3').first().click({ timeout: 5000 })
     await page.waitForLoadState('networkidle')
