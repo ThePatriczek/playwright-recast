@@ -187,6 +187,8 @@ Every stage is optional and composable:
 | `.subtitles(textFn)` | Generate subtitles from trace actions |
 | `.subtitlesFromSrt(path)` | Load subtitles from an external SRT file |
 | `.subtitlesFromTrace()` | Auto-generate subtitles from BDD step titles in trace |
+| `.autoZoom(config)` | Auto-zoom to user interaction targets detected from trace |
+| `.enrichZoomFromReport(steps)` | Apply zoom coordinates from external report data |
 | `.voiceover(provider)` | Generate TTS audio from subtitle text |
 | `.render(config)` | Render final video (format, resolution, fps, styled subtitle burn-in) |
 | `.toFile(path)` | Execute pipeline and write output |
@@ -258,6 +260,77 @@ Requires `ELEVENLABS_API_KEY` environment variable or `apiKey` option.
 
 ---
 
+## Zoom
+
+Zoom into specific areas of the video during steps — focus the viewer's attention on the relevant UI element.
+
+### Auto-zoom from trace
+
+Automatically zoom into user interaction targets (clicks, fills) detected from the trace:
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .subtitlesFromSrt('./narration.srt')
+  .autoZoom({ actionLevel: 1.5 })  // 1.5x zoom on detected actions
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+`autoZoom()` finds click/fill/type actions in the trace, extracts their cursor coordinates, and applies crop-and-scale zoom during the matching subtitle's time window.
+
+### Zoom from report data
+
+Apply zoom coordinates from an external source (e.g., a demo report with per-step zoom data):
+
+```typescript
+const reportSteps = [
+  { zoom: null },                            // Step 1: no zoom
+  { zoom: { x: 0.5, y: 0.8, level: 1.4 } }, // Step 2: zoom to input area
+  { zoom: null },                            // Step 3: no zoom
+  { zoom: { x: 0.78, y: 0.45, level: 1.3 }}, // Step 4: zoom to sidebar
+]
+
+await Recast
+  .from('./traces')
+  .parse()
+  .subtitlesFromSrt('./narration.srt')
+  .enrichZoomFromReport(reportSteps)
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+### Zoom from step helpers
+
+Capture zoom coordinates during Playwright test execution using the `zoom()` helper:
+
+```typescript
+import { zoom } from 'playwright-recast'
+
+When('the user opens the sidebar', async ({ page }) => {
+  const sidebar = page.locator('.sidebar-panel')
+  await zoom(sidebar, 1.3) // Record zoom target for this step
+  await sidebar.click()
+})
+```
+
+The helper captures the element's bounding box as a Playwright annotation. Use `enrichZoomFromReport()` to apply these coordinates during video generation.
+
+### Zoom coordinates
+
+All zoom coordinates use viewport-relative fractions (0.0–1.0):
+
+| Field | Description | Default |
+|-------|-------------|---------|
+| `x` | Center X (0 = left, 1 = right) | 0.5 |
+| `y` | Center Y (0 = top, 1 = bottom) | 0.5 |
+| `level` | Zoom level (1.0 = no zoom, 2.0 = 2x) | 1.0 |
+
+The renderer applies zoom by cropping the video to `(width/level × height/level)` centered at `(x, y)`, then scaling back to the output resolution.
+
+---
+
 ## Speed Processing
 
 The speed processor classifies every moment of the trace:
@@ -308,8 +381,7 @@ await base.subtitlesFromSrt('./cs.srt').render({ burnSubtitles: true }).toFile('
 
 ## Roadmap
 
-- [x] **Burned-in subtitles** — Render styled subtitles directly into the video with customizable font, size, color, background box, and position
-- [ ] **Smooth zoom transitions** — Animated crop-and-zoom on elements during specific steps
+- [ ] **Smooth zoom transitions** — Animated easing between zoom states (currently hard-cut)
 - [ ] **Edge TTS provider** — Free TTS without API key using Microsoft Edge's online voices
 - [ ] **Playwright Reporter plugin** — Auto-generate demo videos as part of your test run
 - [ ] **Multi-language support** — Generate video variants from the same trace with different SRT/voiceover per language

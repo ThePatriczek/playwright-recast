@@ -72,12 +72,14 @@ npx playwright-recast -i ./traces --srt narration.srt --burn-subs
 |--------|---------|
 | `.parse()` | Parse trace.zip into actions, frames, network, cursor data |
 | `.hideSteps(fn)` | Remove steps matching predicate (login, setup) |
-| `.speedUp(config)` | Adjust speed by activity type |
+| `.speedUp(config)` | Adjust speed by activity type or explicit segments |
 | `.subtitles(textFn)` | Generate subtitles from trace actions |
 | `.subtitlesFromSrt(path)` | Load external SRT file |
 | `.subtitlesFromTrace()` | Auto-generate from BDD step titles |
+| `.autoZoom(config)` | Auto-zoom to user interaction targets from trace |
+| `.enrichZoomFromReport(steps)` | Apply zoom coordinates from external report data |
 | `.voiceover(provider)` | Generate TTS from subtitle text |
-| `.render(config)` | Configure output format/resolution |
+| `.render(config)` | Configure output format/resolution/fps/subtitle styling |
 | `.toFile(path)` | Execute pipeline and save output |
 
 ## TTS Providers
@@ -119,6 +121,70 @@ Scenario: View analytics
     """
     Let's open the dashboard to see real-time metrics.
     """
+```
+
+## Zoom
+
+Zoom into specific UI areas during steps. Three approaches:
+
+**Auto-zoom from trace** — detects click/fill targets automatically:
+```typescript
+.autoZoom({ actionLevel: 1.5 })
+```
+
+**From report data** — manual viewport-relative coordinates per subtitle:
+```typescript
+.enrichZoomFromReport([
+  { zoom: null },                            // no zoom
+  { zoom: { x: 0.5, y: 0.8, level: 1.4 } }, // zoom to input area
+])
+```
+
+**From step helpers** — capture element bounding box during test:
+```typescript
+import { zoom } from 'playwright-recast'
+await zoom(page.locator('.sidebar'), 1.3)
+```
+
+Coordinates: `x` and `y` are viewport fractions (0.0–1.0), `level` is zoom factor (1.0 = none, 2.0 = 2x).
+
+## Styled Subtitle Burn-in
+
+Burn configurable subtitles into the video via ASS format:
+
+```typescript
+.render({
+  burnSubtitles: true,
+  fps: 60,
+  subtitleStyle: {
+    fontSize: 48,                 // Pixels relative to 1080p
+    primaryColor: '#1a1a1a',      // Text color
+    backgroundColor: '#FFFFFF',   // Box background
+    backgroundOpacity: 0.75,      // 0.0–1.0
+    padding: 20,
+    bold: true,
+    position: 'bottom',
+    marginVertical: 50,
+    marginHorizontal: 100,
+    chunkOptions: { maxCharsPerLine: 55 }, // Split long text
+  },
+})
+```
+
+Without `subtitleStyle`, `burnSubtitles: true` uses default ffmpeg SRT rendering.
+
+## Voiceover-Driven Speed
+
+For perfect audio-video sync, pre-generate TTS, measure real durations, and compute per-step video speed:
+
+```typescript
+.speedUp({
+  segments: [                     // Explicit speed segments
+    { startMs: 0, endMs: 7000, speed: 1.5 },
+    { startMs: 7000, endMs: 17000, speed: 1.0 },
+    { startMs: 17000, endMs: 430000, speed: 60 }, // fast-forward AI processing
+  ],
+})
 ```
 
 ## Common Patterns
