@@ -49,3 +49,9 @@ export type {
 } from './types/voiceover.js'
 
 export type { RenderConfig, SubtitleStyle, ZoomKeyframe } from './types/render.js'
+
+// Subtitle writers & utilities
+export { writeAss, hexToAss } from './subtitles/ass-writer.js'
+export type { AssResolution } from './subtitles/ass-writer.js'
+export { chunkSubtitles } from './subtitles/subtitle-chunker.js'
+export type { ChunkOptions } from './subtitles/subtitle-chunker.js'

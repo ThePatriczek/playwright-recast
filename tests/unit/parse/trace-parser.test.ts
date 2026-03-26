@@ -1,10 +1,12 @@
 import { describe, it, expect } from 'vitest'
+import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { parseTrace } from '../../../src/parse/trace-parser'
 
 const TRACE_PATH = path.resolve(__dirname, '../../fixtures/demo-trace.zip')
+const hasFixture = fs.existsSync(TRACE_PATH)
 
-describe('TraceParser (integration with real trace)', () => {
+describe.skipIf(!hasFixture)('TraceParser (integration with real trace)', () => {
   it('parses a real trace zip into ParsedTrace', async () => {
     const trace = await parseTrace(TRACE_PATH)
 

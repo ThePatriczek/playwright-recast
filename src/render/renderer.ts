@@ -7,6 +7,8 @@ import type { SubtitleEntry } from '../types/subtitle.js'
 import type { SpeedSegment } from '../types/speed.js'
 import type { ParsedTrace } from '../types/trace.js'
 import { writeSrt } from '../subtitles/srt-writer.js'
+import { writeAss } from '../subtitles/ass-writer.js'
+import { chunkSubtitles } from '../subtitles/subtitle-chunker.js'
 
 /**
  * Detect blank/white frames at the start of a video and return the timestamp
@@ -297,10 +299,23 @@ export function renderVideo(
   }
 
   if (config.burnSubtitles && trace.subtitles && trace.subtitles.length > 0) {
-    const srtPath = path.join(tmpDir, 'burn-subtitles.srt')
-    fs.writeFileSync(srtPath, writeSrt(trace.subtitles))
-    const escapedPath = srtPath.replace(/'/g, "'\\''").replace(/:/g, '\\:')
-    vFilters.push(`subtitles='${escapedPath}'`)
+    if (config.subtitleStyle) {
+      // Styled subtitles via ASS format (background box, custom font, etc.)
+      let burnEntries = trace.subtitles
+      if (config.subtitleStyle.chunkOptions) {
+        burnEntries = chunkSubtitles(burnEntries, config.subtitleStyle.chunkOptions)
+      }
+      const assPath = path.join(tmpDir, 'burn-subtitles.ass')
+      fs.writeFileSync(assPath, writeAss(burnEntries, config.subtitleStyle, resolution))
+      const escapedPath = assPath.replace(/'/g, "'\\''").replace(/:/g, '\\:')
+      vFilters.push(`ass='${escapedPath}'`)
+    } else {
+      // Plain SRT subtitles (default ffmpeg styling)
+      const srtPath = path.join(tmpDir, 'burn-subtitles.srt')
+      fs.writeFileSync(srtPath, writeSrt(trace.subtitles))
+      const escapedPath = srtPath.replace(/'/g, "'\\''").replace(/:/g, '\\:')
+      vFilters.push(`subtitles='${escapedPath}'`)
+    }
   }
 
   if (vFilters.length > 0) {

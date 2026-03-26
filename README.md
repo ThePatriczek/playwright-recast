@@ -45,7 +45,8 @@ await Recast
 - **Trace-based processing** — Parses Playwright trace.zip (actions, screenshots, network, cursor positions). No manual recording needed.
 - **Smart speed control** — Automatically speeds up idle time, network waits, and navigation while keeping user actions at normal speed.
 - **TTS voiceover** — Generate narration with OpenAI TTS or ElevenLabs. Properly timed with silence padding.
-- **Subtitle generation** — SRT and WebVTT output. Import external SRT or generate from trace BDD step titles.
+- **Subtitle generation** — SRT, WebVTT, and ASS output. Import external SRT or generate from trace BDD step titles.
+- **Styled subtitle burn-in** — Configurable font, size, color, background box with opacity, padding, position. Smart punctuation-based chunking for single-line display.
 - **playwright-bdd support** — First-class integration with playwright-bdd Gherkin steps. Doc strings become voiceover narration.
 - **Step helpers** — `narrate()`, `zoom()`, `pace()` — importable helpers for Playwright step definitions.
 - **CLI included** — `npx playwright-recast -i trace.zip -o demo.mp4` — no code needed.
@@ -117,7 +118,21 @@ await Recast
     speed: 1.2,
     instructions: 'Professional product demo narration.',
   }))
-  .render({ format: 'mp4', resolution: '1080p', burnSubtitles: true })
+  .render({
+    format: 'mp4',
+    resolution: '1080p',
+    fps: 60,
+    burnSubtitles: true,
+    subtitleStyle: {
+      fontSize: 48,
+      primaryColor: '#1a1a1a',
+      backgroundColor: '#FFFFFF',
+      backgroundOpacity: 0.75,
+      padding: 20,
+      bold: true,
+      chunkOptions: { maxCharsPerLine: 55 },
+    },
+  })
   .toFile('demo.mp4')
 ```
 
@@ -173,8 +188,41 @@ Every stage is optional and composable:
 | `.subtitlesFromSrt(path)` | Load subtitles from an external SRT file |
 | `.subtitlesFromTrace()` | Auto-generate subtitles from BDD step titles in trace |
 | `.voiceover(provider)` | Generate TTS audio from subtitle text |
-| `.render(config)` | Render final video (format, resolution, burn subtitles) |
+| `.render(config)` | Render final video (format, resolution, fps, styled subtitle burn-in) |
 | `.toFile(path)` | Execute pipeline and write output |
+
+---
+
+## Subtitle Styling
+
+Burn styled subtitles into the video with full control over appearance:
+
+```typescript
+.render({
+  burnSubtitles: true,
+  subtitleStyle: {
+    fontFamily: 'Arial',          // Any system font
+    fontSize: 48,                 // Pixels (relative to 1080p)
+    primaryColor: '#1a1a1a',      // Text color (hex)
+    backgroundColor: '#FFFFFF',   // Box background (hex)
+    backgroundOpacity: 0.75,      // 0.0 transparent — 1.0 opaque
+    padding: 20,                  // Box padding in px
+    bold: true,
+    position: 'bottom',           // 'bottom' or 'top'
+    marginVertical: 50,           // Distance from edge
+    marginHorizontal: 100,        // Side margins (text wraps within)
+    wrapStyle: 'smart',           // 'smart', 'endOfLine', 'none'
+    chunkOptions: {               // Split long text into single-line chunks
+      maxCharsPerLine: 55,        // Split at punctuation when text exceeds this
+      minCharsPerChunk: 15,       // Merge tiny fragments
+    },
+  },
+})
+```
+
+**Punctuation-based chunking** splits long subtitle text into shorter single-line entries. Time is distributed proportionally by character count. Splits at sentence boundaries (`. ! ?`) first, then clause boundaries (`, ; :`) if still too long.
+
+Without `subtitleStyle`, `burnSubtitles: true` falls back to default ffmpeg SRT rendering.
 
 ---
 
@@ -260,7 +308,7 @@ await base.subtitlesFromSrt('./cs.srt').render({ burnSubtitles: true }).toFile('
 
 ## Roadmap
 
-- [ ] **Burned-in subtitles** — Render styled subtitles directly into the video with customizable font, size, color, and position
+- [x] **Burned-in subtitles** — Render styled subtitles directly into the video with customizable font, size, color, background box, and position
 - [ ] **Smooth zoom transitions** — Animated crop-and-zoom on elements during specific steps
 - [ ] **Edge TTS provider** — Free TTS without API key using Microsoft Edge's online voices
 - [ ] **Playwright Reporter plugin** — Auto-generate demo videos as part of your test run

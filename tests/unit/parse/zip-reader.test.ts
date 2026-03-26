@@ -1,10 +1,12 @@
 import { describe, it, expect } from 'vitest'
+import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { ZipReader } from '../../../src/parse/zip-reader'
 
 const TRACE_PATH = path.resolve(__dirname, '../../fixtures/demo-trace.zip')
+const hasFixture = fs.existsSync(TRACE_PATH)
 
-describe('ZipReader', () => {
+describe.skipIf(!hasFixture)('ZipReader', () => {
   it('opens a trace zip and lists entry names', async () => {
     const reader = await ZipReader.open(TRACE_PATH)
     try {

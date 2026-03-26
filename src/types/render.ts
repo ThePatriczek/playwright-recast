@@ -25,11 +25,37 @@ export interface RenderConfig {
 }
 
 export interface SubtitleStyle {
+  /** Font family name (default: 'Arial') */
   fontFamily?: string
+  /** Font size in script pixels relative to 1080p (default: 52) */
   fontSize?: number
-  color?: string
+  /** Text color as hex '#RRGGBB' (default: '#1a1a1a') */
+  primaryColor?: string
+  /** Background box color as hex '#RRGGBB' (default: '#FFFFFF') */
   backgroundColor?: string
+  /** Background opacity 0.0 (transparent) to 1.0 (opaque) (default: 0.75) */
+  backgroundOpacity?: number
+  /** Box padding in pixels — extends background around text (default: 18) */
+  padding?: number
+  /** Shadow distance in pixels (default: 0) */
+  shadow?: number
+  /** Vertical position: 'bottom' or 'top' (default: 'bottom') */
   position?: 'bottom' | 'top'
+  /** Bottom/top margin in pixels (default: 50) */
+  marginVertical?: number
+  /** Left/right margin in pixels (default: 80) */
+  marginHorizontal?: number
+  /** Bold text (default: true) */
+  bold?: boolean
+  /** Word wrap: 'smart' (even lines), 'endOfLine', 'none' (default: 'smart') */
+  wrapStyle?: 'smart' | 'endOfLine' | 'none'
+  /** Split long subtitles into shorter single-line chunks (null = no chunking) */
+  chunkOptions?: { maxCharsPerLine?: number; minCharsPerChunk?: number } | null
+
+  // --- Backward-compat aliases (deprecated) ---
+  /** @deprecated Use primaryColor */
+  color?: string
+  /** @deprecated Use marginVertical */
   marginBottom?: number
 }
 
