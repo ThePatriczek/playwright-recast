@@ -8,3 +8,6 @@ test-results/
 reports/
 .features-gen/
 .DS_Store
+
+# npm auth
+.npmrc
