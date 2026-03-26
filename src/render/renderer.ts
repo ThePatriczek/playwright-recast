@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process'
 import type { RenderConfig } from '../types/render.js'
 import { resolveResolution } from '../types/render.js'
 import type { SubtitleEntry } from '../types/subtitle.js'
+import type { SpeedSegment } from '../types/speed.js'
 import type { ParsedTrace } from '../types/trace.js'
 import { writeSrt } from '../subtitles/srt-writer.js'
 
@@ -14,7 +15,7 @@ import { writeSrt } from '../subtitles/srt-writer.js'
  *
  * @returns Seconds to skip at the start, or 0 if no blank frames.
  */
-function detectBlankLeadIn(videoPath: string, tmpDir: string): number {
+export function detectBlankLeadIn(videoPath: string, tmpDir: string): number {
   const probeStep = 0.1 // seconds
   const maxProbe = 3.0 // don't look beyond 3 seconds
   const blankThreshold = 15_000 // bytes — blank 1920x1080 PNG is ~8-10KB
@@ -56,6 +57,7 @@ export interface RenderableTrace extends ParsedTrace {
   sourceVideoPath?: string
   subtitles?: SubtitleEntry[]
   voiceover?: { audioTrackPath: string; entries: unknown[]; totalDurationMs: number }
+  speedSegments?: SpeedSegment[]
 }
 
 function ffmpeg(args: string[]): void {
@@ -148,6 +150,76 @@ function renderWithZoom(
 }
 
 /**
+ * Apply speed segments to video: split into chunks, apply speed factor
+ * with setpts, concatenate back together.
+ *
+ * Returns path to the speed-processed video (or original if no changes needed).
+ */
+function renderWithSpeed(
+  sourceVideo: string,
+  speedSegments: SpeedSegment[],
+  baselineMs: number,
+  tmpDir: string,
+): string {
+  if (speedSegments.length === 0) return sourceVideo
+
+  // Check if any segment actually changes speed
+  const allRealtime = speedSegments.every((s) => Math.abs(s.speed - 1.0) < 0.01)
+  if (allRealtime) return sourceVideo
+
+  // Get source video duration for clamping
+  const durationStr = execFileSync('ffprobe', [
+    '-v', 'quiet', '-show_entries', 'format=duration', '-of', 'csv=p=0', sourceVideo,
+  ]).toString().trim()
+  const videoDuration = Number(durationStr)
+
+  // Convert speed segments from trace monotonic time to video-relative seconds.
+  // baselineMs is the first screencast frame timestamp — the video's t=0 reference.
+  // Segments before baseline (from hidden setup context) get negative times → filtered out.
+  const videoSegments = speedSegments
+    .map((seg) => ({
+      startSec: Math.max(0, ((seg.originalStart as number) - baselineMs) / 1000),
+      endSec: Math.min(videoDuration, ((seg.originalEnd as number) - baselineMs) / 1000),
+      speed: seg.speed,
+    }))
+    .filter((s) => s.endSec > s.startSec + 0.05)
+
+  if (videoSegments.length === 0) return sourceVideo
+
+  console.log(`  Speed: ${videoSegments.length} segments, source ${videoDuration.toFixed(1)}s`)
+
+  // Process each segment
+  const segmentPaths: string[] = []
+  for (let i = 0; i < videoSegments.length; i++) {
+    const seg = videoSegments[i]!
+    const segPath = path.join(tmpDir, `speed-seg-${i}.mp4`)
+    const duration = seg.endSec - seg.startSec
+    const outputDuration = duration / seg.speed
+
+    const args = [
+      '-y', '-ss', String(seg.startSec), '-to', String(seg.endSec),
+      '-i', sourceVideo,
+      '-filter:v', `setpts=PTS/${seg.speed}`,
+      '-c:v', 'libx264', '-preset', 'fast', '-crf', '18', '-an',
+      segPath,
+    ]
+    ffmpeg(args)
+
+    console.log(`    Seg ${i}: ${seg.startSec.toFixed(1)}s-${seg.endSec.toFixed(1)}s @ ${seg.speed}x → ${outputDuration.toFixed(1)}s`)
+    segmentPaths.push(segPath)
+  }
+
+  // Concatenate all segments
+  const concatFile = path.join(tmpDir, 'speed-concat.txt')
+  fs.writeFileSync(concatFile, segmentPaths.map((p) => `file '${p}'`).join('\n'))
+
+  const concatOutput = path.join(tmpDir, 'speed-combined.mp4')
+  ffmpeg(['-y', '-f', 'concat', '-safe', '0', '-i', concatFile, '-c', 'copy', concatOutput])
+
+  return concatOutput
+}
+
+/**
  * Render final video from trace data.
  */
 export function renderVideo(
@@ -168,21 +240,11 @@ export function renderVideo(
   const hasZoom = trace.subtitles?.some((s) => s.zoom && s.zoom.level > 1.0) ?? false
   const hasAudio = trace.voiceover?.audioTrackPath &&
     fs.existsSync(trace.voiceover.audioTrackPath)
+  const hasSpeed = trace.speedSegments && trace.speedSegments.length > 0 &&
+    trace.speedSegments.some((s) => Math.abs(s.speed - 1.0) > 0.01)
 
-  // Phase 1: Apply zoom if needed (segment-based crop+scale+concat)
+  // Phase 1: Trim blank frames at the start of the video.
   let videoInput = sourceVideo
-  if (hasZoom && trace.subtitles) {
-    videoInput = renderWithZoom(
-      sourceVideo,
-      trace.subtitles,
-      resolution.width,
-      resolution.height,
-      tmpDir,
-    )
-  }
-
-  // Phase 1.5: Trim blank frames at the start of the video.
-  // Must re-encode because webm/vp8 stream-copy seeks to nearest keyframe.
   const blankLeadIn = detectBlankLeadIn(videoInput, tmpDir)
   if (blankLeadIn > 0) {
     const trimmedPath = path.join(tmpDir, 'trimmed-input.mp4')
@@ -192,9 +254,35 @@ export function renderVideo(
       trimmedPath,
     ])
     videoInput = trimmedPath
+
   }
 
-  // Phase 2: Final encode (audio merge + subtitle burn + format)
+  // Phase 2: Apply speed segments (changes duration, before zoom/subtitles).
+  // Use the first screencast frame from the RECORDING page as baseline.
+  // The recording page is identified by the last frame's pageId (it runs longest).
+  if (hasSpeed && trace.speedSegments) {
+    const recordingPageId = trace.frames.length > 0
+      ? trace.frames[trace.frames.length - 1]!.pageId : undefined
+    const recordingFrames = recordingPageId
+      ? trace.frames.filter((f) => f.pageId === recordingPageId) : trace.frames
+    const firstRecFrameTime = recordingFrames.length > 0
+      ? (recordingFrames[0]!.timestamp as number)
+      : (trace.speedSegments[0]!.originalStart as number)
+    videoInput = renderWithSpeed(videoInput, trace.speedSegments, firstRecFrameTime, tmpDir)
+  }
+
+  // Phase 3: Apply zoom if needed (operates on speed-adjusted video with speed-adjusted times)
+  if (hasZoom && trace.subtitles) {
+    videoInput = renderWithZoom(
+      videoInput,
+      trace.subtitles,
+      resolution.width,
+      resolution.height,
+      tmpDir,
+    )
+  }
+
+  // Phase 4: Final encode (audio merge + subtitle burn + format)
   const ffmpegArgs: string[] = ['-y', '-i', videoInput]
 
   if (hasAudio && trace.voiceover) {

@@ -57,15 +57,59 @@ export async function generateVoiceover(
     const audioDuration = getAudioDurationMs(segPath)
     const windowDuration = subtitle.endMs - subtitle.startMs
 
-    if (audioDuration < windowDuration) {
+    if (windowDuration < 100) {
+      // Window too short — skip audio for this subtitle
+      cursor = subtitle.endMs
+    } else if (audioDuration <= windowDuration) {
+      // Audio fits — add padding silence to fill the window
       segmentFiles.push(segPath)
-      const padPath = path.join(tmpDir, `pad-${subtitle.index}.mp3`)
-      generateSilence(windowDuration - audioDuration, padPath)
-      segmentFiles.push(padPath)
+      const pad = windowDuration - audioDuration
+      if (pad > 50) {
+        const padPath = path.join(tmpDir, `pad-${subtitle.index}.mp3`)
+        generateSilence(pad, padPath)
+        segmentFiles.push(padPath)
+      }
       cursor = subtitle.endMs
     } else {
-      segmentFiles.push(segPath)
-      cursor = subtitle.startMs + audioDuration
+      // Audio overflows the window. Strategy:
+      // 1. Speed up slightly (max 1.4x) to keep natural sound
+      // 2. Then TRUNCATE to fit the window exactly
+      // This ensures perfect sync — no overflow cascading to later subtitles.
+      const speedFactor = Math.min(1.4, audioDuration / windowDuration)
+      let inputFile = segPath
+
+      if (speedFactor > 1.01) {
+        const fittedPath = path.join(tmpDir, `fitted-${subtitle.index}.mp3`)
+        execFileSync('ffmpeg', [
+          '-y', '-i', segPath,
+          '-filter:a', `atempo=${speedFactor.toFixed(4)}`,
+          '-c:a', 'libmp3lame', '-q:a', '2',
+          fittedPath,
+        ], { stdio: 'pipe' })
+        inputFile = fittedPath
+      }
+
+      // Truncate to window duration (hard cut ensures sync)
+      const truncPath = path.join(tmpDir, `trunc-${subtitle.index}.mp3`)
+      const windowSec = Math.max(0.1, windowDuration / 1000)
+      execFileSync('ffmpeg', [
+        '-y', '-i', inputFile,
+        '-t', windowSec.toFixed(3),
+        // Fade out the last 200ms to avoid harsh cut
+        '-af', `afade=t=out:st=${Math.max(0, windowSec - 0.2).toFixed(3)}:d=0.2`,
+        '-c:a', 'libmp3lame', '-q:a', '2',
+        truncPath,
+      ], { stdio: 'pipe' })
+      segmentFiles.push(truncPath)
+
+      const truncDuration = getAudioDurationMs(truncPath)
+      const pad = windowDuration - truncDuration
+      if (pad > 50) {
+        const padPath = path.join(tmpDir, `pad-${subtitle.index}.mp3`)
+        generateSilence(pad, padPath)
+        segmentFiles.push(padPath)
+      }
+      cursor = subtitle.endMs
     }
 
     entries.push({

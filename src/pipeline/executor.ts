@@ -2,6 +2,7 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 import type { StageDescriptor } from './stages.js'
 import type { ParsedTrace, FilteredTrace, TraceAction } from '../types/trace.js'
+import { toMonotonic } from '../types/trace.js'
 import type { SpeedMappedTrace } from '../types/speed.js'
 import type { SubtitledTrace } from '../types/subtitle.js'
 import type { VoiceoveredTrace } from '../types/voiceover.js'
@@ -11,7 +12,7 @@ import { processSpeed } from '../speed/speed-processor.js'
 import { generateSubtitles } from '../subtitles/subtitle-generator.js'
 import { parseSrt } from '../subtitles/srt-parser.js'
 import { generateVoiceover } from '../voiceover/voiceover-processor.js'
-import { renderVideo, type RenderableTrace } from '../render/renderer.js'
+import { renderVideo, detectBlankLeadIn, type RenderableTrace } from '../render/renderer.js'
 import { writeSrt } from '../subtitles/srt-writer.js'
 import { writeVtt } from '../subtitles/vtt-writer.js'
 import { assertFfmpegAvailable } from '../utils/ffmpeg.js'
@@ -23,6 +24,7 @@ type PipelineState = {
   subtitled?: SubtitledTrace
   voiceovered?: VoiceoveredTrace
   sourceVideoPath?: string
+  _blankTrimApplied?: boolean
 }
 
 /**
@@ -60,6 +62,7 @@ export class PipelineExecutor {
       sourceVideoPath: state.sourceVideoPath,
       subtitles: state.subtitled?.subtitles,
       voiceover: state.voiceovered?.voiceover,
+      speedSegments: state.speedMapped?.speedSegments,
     }
 
     // Render final video
@@ -134,6 +137,9 @@ export class PipelineExecutor {
         case 'speedUp': {
           if (!state.filtered) throw new Error('speedUp() requires parse() first')
           state.speedMapped = processSpeed(state.filtered, stage.config)
+          const segs = state.speedMapped.speedSegments
+          const uniqueSpeeds = [...new Set(segs.map(s => s.speed))]
+          console.log(`  speedUp: ${segs.length} segments, speeds: [${uniqueSpeeds.map(s => s + 'x').join(', ')}], output: ${(state.speedMapped.outputDuration / 1000).toFixed(1)}s`)
           break
         }
 
@@ -168,6 +174,62 @@ export class PipelineExecutor {
           const asSpeedMapped: SpeedMappedTrace = 'speedSegments' in srtBase
             ? srtBase as SpeedMappedTrace
             : { ...asFiltered, speedSegments: [], timeRemap: (t) => t as number, outputDuration: 0 }
+
+          // Remap subtitle times through the speed map when speed processing is active.
+          // SRT times are in video time (starting from 0 for first visible step).
+          // Use the first screencast frame from the RECORDING page (identified by the
+          // last frame's pageId) as the trace-time baseline — matches the renderer.
+          if (state.speedMapped && state.speedMapped.speedSegments.length > 0 && state.parsed) {
+            const frames = state.parsed.frames
+            const recPageId = frames.length > 0
+              ? frames[frames.length - 1]!.pageId : undefined
+
+            // SRT time 0 = step 1 start = first ACTION on the recording page.
+            // Video time 0 = first FRAME from the recording page (after blank trim).
+            // These differ by ~1s (action starts before frame renders).
+            // Use the action time for subtitle mapping so content matches exactly.
+            const recActions = state.parsed.actions.filter((a) => a.pageId === recPageId)
+            const firstRecActionMs = recActions.length > 0
+              ? (recActions[0]!.startTime as number) : 0
+
+            const recFrames = recPageId
+              ? frames.filter((f) => f.pageId === recPageId) : frames
+            const firstRecFrameMs = recFrames[0]?.timestamp as number ??
+              (state.speedMapped.speedSegments[0]!.originalStart as number)
+
+            // Video output starts at the first frame. Subtract this offset so
+            // subtitle time 0 aligns with video time 0.
+            const videoStartOutput = state.speedMapped.timeRemap(toMonotonic(firstRecFrameMs))
+
+            for (const sub of subtitles) {
+              sub.startMs = Math.max(0, state.speedMapped.timeRemap(toMonotonic(sub.startMs + firstRecActionMs)) - videoStartOutput)
+              sub.endMs = Math.max(0, state.speedMapped.timeRemap(toMonotonic(sub.endMs + firstRecActionMs)) - videoStartOutput)
+            }
+
+            // If a subtitle's start lands inside a fast-forward zone (>5x),
+            // push it to right after the zone ends. Preserve the original
+            // window duration and ensure no overlap with the next subtitle.
+            const segs = state.speedMapped.speedSegments
+            for (let i = 0; i < subtitles.length; i++) {
+              const sub = subtitles[i]!
+              for (const seg of segs) {
+                if (seg.speed <= 5) continue
+                const zoneStart = seg.outputStart - videoStartOutput
+                const zoneEnd = seg.outputEnd - videoStartOutput
+                if (sub.startMs >= zoneStart && sub.startMs < zoneEnd) {
+                  const windowDuration = sub.endMs - sub.startMs
+                  sub.startMs = zoneEnd
+                  sub.endMs = sub.startMs + windowDuration
+                  // Cap to not overlap with next subtitle
+                  const next = subtitles[i + 1]
+                  if (next && sub.endMs > next.startMs) {
+                    sub.endMs = next.startMs
+                  }
+                  break
+                }
+              }
+            }
+          }
 
           state.subtitled = { ...asSpeedMapped, subtitles }
           break
@@ -264,13 +326,45 @@ export class PipelineExecutor {
 
         case 'voiceover': {
           if (!state.subtitled) throw new Error('voiceover() requires subtitles() first')
+
+          // Compensate for blank lead-in BEFORE generating voiceover so the
+          // audio track timing matches the trimmed video.
+          if (state.sourceVideoPath && !state._blankTrimApplied) {
+            const blankTmpDir = path.join(path.dirname(state.sourceVideoPath), '.recast-blank-tmp')
+            fs.mkdirSync(blankTmpDir, { recursive: true })
+            const blankLeadIn = detectBlankLeadIn(state.sourceVideoPath, blankTmpDir)
+            fs.rmSync(blankTmpDir, { recursive: true, force: true })
+            if (blankLeadIn > 0) {
+              const offsetMs = blankLeadIn * 1000
+              for (const sub of state.subtitled.subtitles) {
+                sub.startMs = Math.max(0, sub.startMs - offsetMs)
+                sub.endMs = Math.max(0, sub.endMs - offsetMs)
+              }
+            }
+            state._blankTrimApplied = true
+          }
+
           const tmpDir = path.join(path.dirname(state.sourceVideoPath ?? '/tmp'), '.recast-vo-tmp')
           state.voiceovered = await generateVoiceover(state.subtitled, stage.provider, tmpDir)
           break
         }
 
         case 'render':
-          // Config is read during execute(), not here
+          // Apply blank trim compensation for subtitle-only mode (no voiceover)
+          if (state.subtitled && state.sourceVideoPath && !state._blankTrimApplied) {
+            const blankTmpDir = path.join(path.dirname(state.sourceVideoPath), '.recast-blank-tmp')
+            fs.mkdirSync(blankTmpDir, { recursive: true })
+            const blankLeadIn = detectBlankLeadIn(state.sourceVideoPath, blankTmpDir)
+            fs.rmSync(blankTmpDir, { recursive: true, force: true })
+            if (blankLeadIn > 0) {
+              const offsetMs = blankLeadIn * 1000
+              for (const sub of state.subtitled.subtitles) {
+                sub.startMs = Math.max(0, sub.startMs - offsetMs)
+                sub.endMs = Math.max(0, sub.endMs - offsetMs)
+              }
+            }
+            state._blankTrimApplied = true
+          }
           break
       }
     }

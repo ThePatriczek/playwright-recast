@@ -83,6 +83,7 @@ export async function parseTrace(tracePath: string): Promise<ParsedTrace> {
       startTime: toMonotonic(start.startTime),
       endTime: toMonotonic(end?.endTime ?? start.startTime),
       parentId: start.parentId,
+      pageId: start.pageId,
       error: end?.error,
       point: point
         ? { x: point.x, y: point.y, timestamp: toMonotonic(start.startTime) }

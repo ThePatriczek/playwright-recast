@@ -41,6 +41,8 @@ export interface TraceAction {
   startTime: MonotonicMs
   endTime: MonotonicMs
   parentId?: string
+  /** Playwright page ID this action belongs to */
+  pageId?: string
   error?: { message: string }
   point?: CursorPosition
   annotations?: TraceAnnotation[]

@@ -1,7 +1,7 @@
 import type { MonotonicMs, TraceAction, TraceResource } from '../types/trace.js'
 import type { ActivityType } from '../types/speed.js'
 
-const USER_ACTION_METHODS = new Set([
+export const USER_ACTION_METHODS = new Set([
   'click', 'dblclick', 'fill', 'type', 'press', 'check', 'uncheck',
   'selectOption', 'setInputFiles', 'hover', 'tap', 'dragTo',
 ])

@@ -1,11 +1,12 @@
 import type { SubtitleEntry } from '../types/subtitle.js'
 
 function formatVttTime(ms: number): string {
-  const totalSeconds = Math.floor(ms / 1000)
+  const rounded = Math.round(ms)
+  const totalSeconds = Math.floor(rounded / 1000)
   const hours = Math.floor(totalSeconds / 3600)
   const minutes = Math.floor((totalSeconds % 3600) / 60)
   const seconds = totalSeconds % 60
-  const millis = ms % 1000
+  const millis = rounded % 1000
 
   return (
     [

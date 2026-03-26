@@ -46,10 +46,32 @@ export interface SpeedConfig {
   duringNavigation?: number
   /** Minimum segment duration (ms) before speed change. Default: 500 */
   minSegmentDuration?: number
-  /** Maximum speed multiplier. Default: 8.0 */
+  /** Maximum speed multiplier. Default: 100.0 */
   maxSpeed?: number
   /** Custom rules (evaluated first, first match wins) */
   rules?: SpeedRule[]
+  /**
+   * Recording page ID — when set, only user actions from this page are
+   * considered for timeSinceLastAction / timeUntilNextAction. This prevents
+   * hidden setup-context actions from polluting the user action timeline.
+   * If not set, auto-detected from screencast frames.
+   */
+  recordingPageId?: string
+  /**
+   * Extra delay (ms) added after a fast-forward zone before subtitles resume.
+   * Accounts for content that needs time to "settle" after compression
+   * (e.g., an AI response finishing streaming). Default: 0.
+   */
+  postFastForwardSettleMs?: number
+  /**
+   * Pre-built speed segments with explicit per-step timing. When provided,
+   * trace-based classification is skipped entirely. Each segment defines a
+   * time range (in SRT/video ms) and a speed factor.
+   *
+   * Use this for voiceover-driven timing where the narration length
+   * determines how fast each step's video should play.
+   */
+  segments?: Array<{ startMs: number; endMs: number; speed: number }>
 }
 
 /** Trace after speed processing has been applied */
@@ -57,4 +79,6 @@ export interface SpeedMappedTrace extends FilteredTrace {
   speedSegments: SpeedSegment[]
   timeRemap: TimeRemapFn
   outputDuration: number
+  /** Carried from SpeedConfig for downstream subtitle adjustment */
+  postFastForwardSettleMs?: number
 }
