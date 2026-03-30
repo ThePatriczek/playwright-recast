@@ -67,6 +67,44 @@ function ffmpeg(args: string[]): void {
 }
 
 /**
+ * Get video duration in seconds, handling containers without duration metadata
+ * (e.g., Playwright webm recordings). Tries format duration first, then falls
+ * back to probing the last packet timestamp.
+ */
+function getVideoDuration(videoPath: string): number {
+  // Try format-level duration first (fast)
+  const durationStr = execFileSync('ffprobe', [
+    '-v', 'quiet', '-show_entries', 'format=duration', '-of', 'csv=p=0', videoPath,
+  ]).toString().trim()
+  const duration = Number(durationStr)
+  if (!Number.isNaN(duration) && duration > 0) return duration
+
+  // Fallback: probe stream duration (some containers have it per-stream)
+  const streamStr = execFileSync('ffprobe', [
+    '-v', 'quiet', '-select_streams', 'v:0',
+    '-show_entries', 'stream=duration', '-of', 'csv=p=0', videoPath,
+  ]).toString().trim()
+  const streamDuration = Number(streamStr)
+  if (!Number.isNaN(streamDuration) && streamDuration > 0) return streamDuration
+
+  // Final fallback: compute from packet count and frame rate
+  const probeOut = execFileSync('ffprobe', [
+    '-v', 'quiet', '-select_streams', 'v:0', '-count_packets',
+    '-show_entries', 'stream=nb_read_packets,r_frame_rate', '-of', 'csv=p=0', videoPath,
+  ]).toString().trim()
+  const [fpsStr, nbPackets] = probeOut.split(',')
+  const packets = Number(nbPackets)
+  // Parse fractional fps like "25/1"
+  const fpsParts = (fpsStr ?? '').split('/')
+  const fps = fpsParts.length === 2
+    ? Number(fpsParts[0]) / Number(fpsParts[1])
+    : Number(fpsStr)
+  if (packets > 0 && fps > 0) return packets / fps
+
+  throw new Error(`Cannot determine duration of video: ${videoPath}`)
+}
+
+/**
  * Render with zoom by splitting video into segments:
  * - Non-zoomed segments pass through at full resolution
  * - Zoomed segments get crop + scale to zoom into the target
@@ -84,11 +122,8 @@ function renderWithZoom(
   type Segment = { startSec: number; endSec: number; zoom?: SubtitleEntry['zoom'] }
   const segments: Segment[] = []
 
-  // Get video duration
-  const durationStr = execFileSync('ffprobe', [
-    '-v', 'quiet', '-show_entries', 'format=duration', '-of', 'csv=p=0', sourceVideo,
-  ]).toString().trim()
-  const videoDuration = Number(durationStr)
+  // Get video duration (handles webm without duration header)
+  const videoDuration = getVideoDuration(sourceVideo)
 
   const zoomSubs = subtitles.filter((s) => s.zoom && s.zoom.level > 1.0)
   let cursor = 0
@@ -169,11 +204,8 @@ function renderWithSpeed(
   const allRealtime = speedSegments.every((s) => Math.abs(s.speed - 1.0) < 0.01)
   if (allRealtime) return sourceVideo
 
-  // Get source video duration for clamping
-  const durationStr = execFileSync('ffprobe', [
-    '-v', 'quiet', '-show_entries', 'format=duration', '-of', 'csv=p=0', sourceVideo,
-  ]).toString().trim()
-  const videoDuration = Number(durationStr)
+  // Get source video duration for clamping (handles webm without duration header)
+  const videoDuration = getVideoDuration(sourceVideo)
 
   // Convert speed segments from trace monotonic time to video-relative seconds.
   // baselineMs is the first screencast frame timestamp — the video's t=0 reference.
@@ -284,7 +316,19 @@ export function renderVideo(
     )
   }
 
-  // Phase 4: Final encode (audio merge + subtitle burn + format)
+  // Phase 4: Compute extra padding needed if audio is longer than video.
+  // The tpad filter will be added in Phase 5's vFilters to hold the last frame.
+  let tpadDuration = 0
+  if (hasAudio && trace.voiceover) {
+    const videoDur = getVideoDuration(videoInput)
+    const audioDur = trace.voiceover.totalDurationMs / 1000
+    if (audioDur > videoDur + 0.5) {
+      tpadDuration = audioDur - videoDur + 1.0 // +1s buffer
+      console.log(`  Will pad video by ${tpadDuration.toFixed(1)}s to match audio (${audioDur.toFixed(1)}s)`)
+    }
+  }
+
+  // Phase 5: Final encode (audio merge + subtitle burn + format)
   const ffmpegArgs: string[] = ['-y', '-i', videoInput]
 
   if (hasAudio && trace.voiceover) {
@@ -292,6 +336,11 @@ export function renderVideo(
   }
 
   const vFilters: string[] = []
+
+  // Pad video with last frame to match audio duration
+  if (tpadDuration > 0) {
+    vFilters.push(`tpad=stop_mode=clone:stop_duration=${tpadDuration.toFixed(3)}`)
+  }
 
   // Scale (only if no zoom was applied — zoom already scaled)
   if (!hasZoom) {
@@ -329,7 +378,7 @@ export function renderVideo(
   }
 
   if (hasAudio) {
-    ffmpegArgs.push('-c:a', 'aac', '-b:a', '128k', '-shortest')
+    ffmpegArgs.push('-c:a', 'aac', '-b:a', '128k')
   }
 
   if (config.fps) {

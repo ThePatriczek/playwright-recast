@@ -40,8 +40,15 @@ export async function generateVoiceover(
   const entries: VoiceoverEntry[] = []
   const segmentFiles: string[] = []
   let cursor = 0
+  let timeShift = 0 // cumulative shift from TTS overflows
 
-  for (const subtitle of trace.subtitles) {
+  for (let si = 0; si < trace.subtitles.length; si++) {
+    const subtitle = trace.subtitles[si]!
+
+    // Apply accumulated time shift from previous overflows
+    subtitle.startMs += timeShift
+    subtitle.endMs += timeShift
+
     // Insert silence for gap before this segment
     if (subtitle.startMs > cursor) {
       const silencePath = path.join(tmpDir, `silence-${subtitle.index}.mp3`)
@@ -71,44 +78,12 @@ export async function generateVoiceover(
       }
       cursor = subtitle.endMs
     } else {
-      // Audio overflows the window. Strategy:
-      // 1. Speed up slightly (max 1.4x) to keep natural sound
-      // 2. Then TRUNCATE to fit the window exactly
-      // This ensures perfect sync — no overflow cascading to later subtitles.
-      const speedFactor = Math.min(1.4, audioDuration / windowDuration)
-      let inputFile = segPath
-
-      if (speedFactor > 1.01) {
-        const fittedPath = path.join(tmpDir, `fitted-${subtitle.index}.mp3`)
-        execFileSync('ffmpeg', [
-          '-y', '-i', segPath,
-          '-filter:a', `atempo=${speedFactor.toFixed(4)}`,
-          '-c:a', 'libmp3lame', '-q:a', '2',
-          fittedPath,
-        ], { stdio: 'pipe' })
-        inputFile = fittedPath
-      }
-
-      // Truncate to window duration (hard cut ensures sync)
-      const truncPath = path.join(tmpDir, `trunc-${subtitle.index}.mp3`)
-      const windowSec = Math.max(0.1, windowDuration / 1000)
-      execFileSync('ffmpeg', [
-        '-y', '-i', inputFile,
-        '-t', windowSec.toFixed(3),
-        // Fade out the last 200ms to avoid harsh cut
-        '-af', `afade=t=out:st=${Math.max(0, windowSec - 0.2).toFixed(3)}:d=0.2`,
-        '-c:a', 'libmp3lame', '-q:a', '2',
-        truncPath,
-      ], { stdio: 'pipe' })
-      segmentFiles.push(truncPath)
-
-      const truncDuration = getAudioDurationMs(truncPath)
-      const pad = windowDuration - truncDuration
-      if (pad > 50) {
-        const padPath = path.join(tmpDir, `pad-${subtitle.index}.mp3`)
-        generateSilence(pad, padPath)
-        segmentFiles.push(padPath)
-      }
+      // Audio overflows the window — play at raw speed (never modify TTS tempo).
+      // Extend this subtitle and shift all subsequent subtitles forward.
+      const overflow = audioDuration - windowDuration
+      segmentFiles.push(segPath)
+      subtitle.endMs = subtitle.startMs + audioDuration
+      timeShift += overflow
       cursor = subtitle.endMs
     }
 
@@ -116,7 +91,7 @@ export async function generateVoiceover(
       subtitle,
       audio,
       outputStartMs: subtitle.startMs,
-      outputEndMs: Math.max(subtitle.endMs, subtitle.startMs + audioDuration),
+      outputEndMs: subtitle.endMs,
     })
   }
 
