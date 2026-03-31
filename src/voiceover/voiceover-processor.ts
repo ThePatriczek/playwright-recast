@@ -107,7 +107,7 @@ export async function generateVoiceover(
     execFileSync('ffmpeg', [
       '-y', '-f', 'concat', '-safe', '0',
       '-i', concatList,
-      '-c:a', 'libmp3lame', '-q:a', '2',
+      '-c', 'copy',
       audioTrackPath,
     ], { stdio: 'pipe' })
   }
