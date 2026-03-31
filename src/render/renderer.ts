@@ -8,6 +8,8 @@ import type { SpeedSegment } from '../types/speed.js'
 import type { ParsedTrace } from '../types/trace.js'
 import type { ClickEvent } from '../types/click-effect.js'
 import { generateRippleClip } from '../click-effect/ripple-generator.js'
+import { writeDefaultClickSound } from '../click-effect/defaults.js'
+import { generateClickSoundTrack, getAudioDurationMs as getClickAudioDurationMs } from '../click-effect/sound-track.js'
 import { writeSrt } from '../subtitles/srt-writer.js'
 import { writeAss } from '../subtitles/ass-writer.js'
 import { chunkSubtitles } from '../subtitles/subtitle-chunker.js'
@@ -526,6 +528,35 @@ export function renderVideo(
     )
   }
 
+  // Phase 3.7: Generate click sound track if configured
+  let clickSoundTrackPath: string | undefined
+  if (trace.clickEvents && trace.clickEvents.length > 0 && trace.clickEffectConfig?.sound) {
+    let soundPath: string
+
+    if (trace.clickEffectConfig.sound === true) {
+      // Use bundled default click sound
+      soundPath = writeDefaultClickSound(tmpDir)
+    } else {
+      soundPath = trace.clickEffectConfig.sound
+    }
+
+    const soundDurationMs = getClickAudioDurationMs(soundPath)
+
+    clickSoundTrackPath = generateClickSoundTrack(
+      {
+        clicks: trace.clickEvents,
+        soundPath,
+        soundDurationMs,
+        outputPath: path.join(tmpDir, 'click-sound-track.mp3'),
+        volume: trace.clickEffectConfig.soundVolume,
+      },
+      tmpDir,
+    )
+    if (clickSoundTrackPath) {
+      console.log(`  Click sound: ${trace.clickEvents.length} sounds mixed`)
+    }
+  }
+
   // Phase 4: Compute extra padding needed if audio is longer than video.
   // The tpad filter will be added in Phase 5's vFilters to hold the last frame.
   let tpadDuration = 0
@@ -541,8 +572,27 @@ export function renderVideo(
   // Phase 5: Final encode (audio merge + subtitle burn + format)
   const ffmpegArgs: string[] = ['-y', '-i', videoInput]
 
+  // Determine final audio track (mix voiceover + click sound if both present)
+  let finalAudioPath: string | undefined
   if (hasAudio && trace.voiceover) {
-    ffmpegArgs.push('-i', trace.voiceover.audioTrackPath)
+    finalAudioPath = trace.voiceover.audioTrackPath
+  }
+
+  if (clickSoundTrackPath && finalAudioPath) {
+    // Mix click sound into voiceover track
+    const mixedPath = path.join(tmpDir, 'mixed-audio.mp3')
+    ffmpeg([
+      '-y', '-i', finalAudioPath, '-i', clickSoundTrackPath,
+      '-filter_complex', 'amix=inputs=2:duration=longest:dropout_transition=0',
+      '-c:a', 'libmp3lame', '-q:a', '2', mixedPath,
+    ])
+    finalAudioPath = mixedPath
+  } else if (clickSoundTrackPath && !finalAudioPath) {
+    finalAudioPath = clickSoundTrackPath
+  }
+
+  if (finalAudioPath) {
+    ffmpegArgs.push('-i', finalAudioPath)
   }
 
   const vFilters: string[] = []
@@ -587,7 +637,7 @@ export function renderVideo(
     ffmpegArgs.push('-c:v', config.codec ?? 'libvpx-vp9', '-crf', String(crf), '-b:v', '0')
   }
 
-  if (hasAudio) {
+  if (finalAudioPath) {
     ffmpegArgs.push('-c:a', 'aac', '-b:a', '128k')
   }
 
