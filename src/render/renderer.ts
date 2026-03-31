@@ -105,85 +105,130 @@ function getVideoDuration(videoPath: string): number {
 }
 
 /**
- * Render with zoom by splitting video into segments:
- * - Non-zoomed segments pass through at full resolution
- * - Zoomed segments get crop + scale to zoom into the target
- *
- * Then all segments are concatenated back together.
+ * Probe the actual resolution of a video file.
+ */
+function probeResolution(videoPath: string): { width: number; height: number } {
+  const output = execFileSync('ffprobe', [
+    '-v', 'quiet', '-select_streams', 'v:0',
+    '-show_entries', 'stream=width,height', '-of', 'csv=p=0', videoPath,
+  ]).toString().trim()
+  const [w, h] = output.split(',').map(Number)
+  return { width: w!, height: h! }
+}
+
+/**
+ * Render with zoom using a single-pass ffmpeg filter with time-based crop expressions.
+ * Probes the actual source resolution for correct crop math, applies smooth eased
+ * transitions between zoom states, and scales to target resolution.
  */
 function renderWithZoom(
   sourceVideo: string,
   subtitles: SubtitleEntry[],
-  width: number,
-  height: number,
+  targetWidth: number,
+  targetHeight: number,
   tmpDir: string,
 ): string {
-  // Build time segments: alternating between no-zoom and zoom
-  type Segment = { startSec: number; endSec: number; zoom?: SubtitleEntry['zoom'] }
-  const segments: Segment[] = []
-
-  // Get video duration (handles webm without duration header)
-  const videoDuration = getVideoDuration(sourceVideo)
-
   const zoomSubs = subtitles.filter((s) => s.zoom && s.zoom.level > 1.0)
-  let cursor = 0
+  if (zoomSubs.length === 0) return sourceVideo
+
+  // Probe actual source video dimensions — crop must use source pixels
+  const src = probeResolution(sourceVideo)
+  const TRANSITION_SEC = 0.3 // eased transition duration
+
+  // Build zoom keyframes: [{startSec, endSec, x, y, level}]
+  // Between zoomed subtitles we interpolate back to level 1.0
+  type ZoomKF = { startSec: number; endSec: number; x: number; y: number; level: number }
+  const keyframes: ZoomKF[] = []
 
   for (const sub of zoomSubs) {
-    const startSec = sub.startMs / 1000
-    const endSec = sub.endMs / 1000
+    keyframes.push({
+      startSec: sub.startMs / 1000,
+      endSec: sub.endMs / 1000,
+      x: sub.zoom!.x,
+      y: sub.zoom!.y,
+      level: sub.zoom!.level,
+    })
+  }
 
-    // Gap before this zoom
-    if (startSec > cursor + 0.1) {
-      segments.push({ startSec: cursor, endSec: startSec })
+  // Build ffmpeg crop expression that interpolates smoothly.
+  // For each keyframe, we compute the transition ramp in/out and interpolate
+  // crop parameters. Uses piecewise linear interpolation via nested if().
+  //
+  // crop=w:h:x:y where each parameter is a time-based expression.
+  // 'iw' = input width, 'ih' = input height, 't' = current time in seconds.
+
+  // Build a piecewise expression for the zoom level at time t.
+  // Default level = 1.0 (no zoom). Each keyframe ramps up/down over TRANSITION_SEC.
+  function buildLevelExpr(): string {
+    // Start from 1.0 (no zoom), overlay each keyframe's contribution
+    let expr = '1.0'
+    for (const kf of keyframes) {
+      const rampIn = kf.startSec
+      const rampInEnd = kf.startSec + TRANSITION_SEC
+      const rampOut = kf.endSec - TRANSITION_SEC
+      const rampOutEnd = kf.endSec
+      const delta = kf.level - 1.0
+
+      // Smooth ramp: 0→delta over [rampIn, rampInEnd], hold, delta→0 over [rampOut, rampOutEnd]
+      // Uses smoothstep-like cubic: 3*x^2 - 2*x^3 for x in [0,1]
+      const tIn = `(t-${rampIn.toFixed(3)})/${TRANSITION_SEC.toFixed(3)}`
+      const tOut = `(t-${rampOut.toFixed(3)})/${TRANSITION_SEC.toFixed(3)}`
+      const smoothIn = `(3*pow(${tIn},2)-2*pow(${tIn},3))`
+      const smoothOut = `(1-(3*pow(${tOut},2)-2*pow(${tOut},3)))`
+
+      expr = `${expr}+${delta.toFixed(4)}*if(lt(t,${rampIn.toFixed(3)}),0,if(lt(t,${rampInEnd.toFixed(3)}),${smoothIn},if(lt(t,${rampOut.toFixed(3)}),1,if(lt(t,${rampOutEnd.toFixed(3)}),${smoothOut},0))))`
     }
-    // Zoomed segment
-    segments.push({ startSec, endSec, zoom: sub.zoom })
-    cursor = endSec
-  }
-  // Remaining after last zoom
-  if (cursor < videoDuration - 0.1) {
-    segments.push({ startSec: cursor, endSec: videoDuration })
+    return expr
   }
 
-  if (segments.length === 0) {
-    return sourceVideo // No zoom needed
-  }
+  // Build piecewise expression for center X at time t (as fraction 0-1).
+  // Default center = 0.5. Each keyframe shifts center to its target.
+  function buildCenterExpr(axis: 'x' | 'y'): string {
+    let expr = '0.5'
+    for (const kf of keyframes) {
+      const target = axis === 'x' ? kf.x : kf.y
+      const delta = target - 0.5
+      if (Math.abs(delta) < 0.001) continue
 
-  // Render each segment
-  const segmentPaths: string[] = []
-  for (let i = 0; i < segments.length; i++) {
-    const seg = segments[i]!
-    const segPath = path.join(tmpDir, `zoom-seg-${i}.mp4`)
-    segmentPaths.push(segPath)
+      const rampIn = kf.startSec
+      const rampInEnd = kf.startSec + TRANSITION_SEC
+      const rampOut = kf.endSec - TRANSITION_SEC
+      const rampOutEnd = kf.endSec
 
-    const args = ['-y', '-i', sourceVideo, '-ss', String(seg.startSec), '-to', String(seg.endSec)]
+      const tIn = `(t-${rampIn.toFixed(3)})/${TRANSITION_SEC.toFixed(3)}`
+      const tOut = `(t-${rampOut.toFixed(3)})/${TRANSITION_SEC.toFixed(3)}`
+      const smoothIn = `(3*pow(${tIn},2)-2*pow(${tIn},3))`
+      const smoothOut = `(1-(3*pow(${tOut},2)-2*pow(${tOut},3)))`
 
-    if (seg.zoom) {
-      const z = seg.zoom
-      const cropW = Math.round(width / z.level)
-      const cropH = Math.round(height / z.level)
-      const cx = Math.round(z.x * width)
-      const cy = Math.round(z.y * height)
-      const cropX = Math.max(0, Math.min(cx - cropW / 2, width - cropW))
-      const cropY = Math.max(0, Math.min(cy - cropH / 2, height - cropH))
-
-      args.push('-vf', `crop=${cropW}:${cropH}:${Math.round(cropX)}:${Math.round(cropY)},scale=${width}:${height}`)
-    } else {
-      args.push('-vf', `scale=${width}:${height}`)
+      expr = `${expr}+${delta.toFixed(4)}*if(lt(t,${rampIn.toFixed(3)}),0,if(lt(t,${rampInEnd.toFixed(3)}),${smoothIn},if(lt(t,${rampOut.toFixed(3)}),1,if(lt(t,${rampOutEnd.toFixed(3)}),${smoothOut},0))))`
     }
-
-    args.push('-c:v', 'libx264', '-preset', 'fast', '-crf', '18', '-an', segPath)
-    ffmpeg(args)
+    return expr
   }
 
-  // Concatenate segments
-  const concatFile = path.join(tmpDir, 'zoom-concat.txt')
-  fs.writeFileSync(concatFile, segmentPaths.map((p) => `file '${p}'`).join('\n'))
+  const levelExpr = buildLevelExpr()
+  const cxExpr = buildCenterExpr('x')
+  const cyExpr = buildCenterExpr('y')
 
-  const concatOutput = path.join(tmpDir, 'zoom-combined.mp4')
-  ffmpeg(['-y', '-f', 'concat', '-safe', '0', '-i', concatFile, '-c', 'copy', concatOutput])
+  // crop width = iw / level, crop height = ih / level
+  // crop x = cx * iw - cropW/2, clamped to [0, iw - cropW]
+  // crop y = cy * ih - cropH/2, clamped to [0, ih - cropH]
+  const cropFilter = [
+    `crop=`,
+    `w='trunc(iw/(${levelExpr})/2)*2'`,  // ensure even dimensions
+    `:h='trunc(ih/(${levelExpr})/2)*2'`,
+    `:x='max(0,min((${cxExpr})*iw-iw/(${levelExpr})/2, iw-iw/(${levelExpr})))'`,
+    `:y='max(0,min((${cyExpr})*ih-ih/(${levelExpr})/2, ih-ih/(${levelExpr})))'`,
+  ].join('')
 
-  return concatOutput
+  const outputPath = path.join(tmpDir, 'zoom-combined.mp4')
+  ffmpeg([
+    '-y', '-i', sourceVideo,
+    '-vf', `${cropFilter},scale=${targetWidth}:${targetHeight}`,
+    '-c:v', 'libx264', '-preset', 'fast', '-crf', '18', '-an',
+    outputPath,
+  ])
+
+  return outputPath
 }
 
 /**
