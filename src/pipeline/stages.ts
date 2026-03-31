@@ -4,6 +4,7 @@ import type { SubtitleOptions } from '../types/subtitle.js'
 import type { TtsProvider } from '../types/voiceover.js'
 import type { RenderConfig } from '../types/render.js'
 import type { TextProcessingConfig } from '../types/text-processing.js'
+import type { ClickEffectConfig } from '../types/click-effect.js'
 
 export type StageDescriptor =
   | { type: 'parse' }
@@ -19,6 +20,7 @@ export type StageDescriptor =
   | { type: 'textProcessing'; config: TextProcessingConfig }
   | { type: 'autoZoom'; config: AutoZoomConfig }
   | { type: 'enrichZoomFromReport'; steps: Array<{ zoom?: { x: number; y: number; level: number } | null }> }
+  | { type: 'clickEffect'; config: ClickEffectConfig }
   | { type: 'voiceover'; provider: TtsProvider }
   | { type: 'render'; config: RenderConfig }
 

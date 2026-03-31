@@ -4,6 +4,7 @@ import type { SubtitleOptions } from '../types/subtitle.js'
 import type { TtsProvider } from '../types/voiceover.js'
 import type { RenderConfig } from '../types/render.js'
 import type { TextProcessingConfig } from '../types/text-processing.js'
+import type { ClickEffectConfig } from '../types/click-effect.js'
 import type { StageDescriptor, AutoZoomConfig } from './stages.js'
 import { PipelineExecutor } from './executor.js'
 
@@ -100,6 +101,15 @@ export class Pipeline {
     steps: Array<{ zoom?: { x: number; y: number; level: number } | null }>,
   ): Pipeline {
     return this.addStage({ type: 'enrichZoomFromReport', steps })
+  }
+
+  /**
+   * Add click highlighting effects to the video.
+   * Renders animated ripple at each click position with optional sound.
+   * Requires parse() first (needs trace actions with cursor positions).
+   */
+  clickEffect(config: ClickEffectConfig = {}): Pipeline {
+    return this.addStage({ type: 'clickEffect', config })
   }
 
   /** Generate voiceover audio from subtitles using a TTS provider */
