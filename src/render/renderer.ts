@@ -7,6 +7,7 @@ import type { SubtitleEntry } from '../types/subtitle.js'
 import type { SpeedSegment } from '../types/speed.js'
 import type { ParsedTrace } from '../types/trace.js'
 import type { ClickEvent } from '../types/click-effect.js'
+import { generateRippleClip } from '../click-effect/ripple-generator.js'
 import { writeSrt } from '../subtitles/srt-writer.js'
 import { writeAss } from '../subtitles/ass-writer.js'
 import { chunkSubtitles } from '../subtitles/subtitle-chunker.js'
@@ -305,6 +306,86 @@ function renderWithZoom(
 }
 
 /**
+ * Apply click ripple overlays to the video.
+ * For each click event, overlays a pre-generated transparent ripple clip
+ * at the click position/time using ffmpeg movie filter + overlay.
+ */
+function renderWithClickEffects(
+  sourceVideo: string,
+  clickEvents: ClickEvent[],
+  config: { color: string; opacity: number; radius: number; duration: number },
+  viewport: { width: number; height: number },
+  tmpDir: string,
+): string {
+  if (clickEvents.length === 0) return sourceVideo
+
+  const srcRes = probeResolution(sourceVideo)
+  // Scale factor: radius is relative to 1080p
+  const scaleFactor = srcRes.height / 1080
+
+  // Generate the ripple clip once
+  const ripplePath = path.join(tmpDir, 'ripple.mov')
+  generateRippleClip({
+    color: config.color,
+    opacity: config.opacity,
+    radius: config.radius,
+    duration: config.duration,
+    outputPath: ripplePath,
+    scaleFactor,
+  })
+
+  const scaledRadius = Math.round(config.radius * scaleFactor)
+  const rippleSize = scaledRadius * 2
+  const s = rippleSize % 2 === 0 ? rippleSize : rippleSize + 1
+  const halfSize = s / 2
+
+  // Scale coordinates from viewport to source resolution
+  const scaleX = srcRes.width / viewport.width
+  const scaleY = srcRes.height / viewport.height
+
+  // Build filter_complex with movie sources for each click.
+  // Each movie instance creates an independent stream positioned at the click time.
+  const filterParts: string[] = []
+  let prevLabel = '0:v'
+
+  for (let i = 0; i < clickEvents.length; i++) {
+    const click = clickEvents[i]!
+    const cx = Math.round(click.x * scaleX)
+    const cy = Math.round(click.y * scaleY)
+    const timeSec = (click.videoTimeMs / 1000).toFixed(3)
+    const outLabel = `v${i}`
+    const rippleLabel = `r${i}`
+
+    // movie filter: read ripple, shift PTS to click time
+    const escapedPath = ripplePath.replace(/'/g, "'\\''").replace(/\\/g, '\\\\')
+    filterParts.push(
+      `movie='${escapedPath}',setpts=PTS+${timeSec}/TB,format=rgba[${rippleLabel}]`,
+    )
+    // Overlay at click position (centered)
+    const ox = Math.max(0, cx - Math.round(halfSize))
+    const oy = Math.max(0, cy - Math.round(halfSize))
+    filterParts.push(
+      `[${prevLabel}][${rippleLabel}]overlay=${ox}:${oy}:eof_action=pass:format=auto[${outLabel}]`,
+    )
+    prevLabel = outLabel
+  }
+
+  const outputPath = path.join(tmpDir, 'click-overlay.mp4')
+
+  console.log(`  Click overlay: ${clickEvents.length} ripples via movie+overlay`)
+
+  ffmpeg([
+    '-y', '-i', sourceVideo,
+    '-filter_complex', filterParts.join(';'),
+    '-map', `[${prevLabel}]`,
+    '-c:v', 'libx264', '-preset', 'fast', '-crf', '18', '-an',
+    outputPath,
+  ])
+
+  return outputPath
+}
+
+/**
  * Apply speed segments to video: split into chunks, apply speed factor
  * with setpts, concatenate back together.
  *
@@ -430,6 +511,17 @@ export function renderVideo(
       trace.subtitles,
       resolution.width,
       resolution.height,
+      tmpDir,
+    )
+  }
+
+  // Phase 3.5: Apply click effect overlays
+  if (trace.clickEvents && trace.clickEvents.length > 0 && trace.clickEffectConfig) {
+    videoInput = renderWithClickEffects(
+      videoInput,
+      trace.clickEvents,
+      trace.clickEffectConfig,
+      trace.metadata.viewport,
       tmpDir,
     )
   }
