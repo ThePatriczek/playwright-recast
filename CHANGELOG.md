@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.6.0 (2026-03-31)
+
+### Features
+
+- **Click effect stage** — New `.clickEffect(config)` pipeline stage renders animated ripple highlights at click positions in the output video. Visual ripple uses an expanding circle with configurable color, opacity, radius, and duration. Fades out over the animation period.
+- **Click sound** — Optional click sound mixed into the audio track. Bundled default click sound or custom audio file via `sound` config option. Volume adjustable via `soundVolume`.
+- **Click filtering** — Filter which clicks to highlight via `filter` callback on `ClickEffectConfig`. Only `click` and `selectOption` actions with cursor coordinates are detected.
+- **Speed-aware timing** — Click timestamps are automatically remapped through speed processing so ripples appear at the correct video time.
+- **CLI flags** — `--click-effect` enables with defaults, `--click-effect-config <path>` loads full JSON config, `--click-sound <path>` sets custom sound file.
+
+### Architecture
+
+- Click events extracted from parsed trace in executor, stored as `ClickEvent[]` (viewport px + video time ms)
+- Ripple clip generated once via ffmpeg lavfi (geq circle + fade=out:alpha=1), overlaid per-click using `movie` + `setpts` + `overlay` filter chain
+- Sound track built via silence + click sound concat, mixed with voiceover via `amix`
+
 ## 0.5.0 (2026-03-31)
 
 ### Features

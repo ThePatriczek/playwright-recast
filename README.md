@@ -48,6 +48,7 @@ await Recast
 - **Subtitle generation** — SRT, WebVTT, and ASS output. Import external SRT or generate from trace BDD step titles.
 - **Styled subtitle burn-in** — Configurable font, size, color, background box with opacity, padding, position. Smart punctuation-based chunking for single-line display.
 - **playwright-bdd support** — First-class integration with playwright-bdd Gherkin steps. Doc strings become voiceover narration.
+- **Click highlighting** — Animated ripple effect at click positions with optional click sound. Configurable color, opacity, radius, duration.
 - **Step helpers** — `narrate()`, `zoom()`, `pace()` — importable helpers for Playwright step definitions.
 - **CLI included** — `npx playwright-recast -i trace.zip -o demo.mp4` — no code needed.
 - **Zero lock-in** — Every stage is optional. Use just the trace parser, just the subtitle generator, or the full pipeline.
@@ -190,6 +191,7 @@ Every stage is optional and composable:
 | `.textProcessing(config)` | Sanitize subtitle text before TTS (strip quotes, normalize dashes, custom rules) |
 | `.autoZoom(config)` | Auto-zoom to user input actions (fill/type) with smooth fade transitions |
 | `.enrichZoomFromReport(steps)` | Apply zoom coordinates from external report data |
+| `.clickEffect(config)` | Add visual ripple + optional click sound at click positions |
 | `.voiceover(provider)` | Generate TTS audio from subtitle text |
 | `.render(config)` | Render final video (format, resolution, fps, styled subtitle burn-in) |
 | `.toFile(path)` | Execute pipeline and write output |
@@ -375,6 +377,45 @@ The renderer applies zoom by cropping the video to `(width/level × height/level
 
 ---
 
+## Click Effect
+
+Highlight click actions with animated ripple effects and optional click sounds.
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .clickEffect({
+    color: '#3B82F6',    // Ripple color (hex, default: blue)
+    opacity: 0.5,        // Ripple opacity 0.0–1.0
+    radius: 30,          // Max radius in px (relative to 1080p)
+    duration: 400,       // Animation duration in ms
+    sound: true,         // true = bundled default, or path to custom audio
+    soundVolume: 0.8,    // Sound volume 0.0–1.0
+  })
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+The click effect stage automatically detects `click` and `selectOption` actions from the Playwright trace. Timestamps are remapped through speed processing so ripples appear at the correct video time.
+
+**Filtering clicks:**
+
+```typescript
+.clickEffect({
+  filter: (action) => action.method === 'click', // Only clicks, not selectOption
+})
+```
+
+**CLI:**
+```bash
+npx playwright-recast -i ./traces --click-effect
+npx playwright-recast -i ./traces --click-effect --click-sound click.mp3
+npx playwright-recast -i ./traces --click-effect-config config.json
+```
+
+---
+
 ## Speed Processing
 
 The speed processor classifies every moment of the trace:
@@ -425,7 +466,8 @@ await base.subtitlesFromSrt('./cs.srt').render({ burnSubtitles: true }).toFile('
 
 ## Roadmap
 
-- [ ] **Smooth zoom transitions** — Animated easing between zoom states (currently hard-cut)
+- [x] ~~**Smooth zoom transitions**~~ — Done in v0.5.0
+- [x] ~~**Click highlighting**~~ — Done in v0.6.0
 - [ ] **Edge TTS provider** — Free TTS without API key using Microsoft Edge's online voices
 - [ ] **Playwright Reporter plugin** — Auto-generate demo videos as part of your test run
 - [ ] **Multi-language support** — Generate video variants from the same trace with different SRT/voiceover per language
