@@ -6,6 +6,7 @@ import { resolveResolution } from '../types/render.js'
 import type { SubtitleEntry } from '../types/subtitle.js'
 import type { SpeedSegment } from '../types/speed.js'
 import type { ParsedTrace } from '../types/trace.js'
+import type { ClickEvent } from '../types/click-effect.js'
 import { writeSrt } from '../subtitles/srt-writer.js'
 import { writeAss } from '../subtitles/ass-writer.js'
 import { chunkSubtitles } from '../subtitles/subtitle-chunker.js'
@@ -60,6 +61,8 @@ export interface RenderableTrace extends ParsedTrace {
   subtitles?: SubtitleEntry[]
   voiceover?: { audioTrackPath: string; entries: unknown[]; totalDurationMs: number }
   speedSegments?: SpeedSegment[]
+  clickEvents?: ClickEvent[]
+  clickEffectConfig?: { color: string; opacity: number; radius: number; duration: number; soundVolume: number; sound?: string | true }
 }
 
 function ffmpeg(args: string[]): void {
