@@ -24,7 +24,15 @@ export type StageDescriptor =
 
 /** Auto-zoom configuration */
 export interface AutoZoomConfig {
-  actionLevel?: number
+  /** Zoom level for click actions (default: 1.5) */
+  clickLevel?: number
+  /** Zoom level for fill/type actions (default: 1.6) */
+  inputLevel?: number
+  /** Zoom level for steps without user actions (default: 1.0 = no zoom) */
   idleLevel?: number
+  /** Bias zoom center toward viewport center (0 = raw coords, 1 = always center). Default: 0.2 */
+  centerBias?: number
+  /** @deprecated Use clickLevel instead */
+  actionLevel?: number
   followCursor?: boolean
 }

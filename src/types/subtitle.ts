@@ -8,6 +8,10 @@ export interface StepZoom {
   y: number
   /** Zoom level (1.0 = no zoom, 2.0 = 2x zoom) */
   level: number
+  /** Zoom window start in ms (absolute video time). If set, zoom applies only during this window, not the full subtitle. */
+  startMs?: number
+  /** Zoom window end in ms (absolute video time). */
+  endMs?: number
 }
 
 /** A single subtitle entry */

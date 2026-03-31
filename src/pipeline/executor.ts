@@ -294,42 +294,97 @@ export class PipelineExecutor {
           if (!state.subtitled) throw new Error('autoZoom() requires subtitles() first')
           if (!state.parsed) throw new Error('autoZoom() requires parse() first')
 
-          const actionLevel = stage.config.actionLevel ?? 1.5
+          const clickLevel = stage.config.clickLevel ?? stage.config.actionLevel ?? 1.5
+          const inputLevel = stage.config.inputLevel ?? 1.6
+          const idleLevel = stage.config.idleLevel ?? 1.0
+          const centerBias = stage.config.centerBias ?? 0.2
           const viewport = state.parsed.metadata.viewport
 
-          // Use the first screencast frame timestamp as video t=0.
-          // This is the most reliable clock reference for the recording context.
           const firstFrameTime = state.parsed.frames.length > 0
             ? (state.parsed.frames[0]!.timestamp as number)
             : (state.parsed.metadata.startTime as number)
 
-          // Find click/fill actions and compute their video-relative time
-          const USER_METHODS = new Set(['click', 'fill', 'type', 'press', 'selectOption'])
-          const clickActions = state.parsed.actions
-            .filter((a) => USER_METHODS.has(a.method))
+          const INPUT_METHODS = new Set(['fill', 'type', 'press'])
+          const CLICK_METHODS = new Set(['click', 'selectOption'])
+          const ALL_METHODS = new Set([...INPUT_METHODS, ...CLICK_METHODS])
+
+          // All user actions with video-relative timing (ms)
+          const allActions = state.parsed.actions
             .map((a) => ({
-              action: a,
-              videoTimeSec: ((a.startTime as number) - firstFrameTime) / 1000,
-              point: a.point,
+              method: a.method,
+              videoStartMs: Math.round(((a.startTime as number) - firstFrameTime)),
+              videoEndMs: Math.round(((a.endTime as number) - firstFrameTime)),
+              point: a.point as { x: number; y: number } | undefined,
+              isInput: INPUT_METHODS.has(a.method),
+              isUser: ALL_METHODS.has(a.method),
             }))
-            .filter((a) => a.videoTimeSec >= 0)
+            .filter((a) => a.videoStartMs >= 0)
+
+          const userActions = allActions.filter((a) => a.isUser)
+          const pointActions = userActions.filter((a) => a.point)
 
           for (const subtitle of state.subtitled.subtitles) {
-            const subStartSec = subtitle.startMs / 1000
-            const subEndSec = subtitle.endMs / 1000
+            if (subtitle.zoom) continue // already set by enrichZoomFromReport
 
-            // Find actions with cursor points that fall within this subtitle
-            const matching = clickActions.filter(
-              (a) => a.videoTimeSec >= subStartSec - 1 && a.videoTimeSec <= subEndSec + 1 && a.point,
+            // Find input actions (fill/type) within this subtitle window
+            const inputActions = userActions.filter(
+              (a) => a.isInput &&
+                a.videoStartMs >= subtitle.startMs - 1000 &&
+                a.videoStartMs <= subtitle.endMs + 1000,
             )
 
-            if (matching.length > 0) {
-              const best = matching[0]!
-              subtitle.zoom = {
-                x: best.point!.x / viewport.width,
-                y: best.point!.y / viewport.height,
-                level: actionLevel,
+            // Find click actions within this subtitle window
+            const clickActions = userActions.filter(
+              (a) => !a.isInput &&
+                a.videoStartMs >= subtitle.startMs - 1000 &&
+                a.videoStartMs <= subtitle.endMs + 1000,
+            )
+
+            const hasInput = inputActions.length > 0
+            const hasClick = clickActions.length > 0
+            const level = hasInput ? inputLevel : hasClick ? clickLevel : idleLevel
+
+            if (level <= 1.0) continue
+
+            // Determine zoom target and window from the trace
+            const targetAction = hasInput ? inputActions[0]! : clickActions[0]!
+
+            // Zoom window: from action start to next user action (or subtitle end).
+            // This follows the trace rhythm — zoom holds while element is visible.
+            const zoomStartMs = targetAction.videoStartMs
+            const nextAction = userActions.find((a) => a.videoStartMs > targetAction.videoStartMs + 100)
+            const zoomEndMs = nextAction
+              ? Math.min(nextAction.videoStartMs, subtitle.endMs)
+              : subtitle.endMs
+
+            // Skip if zoom window is too short (<500ms)
+            if (zoomEndMs - zoomStartMs < 500) continue
+
+            // Find best cursor coordinates
+            let bestPoint: { x: number; y: number } | undefined
+
+            if (targetAction.point) {
+              bestPoint = targetAction.point
+            } else {
+              // No point on this action — find nearest action with coordinates
+              const nearest = pointActions
+                .map((a) => ({ ...a, dist: Math.abs(a.videoStartMs - targetAction.videoStartMs) }))
+                .sort((a, b) => a.dist - b.dist)
+              if (nearest.length > 0 && nearest[0]!.dist < 10000) {
+                bestPoint = nearest[0]!.point
               }
+            }
+
+            if (!bestPoint) continue
+
+            const rawX = bestPoint.x / viewport.width
+            const rawY = bestPoint.y / viewport.height
+            subtitle.zoom = {
+              x: rawX + (0.5 - rawX) * centerBias,
+              y: rawY + (0.5 - rawY) * centerBias,
+              level,
+              startMs: zoomStartMs,
+              endMs: zoomEndMs,
             }
           }
           break

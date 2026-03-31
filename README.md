@@ -188,7 +188,7 @@ Every stage is optional and composable:
 | `.subtitlesFromSrt(path)` | Load subtitles from an external SRT file |
 | `.subtitlesFromTrace()` | Auto-generate subtitles from BDD step titles in trace |
 | `.textProcessing(config)` | Sanitize subtitle text before TTS (strip quotes, normalize dashes, custom rules) |
-| `.autoZoom(config)` | Auto-zoom to user interaction targets detected from trace |
+| `.autoZoom(config)` | Auto-zoom to user input actions (fill/type) with smooth fade transitions |
 | `.enrichZoomFromReport(steps)` | Apply zoom coordinates from external report data |
 | `.voiceover(provider)` | Generate TTS audio from subtitle text |
 | `.render(config)` | Render final video (format, resolution, fps, styled subtitle burn-in) |
@@ -306,14 +306,18 @@ Zoom into specific areas of the video during steps — focus the viewer's attent
 
 ### Auto-zoom from trace
 
-Automatically zoom into user interaction targets (clicks, fills) detected from the trace:
+Automatically zoom into input elements (fill/type actions) detected from the Playwright trace. Zoom window follows the actual action duration — zooms in when the user starts typing, zooms out when they move on. Smooth fade transitions between zoom states.
 
 ```typescript
 await Recast
   .from('./traces')
   .parse()
   .subtitlesFromSrt('./narration.srt')
-  .autoZoom({ actionLevel: 1.5 })  // 1.5x zoom on detected actions
+  .autoZoom({
+    inputLevel: 1.4,    // zoom level for fill/type actions
+    clickLevel: 1.0,    // 1.0 = no zoom on clicks (default)
+    centerBias: 0.3,    // blend coordinates toward center (0–1)
+  })
   .render({ format: 'mp4' })
   .toFile('demo.mp4')
 ```
