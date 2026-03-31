@@ -76,11 +76,34 @@ npx playwright-recast -i ./traces --srt narration.srt --burn-subs
 | `.subtitles(textFn)` | Generate subtitles from trace actions |
 | `.subtitlesFromSrt(path)` | Load external SRT file |
 | `.subtitlesFromTrace()` | Auto-generate from BDD step titles |
+| `.textProcessing(config)` | Sanitize subtitle text for TTS (strip quotes, normalize dashes, custom rules) |
 | `.autoZoom(config)` | Auto-zoom to user interaction targets from trace |
 | `.enrichZoomFromReport(steps)` | Apply zoom coordinates from external report data |
 | `.voiceover(provider)` | Generate TTS from subtitle text |
 | `.render(config)` | Configure output format/resolution/fps/subtitle styling |
 | `.toFile(path)` | Execute pipeline and save output |
+
+## Text Processing
+
+Sanitize subtitle text before TTS. Writes to `ttsText` field — voiceover uses cleaned text, burnt-in subtitles keep original.
+
+```typescript
+// Built-in sanitization (smart quotes, dashes, ellipsis, whitespace)
+.textProcessing({ builtins: true })
+
+// Custom regex rules + built-ins
+.textProcessing({
+  builtins: true,
+  rules: [{ pattern: '\\bNSS\\b', flags: 'g', replacement: 'Nejvyšší správní soud' }],
+})
+
+// Programmatic transform
+.textProcessing({ transform: (text) => text.replace(/\[.*?\]/g, '') })
+```
+
+**CLI:** `--text-processing` for built-ins, `--text-processing-config <path>` for JSON rules file.
+
+**Standalone:** `import { processText } from 'playwright-recast'` for use outside the pipeline.
 
 ## TTS Providers
 
