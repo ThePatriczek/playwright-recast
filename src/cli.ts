@@ -27,6 +27,9 @@ OPTIONS
       --format         Output format: mp4 | webm (default: mp4)
       --resolution     Output resolution: 720p | 1080p (default: 1080p)
       --burn-subs      Burn subtitles into video
+      --click-effect       Enable click highlighting with default config
+      --click-effect-config <path>  JSON config for click effects
+      --click-sound <path> Custom click sound audio file
   -h, --help           Show this help message
 
 EXAMPLES
@@ -59,6 +62,9 @@ async function main(): Promise<void> {
       'text-processing': { type: 'boolean', default: false },
       'text-processing-config': { type: 'string' },
       'burn-subs': { type: 'boolean', default: false },
+      'click-effect': { type: 'boolean', default: false },
+      'click-effect-config': { type: 'string' },
+      'click-sound': { type: 'string' },
       help: { type: 'boolean', short: 'h', default: false },
     },
     strict: true,
@@ -117,6 +123,24 @@ async function main(): Promise<void> {
     pipeline = pipeline.textProcessing(config)
   } else if (values['text-processing']) {
     pipeline = pipeline.textProcessing({ builtins: true })
+  }
+
+  // Click effect
+  if (values['click-effect-config']) {
+    const raw = fs.readFileSync(values['click-effect-config'], 'utf-8')
+    const clickConfig = JSON.parse(raw)
+    if (values['click-sound']) {
+      clickConfig.sound = values['click-sound']
+    }
+    pipeline = pipeline.clickEffect(clickConfig)
+  } else if (values['click-effect']) {
+    const clickConfig: Record<string, unknown> = {}
+    if (values['click-sound']) {
+      clickConfig.sound = values['click-sound']
+    }
+    pipeline = pipeline.clickEffect(clickConfig)
+  } else if (values['click-sound']) {
+    pipeline = pipeline.clickEffect({ sound: values['click-sound'] })
   }
 
   // Voiceover

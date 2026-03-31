@@ -17,6 +17,8 @@ import { processText } from '../text-processing/text-processor.js'
 import { writeSrt } from '../subtitles/srt-writer.js'
 import { writeVtt } from '../subtitles/vtt-writer.js'
 import { assertFfmpegAvailable } from '../utils/ffmpeg.js'
+import type { ClickEvent } from '../types/click-effect.js'
+import { resolveClickEffectConfig } from '../click-effect/defaults.js'
 
 type PipelineState = {
   parsed?: ParsedTrace
@@ -26,6 +28,8 @@ type PipelineState = {
   voiceovered?: VoiceoveredTrace
   sourceVideoPath?: string
   _blankTrimApplied?: boolean
+  clickEvents?: ClickEvent[]
+  clickEffectConfig?: ReturnType<typeof resolveClickEffectConfig>
 }
 
 /**
@@ -64,6 +68,8 @@ export class PipelineExecutor {
       subtitles: state.subtitled?.subtitles,
       voiceover: state.voiceovered?.voiceover,
       speedSegments: state.speedMapped?.speedSegments,
+      clickEvents: state.clickEvents,
+      clickEffectConfig: state.clickEffectConfig,
     }
 
     // Render final video
@@ -387,6 +393,58 @@ export class PipelineExecutor {
               endMs: zoomEndMs,
             }
           }
+          break
+        }
+
+        case 'clickEffect': {
+          if (!state.parsed) throw new Error('clickEffect() requires parse() first')
+
+          const config = resolveClickEffectConfig(stage.config)
+          const CLICK_METHODS = new Set(['click', 'selectOption'])
+
+          // Extract click actions with coordinates
+          let clickActions = state.parsed.actions.filter(
+            (a) => CLICK_METHODS.has(a.method) && a.point,
+          )
+
+          // Apply user filter if configured
+          if (stage.config.filter) {
+            clickActions = clickActions.filter(stage.config.filter)
+          }
+
+          // Base time for video-relative timestamps
+          const firstFrameTime = state.parsed.frames.length > 0
+            ? (state.parsed.frames[0]!.timestamp as number)
+            : (state.parsed.metadata.startTime as number)
+
+          // Remap to video time
+          const clickEvents: ClickEvent[] = clickActions.map((action) => {
+            const traceTimeMs = action.startTime as number
+            let videoTimeMs: number
+
+            if (state.speedMapped && state.speedMapped.speedSegments.length > 0) {
+              // Remap through speed processing
+              const recPageId = state.parsed!.frames.length > 0
+                ? state.parsed!.frames[state.parsed!.frames.length - 1]!.pageId : undefined
+              const recFrames = recPageId
+                ? state.parsed!.frames.filter(f => f.pageId === recPageId) : state.parsed!.frames
+              const firstRecFrameMs = recFrames[0]?.timestamp as number ?? firstFrameTime
+              const videoStartOutput = state.speedMapped.timeRemap(toMonotonic(firstRecFrameMs))
+              videoTimeMs = state.speedMapped.timeRemap(toMonotonic(traceTimeMs)) - videoStartOutput
+            } else {
+              videoTimeMs = traceTimeMs - firstFrameTime
+            }
+
+            return {
+              x: action.point!.x,
+              y: action.point!.y,
+              videoTimeMs: Math.max(0, Math.round(videoTimeMs)),
+            }
+          })
+
+          state.clickEvents = clickEvents
+          state.clickEffectConfig = config
+          console.log(`  clickEffect: ${clickEvents.length} clicks detected`)
           break
         }
 

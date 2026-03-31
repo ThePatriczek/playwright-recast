@@ -165,4 +165,31 @@ describe('Pipeline (fluent chain)', () => {
       'render',
     ])
   })
+
+  it('adds clickEffect stage with config', () => {
+    const config = { color: '#FF0000', radius: 50, sound: true as const }
+    const pipeline = Recast.from('./trace.zip')
+      .parse()
+      .clickEffect(config)
+      .render()
+
+    const stages = pipeline.getStages()
+    const clickStage = stages.find(s => s.type === 'clickEffect')
+    expect(clickStage).toBeDefined()
+    if (clickStage?.type === 'clickEffect') {
+      expect(clickStage.config.color).toBe('#FF0000')
+      expect(clickStage.config.radius).toBe(50)
+      expect(clickStage.config.sound).toBe(true)
+    }
+  })
+
+  it('clickEffect defaults to empty config', () => {
+    const pipeline = Recast.from('./trace.zip').parse().clickEffect()
+    const stages = pipeline.getStages()
+    const clickStage = stages.find(s => s.type === 'clickEffect')
+    expect(clickStage).toBeDefined()
+    if (clickStage?.type === 'clickEffect') {
+      expect(clickStage.config).toEqual({})
+    }
+  })
 })

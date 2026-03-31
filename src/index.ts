@@ -58,6 +58,9 @@ export type {
   TextProcessingRule,
 } from './types/text-processing.js'
 
+// Click effect
+export type { ClickEffectConfig, ClickEvent } from './types/click-effect.js'
+
 // Subtitle writers & utilities
 export { writeAss, hexToAss } from './subtitles/ass-writer.js'
 export type { AssResolution } from './subtitles/ass-writer.js'
