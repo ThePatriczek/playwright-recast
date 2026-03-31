@@ -79,6 +79,7 @@ npx playwright-recast -i ./traces --srt narration.srt --burn-subs
 | `.textProcessing(config)` | Sanitize subtitle text for TTS (strip quotes, normalize dashes, custom rules) |
 | `.autoZoom(config)` | Auto-zoom to user interaction targets from trace |
 | `.enrichZoomFromReport(steps)` | Apply zoom coordinates from external report data |
+| `.clickEffect(config)` | Visual ripple + optional click sound at click positions |
 | `.voiceover(provider)` | Generate TTS from subtitle text |
 | `.render(config)` | Configure output format/resolution/fps/subtitle styling |
 | `.toFile(path)` | Execute pipeline and save output |
@@ -170,6 +171,26 @@ await zoom(page.locator('.sidebar'), 1.3)
 ```
 
 Coordinates: `x` and `y` are viewport fractions (0.0–1.0), `level` is zoom factor (1.0 = none, 2.0 = 2x).
+
+## Click Effect
+
+Highlight clicks with animated ripple and optional sound:
+
+```typescript
+.clickEffect({
+  color: '#3B82F6',    // Ripple color (hex, default: blue)
+  opacity: 0.5,        // 0.0–1.0 (default: 0.5)
+  radius: 30,          // Max radius px at 1080p (default: 30)
+  duration: 400,       // Animation ms (default: 400)
+  sound: true,         // true = bundled default, or path to custom audio
+  soundVolume: 0.8,    // 0.0–1.0 (default: 0.8)
+  filter: (a) => a.method === 'click', // Optional: filter which clicks
+})
+```
+
+Detects `click` and `selectOption` actions with cursor coordinates. Timestamps auto-remapped through speed processing.
+
+**CLI:** `--click-effect`, `--click-effect-config <path>`, `--click-sound <path>`.
 
 ## Styled Subtitle Burn-in
 
