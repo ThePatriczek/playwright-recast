@@ -3,6 +3,7 @@ import type { SpeedConfig } from '../types/speed.js'
 import type { SubtitleOptions } from '../types/subtitle.js'
 import type { TtsProvider } from '../types/voiceover.js'
 import type { RenderConfig } from '../types/render.js'
+import type { TextProcessingConfig } from '../types/text-processing.js'
 
 export type StageDescriptor =
   | { type: 'parse' }
@@ -15,6 +16,7 @@ export type StageDescriptor =
     }
   | { type: 'subtitlesFromSrt'; srtPath: string }
   | { type: 'subtitlesFromTrace'; options?: SubtitleOptions }
+  | { type: 'textProcessing'; config: TextProcessingConfig }
   | { type: 'autoZoom'; config: AutoZoomConfig }
   | { type: 'enrichZoomFromReport'; steps: Array<{ zoom?: { x: number; y: number; level: number } | null }> }
   | { type: 'voiceover'; provider: TtsProvider }

@@ -3,6 +3,7 @@ import type { SpeedConfig } from '../types/speed.js'
 import type { SubtitleOptions } from '../types/subtitle.js'
 import type { TtsProvider } from '../types/voiceover.js'
 import type { RenderConfig } from '../types/render.js'
+import type { TextProcessingConfig } from '../types/text-processing.js'
 import type { StageDescriptor, AutoZoomConfig } from './stages.js'
 import { PipelineExecutor } from './executor.js'
 
@@ -71,6 +72,15 @@ export class Pipeline {
    */
   subtitlesFromTrace(options?: SubtitleOptions): Pipeline {
     return this.addStage({ type: 'subtitlesFromTrace', options })
+  }
+
+  /**
+   * Process subtitle text before voiceover synthesis.
+   * Applies sanitization rules to clean subtitle text for TTS.
+   * Requires subtitles(), subtitlesFromSrt(), or subtitlesFromTrace() first.
+   */
+  textProcessing(config: TextProcessingConfig): Pipeline {
+    return this.addStage({ type: 'textProcessing', config })
   }
 
   /**

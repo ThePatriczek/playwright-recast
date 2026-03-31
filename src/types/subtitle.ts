@@ -16,6 +16,8 @@ export interface SubtitleEntry {
   startMs: number
   endMs: number
   text: string
+  /** Processed text for TTS synthesis (set by textProcessing stage). Falls back to text if unset. */
+  ttsText?: string
   keyword?: string
   /** Optional zoom instruction for this step */
   zoom?: StepZoom

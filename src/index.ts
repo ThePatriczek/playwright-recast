@@ -50,6 +50,14 @@ export type {
 
 export type { RenderConfig, SubtitleStyle, ZoomKeyframe } from './types/render.js'
 
+// Text processing
+export { processText } from './text-processing/text-processor.js'
+
+export type {
+  TextProcessingConfig,
+  TextProcessingRule,
+} from './types/text-processing.js'
+
 // Subtitle writers & utilities
 export { writeAss, hexToAss } from './subtitles/ass-writer.js'
 export type { AssResolution } from './subtitles/ass-writer.js'

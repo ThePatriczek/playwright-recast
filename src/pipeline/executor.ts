@@ -13,6 +13,7 @@ import { generateSubtitles } from '../subtitles/subtitle-generator.js'
 import { parseSrt } from '../subtitles/srt-parser.js'
 import { generateVoiceover } from '../voiceover/voiceover-processor.js'
 import { renderVideo, detectBlankLeadIn, type RenderableTrace } from '../render/renderer.js'
+import { processText } from '../text-processing/text-processor.js'
 import { writeSrt } from '../subtitles/srt-writer.js'
 import { writeVtt } from '../subtitles/vtt-writer.js'
 import { assertFfmpegAvailable } from '../utils/ffmpeg.js'
@@ -264,6 +265,16 @@ export class PipelineExecutor {
             action.text ?? (action.keyword ? `${action.keyword} ${action.title}` : undefined)
 
           state.subtitled = generateSubtitles(speedMapped, defaultTextFn, stage.options)
+          break
+        }
+
+        case 'textProcessing': {
+          if (!state.subtitled) {
+            throw new Error('textProcessing() requires subtitles() first')
+          }
+          for (const subtitle of state.subtitled.subtitles) {
+            subtitle.ttsText = processText(subtitle.text, stage.config)
+          }
           break
         }
 

@@ -187,6 +187,7 @@ Every stage is optional and composable:
 | `.subtitles(textFn)` | Generate subtitles from trace actions |
 | `.subtitlesFromSrt(path)` | Load subtitles from an external SRT file |
 | `.subtitlesFromTrace()` | Auto-generate subtitles from BDD step titles in trace |
+| `.textProcessing(config)` | Sanitize subtitle text before TTS (strip quotes, normalize dashes, custom rules) |
 | `.autoZoom(config)` | Auto-zoom to user interaction targets detected from trace |
 | `.enrichZoomFromReport(steps)` | Apply zoom coordinates from external report data |
 | `.voiceover(provider)` | Generate TTS audio from subtitle text |
@@ -225,6 +226,45 @@ Burn styled subtitles into the video with full control over appearance:
 **Punctuation-based chunking** splits long subtitle text into shorter single-line entries. Time is distributed proportionally by character count. Splits at sentence boundaries (`. ! ?`) first, then clause boundaries (`, ; :`) if still too long.
 
 Without `subtitleStyle`, `burnSubtitles: true` falls back to default ffmpeg SRT rendering.
+
+---
+
+## Text Processing
+
+Clean subtitle text before sending to TTS providers. Removes typographic characters that cause artifacts in voice synthesis while keeping the original text for visual subtitles.
+
+```typescript
+// Built-in sanitization (strips smart quotes, normalizes dashes, etc.)
+.textProcessing({ builtins: true })
+
+// Custom regex rules
+.textProcessing({
+  builtins: true,
+  rules: [
+    { pattern: '\\bNSS\\b', flags: 'g', replacement: 'Nejvyšší správní soud' },
+  ],
+})
+
+// Programmatic transform
+.textProcessing({
+  transform: (text) => text.replace(/\[.*?\]/g, ''),
+})
+```
+
+**Built-in rules** (when `builtins: true`):
+- Remove double quotes: `„` `"` `"` `"` `«` `»` `"`
+- Remove single quotes: `'` `'` `‚` `‛` `‹` `›`
+- Dashes → comma: `–` `—` → `, `
+- Ellipsis: `…` → `...`
+- Normalize: NBSP → space, collapse whitespace, trim
+
+Text processing writes to `ttsText` — the voiceover uses cleaned text while burnt-in subtitles and SRT/VTT output keep the original `text`.
+
+**CLI:**
+```bash
+npx playwright-recast -i ./traces --text-processing --provider openai
+npx playwright-recast -i ./traces --text-processing-config ./rules.json --provider elevenlabs
+```
 
 ---
 
@@ -359,8 +399,8 @@ The speed processor classifies every moment of the trace:
 
 ```
 Trace.zip → ParsedTrace → FilteredTrace → SpeedMappedTrace → SubtitledTrace → VoiceoveredTrace → MP4
-               ↑               ↑                ↑                  ↑                 ↑              ↑
-            parse()       hideSteps()        speedUp()         subtitles()       voiceover()     render()
+               ↑               ↑                ↑                  ↑       ↑          ↑              ↑
+            parse()       hideSteps()        speedUp()         subtitles() textProcessing() voiceover()  render()
 ```
 
 The pipeline is **lazy** — calling chain methods builds a pipeline description. Nothing executes until `.toFile()` or `.toBuffer()` is called.

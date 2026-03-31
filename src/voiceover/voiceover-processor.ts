@@ -56,9 +56,9 @@ export async function generateVoiceover(
       segmentFiles.push(silencePath)
     }
 
-    // Generate TTS
+    // Generate TTS (use processed text if available, original otherwise)
     const segPath = path.join(tmpDir, `seg-${subtitle.index}.mp3`)
-    const audio = await provider.synthesize(subtitle.text)
+    const audio = await provider.synthesize(subtitle.ttsText ?? subtitle.text)
     fs.writeFileSync(segPath, audio.data)
 
     const audioDuration = getAudioDurationMs(segPath)

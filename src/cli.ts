@@ -1,6 +1,8 @@
 #!/usr/bin/env node
+import * as fs from 'node:fs'
 import { parseArgs } from 'node:util'
 import { Pipeline as Recast } from './pipeline/pipeline.js'
+import type { TextProcessingConfig } from './types/text-processing.js'
 
 const help = `
 playwright-recast — Convert Playwright traces to polished demo videos
@@ -16,6 +18,8 @@ OPTIONS
       --speed-action   Speed for user actions (default: 1.0)
       --speed-network  Speed for network waits (default: 2.0)
       --no-speed       Disable speed processing
+      --text-processing Enable built-in text sanitization for TTS
+      --text-processing-config <path>  JSON config with text processing rules
       --provider       TTS provider: openai | elevenlabs | none (default: none)
       --voice          Voice ID for TTS provider
       --model          Model ID for TTS provider
@@ -52,6 +56,8 @@ async function main(): Promise<void> {
       'tts-speed': { type: 'string' },
       format: { type: 'string' },
       resolution: { type: 'string' },
+      'text-processing': { type: 'boolean', default: false },
+      'text-processing-config': { type: 'string' },
       'burn-subs': { type: 'boolean', default: false },
       help: { type: 'boolean', short: 'h', default: false },
     },
@@ -99,6 +105,18 @@ async function main(): Promise<void> {
     pipeline = pipeline.subtitlesFromSrt(values.srt)
   } else {
     pipeline = pipeline.subtitles((action) => action.docString ?? action.text)
+  }
+
+  // Text processing
+  if (values['text-processing-config']) {
+    const raw = fs.readFileSync(values['text-processing-config'], 'utf-8')
+    const config: TextProcessingConfig = JSON.parse(raw)
+    if (values['text-processing'] && config.builtins === undefined) {
+      config.builtins = true
+    }
+    pipeline = pipeline.textProcessing(config)
+  } else if (values['text-processing']) {
+    pipeline = pipeline.textProcessing({ builtins: true })
   }
 
   // Voiceover

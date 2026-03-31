@@ -122,4 +122,47 @@ describe('Pipeline (fluent chain)', () => {
       expect(renderStage.config).toEqual({})
     }
   })
+
+  it('adds textProcessing stage with config', () => {
+    const config = { builtins: true, rules: [{ pattern: 'a', replacement: 'b' }] }
+    const pipeline = Recast.from('./trace.zip')
+      .parse()
+      .subtitles((s) => s.text)
+      .textProcessing(config)
+
+    const stages = pipeline.getStages()
+    expect(stages).toHaveLength(3)
+    expect(stages[2]!.type).toBe('textProcessing')
+  })
+
+  it('preserves textProcessing config', () => {
+    const config = { builtins: true }
+    const pipeline = Recast.from('./trace.zip')
+      .parse()
+      .subtitles((s) => s.text)
+      .textProcessing(config)
+
+    const stage = pipeline.getStages().find((s) => s.type === 'textProcessing')
+    expect(stage).toBeDefined()
+    if (stage?.type === 'textProcessing') {
+      expect(stage.config).toEqual(config)
+    }
+  })
+
+  it('accumulates textProcessing in correct pipeline position', () => {
+    const pipeline = Recast.from('./trace.zip')
+      .parse()
+      .speedUp({ duringIdle: 4.0 })
+      .subtitles((s) => s.text)
+      .textProcessing({ builtins: true })
+      .render()
+
+    expect(pipeline.getStages().map((s) => s.type)).toEqual([
+      'parse',
+      'speedUp',
+      'subtitles',
+      'textProcessing',
+      'render',
+    ])
+  })
 })
