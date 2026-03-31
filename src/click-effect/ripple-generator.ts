@@ -33,18 +33,14 @@ export function buildRippleArgs(opts: RippleArgs): string[] {
   const durSec = (opts.duration / 1000).toFixed(3)
   const alpha = Math.round(opts.opacity * 255)
 
-  // geq alpha expression:
-  // - expanding circle: radius grows linearly from 0 to max
-  // - fading: overall opacity decreases over time
-  // - soft edge: 3px gradient at circle boundary
-  const alphaExpr = [
-    `if(lte(hypot(X-${center}\\,Y-${center})`,
-    `\\,${scaledRadius}*(t/${durSec}))`,
-    `\\,${alpha}*(1-t/${durSec})*max(0\\,1-max(0\\,hypot(X-${center}\\,Y-${center})-${scaledRadius}*(t/${durSec})+3)/3)`,
-    `\\,0)`,
-  ].join('')
-
-  const lavfiInput = `color=c=black@0:s=${s}x${s}:d=${durSec}:r=30,format=rgba,geq=r=${r}:g=${g}:b=${b}:a='${alphaExpr}'`
+  // geq alpha expression — commas within expression must be escaped as \, for the
+  // filter graph parser. Commas BETWEEN filters (color,format,geq) stay as regular ,.
+  // \\, in JS string → \, in the ffmpeg arg → treated as literal comma in expression.
+  // Simple approach: static filled circle via geq + fade=out:alpha=1 for animation.
+  // Avoids complex nested expressions that break ffmpeg's geq evaluator.
+  const e = '\\,' // escaped comma for geq expression args
+  const circleExpr = `if(lte(hypot(X-${center}${e}Y-${center})${e}${scaledRadius})${e}${alpha}${e}0)`
+  const lavfiInput = `color=c=black@0:s=${s}x${s}:d=${durSec}:r=30,format=rgba,geq=r=${r}:g=${g}:b=${b}:a=${circleExpr},fade=t=out:st=0:d=${durSec}:alpha=1`
 
   return [
     '-y',
