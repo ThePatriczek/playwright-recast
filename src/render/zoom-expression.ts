@@ -67,9 +67,11 @@ export function buildZoomFilter(
   const tVar = `in/${fps}`
 
   // Build expressions for z (zoom level), cx (center x 0..1), cy (center y 0..1)
-  const zExpr = buildTimeExpr(segments, 'level', 1.0, easing, tVar)
-  const cxExpr = buildTimeExpr(segments, 'cx', 0.5, easing, tVar)
-  const cyExpr = buildTimeExpr(segments, 'cy', 0.5, easing, tVar)
+  // Each uses a different st()/ld() register to avoid conflicts — zoompan evaluates
+  // z, x, y sequentially for each frame and they share the register namespace.
+  const zExpr = buildTimeExpr(segments, 'level', 1.0, easing, tVar, 0)
+  const cxExpr = buildTimeExpr(segments, 'cx', 0.5, easing, tVar, 1)
+  const cyExpr = buildTimeExpr(segments, 'cy', 0.5, easing, tVar, 2)
 
   // zoompan x/y: convert center fraction to top-left pixel in zoomed space
   // x = max(0, min(cx * iw * zoom - ow/2, iw * zoom - ow))
@@ -171,6 +173,7 @@ function buildTimeExpr(
   defaultVal: number,
   easing: ResolvedEasing,
   tVar: string,
+  register: number,
 ): string {
   if (segments.length === 0) return String(defaultVal)
 
@@ -191,7 +194,7 @@ function buildTimeExpr(
         parts.push(`if(between(${tVar},${s},${e}),${fromVal},`)
       } else {
         const dur = (seg.endSec - seg.startSec).toFixed(4)
-        const transExpr = buildTransitionExpr(fromVal, toVal, s, dur, easing, tVar)
+        const transExpr = buildTransitionExpr(fromVal, toVal, s, dur, easing, tVar, register)
         parts.push(`if(between(${tVar},${s},${e}),${transExpr},`)
       }
     }
@@ -213,6 +216,7 @@ function buildTransitionExpr(
   durStr: string,
   easing: ResolvedEasing,
   tVar: string,
+  register: number,
 ): string {
   const delta = to - from
   const fromStr = from.toFixed(4)
@@ -220,8 +224,8 @@ function buildTransitionExpr(
 
   if (easing.mode === 'analytic') {
     const p = `(${tVar}-${startSecStr})/${durStr}`
-    const easedP = easing.expr('ld(0)')
-    return `st(0,${p})*0+${fromStr}+(${deltaStr})*${easedP}`
+    const easedP = easing.expr(`ld(${register})`)
+    return `st(${register},${p})*0+${fromStr}+(${deltaStr})*${easedP}`
   }
 
   return buildSampledTransitionExpr(from, to, Number(startSecStr), Number(durStr), easing.fn, tVar)

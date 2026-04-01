@@ -51,6 +51,7 @@ await Recast
 - **Click highlighting** — Animated ripple effect at click positions with optional click sound. Configurable color, opacity, radius, duration.
 - **Cursor overlay** — Animated cursor appears before each click, moves to the click position with ease-out animation, then disappears. Bundled arrow cursor or custom image.
 - **Animated zoom with easing** — Auto-zoom uses customizable easing functions (ease-in-out, ease-out, cubic-bezier, or custom JS functions) with smooth zoom-to-zoom panning.
+- **Frame interpolation** — Smooth out choppy browser recordings with ffmpeg minterpolate. Blend, duplicate, or motion-compensated modes with multi-pass support.
 - **Step helpers** — `narrate()`, `zoom()`, `pace()` — importable helpers for Playwright step definitions.
 - **CLI included** — `npx playwright-recast -i trace.zip -o demo.mp4` — no code needed.
 - **Zero lock-in** — Every stage is optional. Use just the trace parser, just the subtitle generator, or the full pipeline.
@@ -195,6 +196,7 @@ Every stage is optional and composable:
 | `.enrichZoomFromReport(steps)` | Apply zoom coordinates from external report data |
 | `.cursorOverlay(config)` | Animated cursor at click positions (appears, moves, disappears) |
 | `.clickEffect(config)` | Add visual ripple + optional click sound at click positions |
+| `.interpolate(config)` | Frame interpolation for smoother video (ffmpeg minterpolate) |
 | `.voiceover(provider)` | Generate TTS audio from subtitle text |
 | `.render(config)` | Render final video (format, resolution, fps, styled subtitle burn-in) |
 | `.toFile(path)` | Execute pipeline and write output |
@@ -416,6 +418,45 @@ The click effect stage automatically detects `click` and `selectOption` actions 
 npx playwright-recast -i ./traces --click-effect
 npx playwright-recast -i ./traces --click-effect --click-sound click.mp3
 npx playwright-recast -i ./traces --click-effect-config config.json
+```
+
+---
+
+## Frame Interpolation
+
+Generate smooth intermediate frames from choppy browser recordings using ffmpeg's `minterpolate` filter.
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .interpolate({
+    fps: 60,              // Target FPS (default: 60)
+    mode: 'blend',        // 'dup' | 'blend' | 'mci' (default: 'mci')
+    quality: 'balanced',  // 'fast' | 'balanced' | 'quality' (default: 'balanced')
+    passes: 1,            // Multi-pass for smoother results (default: 1)
+  })
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+### Modes
+
+| Mode | Speed | Quality | Description |
+|------|-------|---------|-------------|
+| `dup` | Instant | None | Duplicate frames to reach target FPS |
+| `blend` | Fast | Good | Linear crossfade between frames |
+| `mci` | Slow | Best | Motion-compensated interpolation (CPU-intensive, especially at 4K) |
+
+### Multi-pass
+
+With `passes: 2`, FPS is distributed geometrically across passes (e.g., 25fps -> 39fps -> 60fps). Each pass interpolates already-smoothed frames for a cleaner result.
+
+**CLI:**
+```bash
+npx playwright-recast -i ./traces --interpolate
+npx playwright-recast -i ./traces --interpolate --interpolate-fps 30
+npx playwright-recast -i ./traces --interpolate --interpolate-mode blend --interpolate-passes 2
 ```
 
 ---

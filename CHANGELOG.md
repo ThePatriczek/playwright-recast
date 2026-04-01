@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.8.0 (2026-04-01)
+
+### Features
+
+- **Frame interpolation** — New `.interpolate(config)` pipeline stage generates smooth intermediate frames using ffmpeg's `minterpolate` filter. Three modes: `dup` (duplicate), `blend` (crossfade), `mci` (motion-compensated). Configurable target FPS, quality presets, and multi-pass support for progressively smoother results.
+- **Scene change detection** — Interpolation uses `scd=fdiff` with threshold 5 to detect scene transitions (e.g., navigation, page changes). At scene boundaries, frames are duplicated instead of blended, preventing ghosting artifacts.
+- **Multi-pass interpolation** — `passes` option distributes FPS increase geometrically across multiple passes. Each pass interpolates already-smoothed frames for cleaner output (e.g., 25fps → 39fps → 60fps with `passes: 2`).
+- **CLI flags** — `--interpolate`, `--interpolate-fps`, `--interpolate-mode`, `--interpolate-quality`, `--interpolate-passes`.
+
+### Architecture
+
+- New `src/types/interpolate.ts` — `InterpolateConfig`, `InterpolateMode`, `InterpolateQuality` types
+- New `src/interpolate/interpolator.ts` — `interpolateVideo()`, `buildMinterpolateFilter()`, `computePassFps()`
+- Interpolation runs as Phase 2.5 (after speed processing, before cursor/click/zoom overlays) to operate at source resolution
+
 ## 0.7.1 (2026-04-01)
 
 ### Features

@@ -32,6 +32,11 @@ OPTIONS
       --click-effect       Enable click highlighting with default config
       --click-effect-config <path>  JSON config for click effects
       --click-sound <path> Custom click sound audio file
+      --interpolate        Enable frame interpolation (minterpolate)
+      --interpolate-fps    Target FPS (default: 60)
+      --interpolate-mode   Interpolation mode: dup | blend | mci (default: mci)
+      --interpolate-quality Quality preset: fast | balanced | quality (default: balanced)
+      --interpolate-passes  Number of interpolation passes (default: 1)
   -h, --help           Show this help message
 
 EXAMPLES
@@ -69,6 +74,11 @@ async function main(): Promise<void> {
       'click-effect': { type: 'boolean', default: false },
       'click-effect-config': { type: 'string' },
       'click-sound': { type: 'string' },
+      interpolate: { type: 'boolean', default: false },
+      'interpolate-fps': { type: 'string' },
+      'interpolate-mode': { type: 'string' },
+      'interpolate-quality': { type: 'string' },
+      'interpolate-passes': { type: 'string' },
       help: { type: 'boolean', short: 'h', default: false },
     },
     strict: true,
@@ -153,6 +163,28 @@ async function main(): Promise<void> {
     pipeline = pipeline.clickEffect(clickConfig)
   } else if (values['click-sound']) {
     pipeline = pipeline.clickEffect({ sound: values['click-sound'] })
+  }
+
+  // Frame interpolation
+  if (values.interpolate || values['interpolate-fps'] || values['interpolate-mode'] || values['interpolate-quality']) {
+    const interpolateConfig: Record<string, unknown> = {}
+    if (values['interpolate-fps']) {
+      const fps = Number(values['interpolate-fps'])
+      if (Number.isNaN(fps)) fatal('--interpolate-fps must be a number')
+      interpolateConfig.fps = fps
+    }
+    if (values['interpolate-mode']) {
+      interpolateConfig.mode = values['interpolate-mode']
+    }
+    if (values['interpolate-quality']) {
+      interpolateConfig.quality = values['interpolate-quality']
+    }
+    if (values['interpolate-passes']) {
+      const passes = Number(values['interpolate-passes'])
+      if (Number.isNaN(passes)) fatal('--interpolate-passes must be a number')
+      interpolateConfig.passes = passes
+    }
+    pipeline = pipeline.interpolate(interpolateConfig)
   }
 
   // Voiceover

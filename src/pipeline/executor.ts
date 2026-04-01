@@ -36,6 +36,7 @@ type PipelineState = {
   cursorKeyframes?: CursorKeyframe[]
   cursorOverlayConfig?: ResolvedCursorOverlayConfig
   zoomConfig?: { transitionMs?: number; easing?: import('../types/easing.js').EasingSpec }
+  interpolateConfig?: import('../types/interpolate.js').InterpolateConfig
 }
 
 /**
@@ -79,6 +80,7 @@ export class PipelineExecutor {
       cursorKeyframes: state.cursorKeyframes,
       cursorOverlayConfig: state.cursorOverlayConfig,
       zoomConfig: state.zoomConfig,
+      interpolateConfig: state.interpolateConfig,
     }
 
     // Render final video
@@ -504,6 +506,12 @@ export class PipelineExecutor {
           for (const ce of clickEvents) {
             console.log(`    click: (${ce.x}, ${ce.y}) @ ${ce.videoTimeMs}ms`)
           }
+          break
+        }
+
+        case 'interpolate': {
+          state.interpolateConfig = stage.config
+          console.log(`  interpolate: fps=${stage.config.fps ?? 60}, mode=${stage.config.mode ?? 'mci'}, quality=${stage.config.quality ?? 'balanced'}`)
           break
         }
 

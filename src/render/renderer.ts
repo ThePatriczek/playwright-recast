@@ -18,6 +18,7 @@ import { generateClickSoundTrack, getAudioDurationMs as getClickAudioDurationMs 
 import { writeSrt } from '../subtitles/srt-writer.js'
 import { writeAss } from '../subtitles/ass-writer.js'
 import { chunkSubtitles } from '../subtitles/subtitle-chunker.js'
+import { interpolateVideo } from '../interpolate/interpolator.js'
 
 /**
  * Detect blank/white frames at the start of a video and return the timestamp
@@ -74,6 +75,7 @@ export interface RenderableTrace extends ParsedTrace {
   cursorKeyframes?: CursorKeyframe[]
   cursorOverlayConfig?: ResolvedCursorOverlayConfig
   zoomConfig?: { transitionMs?: number; easing?: import('../types/easing.js').EasingSpec }
+  interpolateConfig?: import('../types/interpolate.js').InterpolateConfig
 }
 
 function ffmpeg(args: string[]): void {
@@ -445,6 +447,13 @@ export function renderVideo(
       ? (recordingFrames[0]!.timestamp as number)
       : (trace.speedSegments[0]!.originalStart as number)
     videoInput = renderWithSpeed(videoInput, trace.speedSegments, firstRecFrameTime, tmpDir)
+  }
+
+  // Phase 2.5: Frame interpolation (on source resolution, before overlays and zoom upscale)
+  if (trace.interpolateConfig) {
+    const interpolatedPath = path.join(tmpDir, 'interpolated.mp4')
+    interpolateVideo(videoInput, interpolatedPath, trace.interpolateConfig)
+    videoInput = interpolatedPath
   }
 
   // Phase 3: Apply cursor overlay (before zoom so overlays follow content through crop)

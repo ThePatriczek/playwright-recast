@@ -217,4 +217,29 @@ describe('Pipeline (fluent chain)', () => {
       expect(stage.config).toEqual({})
     }
   })
+
+  it('adds interpolate stage with config', () => {
+    const config = { fps: 30, mode: 'mci' as const, quality: 'quality' as const }
+    const pipeline = Recast.from('./trace.zip')
+      .parse()
+      .interpolate(config)
+      .render()
+
+    const stage = pipeline.getStages().find(s => s.type === 'interpolate')
+    expect(stage).toBeDefined()
+    if (stage?.type === 'interpolate') {
+      expect(stage.config.fps).toBe(30)
+      expect(stage.config.mode).toBe('mci')
+      expect(stage.config.quality).toBe('quality')
+    }
+  })
+
+  it('interpolate defaults to empty config', () => {
+    const pipeline = Recast.from('./trace.zip').parse().interpolate()
+    const stage = pipeline.getStages().find(s => s.type === 'interpolate')
+    expect(stage).toBeDefined()
+    if (stage?.type === 'interpolate') {
+      expect(stage.config).toEqual({})
+    }
+  })
 })
