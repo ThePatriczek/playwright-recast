@@ -61,6 +61,12 @@ export type {
 // Click effect
 export type { ClickEffectConfig, ClickEvent } from './types/click-effect.js'
 
+// Cursor overlay
+export type { CursorOverlayConfig, CursorKeyframe } from './types/cursor-overlay.js'
+
+// Easing
+export type { EasingSpec, EasingPreset } from './types/easing.js'
+
 // Subtitle writers & utilities
 export { writeAss, hexToAss } from './subtitles/ass-writer.js'
 export type { AssResolution } from './subtitles/ass-writer.js'

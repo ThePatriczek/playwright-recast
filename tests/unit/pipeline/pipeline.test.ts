@@ -192,4 +192,29 @@ describe('Pipeline (fluent chain)', () => {
       expect(clickStage.config).toEqual({})
     }
   })
+
+  it('adds cursorOverlay stage with config', () => {
+    const config = { size: 32, color: '#FF0000', easing: 'linear' as const }
+    const pipeline = Recast.from('./trace.zip')
+      .parse()
+      .cursorOverlay(config)
+      .render()
+
+    const stage = pipeline.getStages().find(s => s.type === 'cursorOverlay')
+    expect(stage).toBeDefined()
+    if (stage?.type === 'cursorOverlay') {
+      expect(stage.config.size).toBe(32)
+      expect(stage.config.color).toBe('#FF0000')
+      expect(stage.config.easing).toBe('linear')
+    }
+  })
+
+  it('cursorOverlay defaults to empty config', () => {
+    const pipeline = Recast.from('./trace.zip').parse().cursorOverlay()
+    const stage = pipeline.getStages().find(s => s.type === 'cursorOverlay')
+    expect(stage).toBeDefined()
+    if (stage?.type === 'cursorOverlay') {
+      expect(stage.config).toEqual({})
+    }
+  })
 })

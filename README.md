@@ -49,6 +49,8 @@ await Recast
 - **Styled subtitle burn-in** — Configurable font, size, color, background box with opacity, padding, position. Smart punctuation-based chunking for single-line display.
 - **playwright-bdd support** — First-class integration with playwright-bdd Gherkin steps. Doc strings become voiceover narration.
 - **Click highlighting** — Animated ripple effect at click positions with optional click sound. Configurable color, opacity, radius, duration.
+- **Cursor overlay** — Animated cursor appears before each click, moves to the click position with ease-out animation, then disappears. Bundled arrow cursor or custom image.
+- **Animated zoom with easing** — Auto-zoom uses customizable easing functions (ease-in-out, ease-out, cubic-bezier, or custom JS functions) with smooth zoom-to-zoom panning.
 - **Step helpers** — `narrate()`, `zoom()`, `pace()` — importable helpers for Playwright step definitions.
 - **CLI included** — `npx playwright-recast -i trace.zip -o demo.mp4` — no code needed.
 - **Zero lock-in** — Every stage is optional. Use just the trace parser, just the subtitle generator, or the full pipeline.
@@ -189,8 +191,9 @@ Every stage is optional and composable:
 | `.subtitlesFromSrt(path)` | Load subtitles from an external SRT file |
 | `.subtitlesFromTrace()` | Auto-generate subtitles from BDD step titles in trace |
 | `.textProcessing(config)` | Sanitize subtitle text before TTS (strip quotes, normalize dashes, custom rules) |
-| `.autoZoom(config)` | Auto-zoom to user input actions (fill/type) with smooth fade transitions |
+| `.autoZoom(config)` | Auto-zoom to user actions with customizable easing transitions |
 | `.enrichZoomFromReport(steps)` | Apply zoom coordinates from external report data |
+| `.cursorOverlay(config)` | Animated cursor at click positions (appears, moves, disappears) |
 | `.clickEffect(config)` | Add visual ripple + optional click sound at click positions |
 | `.voiceover(provider)` | Generate TTS audio from subtitle text |
 | `.render(config)` | Render final video (format, resolution, fps, styled subtitle burn-in) |

@@ -7,6 +7,11 @@ import type { SubtitleEntry } from '../types/subtitle.js'
 import type { SpeedSegment } from '../types/speed.js'
 import type { ParsedTrace } from '../types/trace.js'
 import type { ClickEvent } from '../types/click-effect.js'
+import type { CursorKeyframe } from '../types/cursor-overlay.js'
+import type { ResolvedCursorOverlayConfig } from '../cursor-overlay/defaults.js'
+import { writeDefaultCursorImage } from '../cursor-overlay/defaults.js'
+import { buildOverlayExpressions, buildEnableExpression } from '../cursor-overlay/expression-builder.js'
+import { buildZoomFilter, stepZoomsToKeyframes, type ZoomExprConfig } from './zoom-expression.js'
 import { generateRippleClip } from '../click-effect/ripple-generator.js'
 import { writeDefaultClickSound } from '../click-effect/defaults.js'
 import { generateClickSoundTrack, getAudioDurationMs as getClickAudioDurationMs } from '../click-effect/sound-track.js'
@@ -66,6 +71,9 @@ export interface RenderableTrace extends ParsedTrace {
   speedSegments?: SpeedSegment[]
   clickEvents?: ClickEvent[]
   clickEffectConfig?: { color: string; opacity: number; radius: number; duration: number; soundVolume: number; sound?: string | true }
+  cursorKeyframes?: CursorKeyframe[]
+  cursorOverlayConfig?: ResolvedCursorOverlayConfig
+  zoomConfig?: { transitionMs?: number; easing?: import('../types/easing.js').EasingSpec }
 }
 
 function ffmpeg(args: string[]): void {
@@ -124,8 +132,7 @@ function probeResolution(videoPath: string): { width: number; height: number } {
 
 /**
  * Render with smooth zoom transitions in a single ffmpeg pass.
- * Uses dynamic crop expressions with linear ramps for smooth zoom in/out.
- * Probes actual source resolution for correct crop math.
+ * Uses dynamic crop expressions with easing for animated zoom in/out/pan.
  */
 function renderWithZoom(
   sourceVideo: string,
@@ -133,176 +140,110 @@ function renderWithZoom(
   targetWidth: number,
   targetHeight: number,
   tmpDir: string,
+  zoomConfig?: { transitionMs?: number; easing?: import('../types/easing.js').EasingSpec },
 ): string {
   const zoomSubs = subtitles.filter((s) => s.zoom && s.zoom.level > 1.0)
   if (zoomSubs.length === 0) return sourceVideo
 
-  const src = probeResolution(sourceVideo)
-  const T = 0.4 // transition duration in seconds
+  const keyframes = stepZoomsToKeyframes(subtitles)
+  if (keyframes.length === 0) return sourceVideo
 
-  // Build compact piecewise expressions using if()-based linear ramps.
-  // Each keyframe contributes: delta * ramp_in(t) * ramp_out(t)
-  // ramp_in: 0 → 1 over T seconds (linear)
-  // ramp_out: 1 → 0 over T seconds (linear)
-  // This creates a trapezoidal envelope: ramp up, hold, ramp down.
-  function ramp(startSec: number, endSec: number, delta: number): string {
-    const s = startSec.toFixed(3)
-    const sT = (startSec + T).toFixed(3)
-    const eT = (endSec - T).toFixed(3)
-    const e = endSec.toFixed(3)
-    const d = delta.toFixed(4)
-    // ramp_in: if(t < s, 0, if(t < s+T, (t-s)/T, 1))
-    const ri = `if(lt(t,${s}),0,if(lt(t,${sT}),(t-${s})/${T},1))`
-    // ramp_out: if(t > e, 0, if(t > e-T, (e-t)/T, 1))
-    const ro = `if(gt(t,${e}),0,if(gt(t,${eT}),(${e}-t)/${T},1))`
-    return `${d}*${ri}*${ro}`
-  }
-
-  // Helper: get zoom window timing (uses zoom.startMs/endMs if set, otherwise subtitle timing)
-  function zoomWindow(sub: SubtitleEntry): { startSec: number; endSec: number } {
-    return {
-      startSec: (sub.zoom!.startMs ?? sub.startMs) / 1000,
-      endSec: (sub.zoom!.endMs ?? sub.endMs) / 1000,
-    }
-  }
-
-  // Level expression: 1.0 + sum of ramp contributions
-  let levelParts: string[] = ['1']
-  for (const sub of zoomSubs) {
-    const w = zoomWindow(sub)
-    const delta = sub.zoom!.level - 1.0
-    levelParts.push(ramp(w.startSec, w.endSec, delta))
-  }
-  const level = levelParts.join('+')
-
-  // Center X expression: 0.5 + sum of ramp contributions for x offset
-  let cxParts: string[] = ['0.5']
-  for (const sub of zoomSubs) {
-    const w = zoomWindow(sub)
-    const delta = sub.zoom!.x - 0.5
-    if (Math.abs(delta) > 0.001) {
-      cxParts.push(ramp(w.startSec, w.endSec, delta))
-    }
-  }
-  const cx = cxParts.join('+')
-
-  // Center Y expression: 0.5 + sum of ramp contributions for y offset
-  let cyParts: string[] = ['0.5']
-  for (const sub of zoomSubs) {
-    const w = zoomWindow(sub)
-    const delta = sub.zoom!.y - 0.5
-    if (Math.abs(delta) > 0.001) {
-      cyParts.push(ramp(w.startSec, w.endSec, delta))
-    }
-  }
-  const cy = cyParts.join('+')
-
-  // Segment-based zoom with smooth transitions.
-  // For transitions: render BOTH zoom levels from the SAME source frames using
-  // filter_complex with two crop paths + blend, avoiding ghosting artifacts.
   const srcRes = probeResolution(sourceVideo)
-  const videoDuration = getVideoDuration(sourceVideo)
 
-  type Segment = {
-    startSec: number; endSec: number
-    zoom?: { x: number; y: number; level: number }
-    transition?: 'in' | 'out'  // transition segments blend between zoom levels
-  }
-  const segments: Segment[] = []
+  // Probe fps from source video for zoompan frame-to-time conversion
+  let fps = 25
+  try {
+    const fpsStr = execFileSync('ffprobe', [
+      '-v', 'quiet', '-select_streams', 'v:0',
+      '-show_entries', 'stream=r_frame_rate', '-of', 'csv=p=0', sourceVideo,
+    ]).toString().trim()
+    const parts = fpsStr.split('/')
+    const probedFps = parts.length === 2 ? Number(parts[0]) / Number(parts[1]) : Number(fpsStr)
+    if (probedFps > 0) fps = Math.round(probedFps)
+  } catch { /* use default */ }
 
-  let cursor = 0
-  for (const sub of zoomSubs) {
-    const w = zoomWindow(sub)
-    const z = { x: sub.zoom!.x, y: sub.zoom!.y, level: sub.zoom!.level }
-
-    // Non-zoom segment before transition
-    if (w.startSec - T > cursor + 0.05) {
-      segments.push({ startSec: cursor, endSec: w.startSec - T })
-    }
-    // Transition IN: blend from no-zoom to zoomed (same source frames, two crops)
-    segments.push({ startSec: w.startSec - T, endSec: w.startSec, zoom: z, transition: 'in' })
-    // Main zoom
-    segments.push({ startSec: w.startSec, endSec: w.endSec, zoom: z })
-    // Transition OUT
-    segments.push({ startSec: w.endSec, endSec: w.endSec + T, zoom: z, transition: 'out' })
-    cursor = w.endSec + T
-  }
-  if (cursor < videoDuration - 0.05) {
-    segments.push({ startSec: cursor, endSec: videoDuration })
+  const config: ZoomExprConfig = {
+    transitionMs: zoomConfig?.transitionMs ?? 400,
+    easing: zoomConfig?.easing ?? 'ease-in-out',
+    fps,
   }
 
-  console.log(`  Zoom: ${segments.length} segments (transitions use dual-crop blend)`)
-
-  const segmentPaths: string[] = []
-  for (let i = 0; i < segments.length; i++) {
-    const seg = segments[i]!
-    const segPath = path.join(tmpDir, `zoom-seg-${i}.mp4`)
-    segmentPaths.push(segPath)
-
-    if (seg.transition && seg.zoom) {
-      // Transition segment: feed same source into two filter paths
-      // (full-scale + cropped), then blend with variable opacity.
-      // 'n' = frame number, total frames = T * fps. Blend factor = n / total.
-      const z = seg.zoom
-      const cropW = Math.round(srcRes.width / z.level)
-      const cropH = Math.round(srcRes.height / z.level)
-      const cx2 = Math.round(z.x * srcRes.width)
-      const cy2 = Math.round(z.y * srcRes.height)
-      const cropX = Math.max(0, Math.min(cx2 - Math.round(cropW / 2), srcRes.width - cropW))
-      const cropY = Math.max(0, Math.min(cy2 - Math.round(cropH / 2), srcRes.height - cropH))
-      const adjCropW = cropW % 2 === 0 ? cropW : cropW - 1
-      const adjCropH = cropH % 2 === 0 ? cropH : cropH - 1
-
-      // Fade zoomed layer's alpha using fade filter (no expressions needed).
-      // fade alpha=1 affects only alpha channel: transparent→opaque (in) or opaque→transparent (out).
-      const fadeType = seg.transition === 'in' ? 'in' : 'out'
-      const dur = (seg.endSec - seg.startSec).toFixed(3)
-
-      const fc = [
-        `[0:v]split[a][b]`,
-        `[a]scale=${targetWidth}:${targetHeight}[full]`,
-        `[b]crop=${adjCropW}:${adjCropH}:${cropX}:${cropY},scale=${targetWidth}:${targetHeight},format=rgba,fade=t=${fadeType}:st=0:d=${dur}:alpha=1[zoom]`,
-        `[full][zoom]overlay=0:0:format=auto[out]`,
-      ].join(';')
-
-      ffmpeg([
-        '-y', '-ss', String(seg.startSec), '-to', String(seg.endSec), '-i', sourceVideo,
-        '-filter_complex', fc, '-map', '[out]',
-        '-c:v', 'libx264', '-preset', 'fast', '-crf', '18', '-an', segPath,
-      ])
-    } else if (seg.zoom) {
-      // Static zoom segment
-      const z = seg.zoom
-      const cropW = Math.round(srcRes.width / z.level)
-      const cropH = Math.round(srcRes.height / z.level)
-      const cx2 = Math.round(z.x * srcRes.width)
-      const cy2 = Math.round(z.y * srcRes.height)
-      const cropX = Math.max(0, Math.min(cx2 - Math.round(cropW / 2), srcRes.width - cropW))
-      const cropY = Math.max(0, Math.min(cy2 - Math.round(cropH / 2), srcRes.height - cropH))
-      const adjCropW = cropW % 2 === 0 ? cropW : cropW - 1
-      const adjCropH = cropH % 2 === 0 ? cropH : cropH - 1
-
-      ffmpeg([
-        '-y', '-ss', String(seg.startSec), '-to', String(seg.endSec), '-i', sourceVideo,
-        '-vf', `crop=${adjCropW}:${adjCropH}:${cropX}:${cropY},scale=${targetWidth}:${targetHeight}`,
-        '-c:v', 'libx264', '-preset', 'fast', '-crf', '18', '-an', segPath,
-      ])
-    } else {
-      // Non-zoom segment
-      ffmpeg([
-        '-y', '-ss', String(seg.startSec), '-to', String(seg.endSec), '-i', sourceVideo,
-        '-vf', `scale=${targetWidth}:${targetHeight}`,
-        '-c:v', 'libx264', '-preset', 'fast', '-crf', '18', '-an', segPath,
-      ])
-    }
-  }
-
-  // Simple concat — no xfade needed, transitions handle the blending
-  const concatFile = path.join(tmpDir, 'zoom-concat.txt')
-  fs.writeFileSync(concatFile, segmentPaths.map((p) => `file '${p}'`).join('\n'))
+  const filter = buildZoomFilter(keyframes, srcRes, { width: targetWidth, height: targetHeight }, config)
+  console.log(`  Zoom: zoompan single-pass (${keyframes.length} keyframes, ${fps}fps, easing: ${typeof config.easing === 'string' ? config.easing : 'custom'})`)
 
   const outputPath = path.join(tmpDir, 'zoom-combined.mp4')
-  ffmpeg(['-y', '-f', 'concat', '-safe', '0', '-i', concatFile, '-c', 'copy', outputPath])
+  const videoDur = getVideoDuration(sourceVideo)
+  ffmpeg([
+    '-y', '-i', sourceVideo,
+    '-filter_complex', `[0:v]${filter},setpts=N/${fps}/TB[zout]`,
+    '-map', '[zout]',
+    '-t', String(videoDur),
+    '-c:v', 'libx264', '-preset', 'fast', '-crf', '18', '-an', outputPath,
+  ])
+
+  return outputPath
+}
+
+/**
+ * Apply an animated cursor overlay to the video.
+ * Renders a cursor image that smoothly moves between action positions
+ * using ffmpeg movie + overlay with time-based expressions.
+ */
+function renderWithCursorOverlay(
+  sourceVideo: string,
+  keyframes: CursorKeyframe[],
+  config: ResolvedCursorOverlayConfig,
+  viewport: { width: number; height: number },
+  tmpDir: string,
+): string {
+  if (keyframes.length === 0) return sourceVideo
+
+  const srcRes = probeResolution(sourceVideo)
+  const scaleFactor = srcRes.height / 1080
+
+  // Use custom image or bundled default arrow cursor
+  const cursorPngPath = config.image ?? writeDefaultCursorImage(tmpDir)
+
+  // Pre-render cursor PNG into a short transparent video clip for reliable looping.
+  // ffmpeg 7.x PNG decoder can't re-read the same packet (inflate error on loop).
+  // Workaround: create a transparent canvas via lavfi, overlay the PNG once
+  // (eof_action=repeat holds the last frame), producing a loopable .mov clip.
+  const cursorClipPath = path.join(tmpDir, 'cursor-clip.mov')
+  const cursorRes = probeResolution(cursorPngPath)
+  ffmpeg([
+    '-y',
+    '-f', 'lavfi', '-i', `color=c=black@0:s=${cursorRes.width}x${cursorRes.height}:d=1:r=30,format=rgba`,
+    '-i', cursorPngPath,
+    '-filter_complex', '[0:v][1:v]overlay=0:0:eof_action=repeat:format=auto[out]',
+    '-map', '[out]',
+    '-c:v', 'qtrle', '-pix_fmt', 'argb',
+    cursorClipPath,
+  ])
+
+  // Build per-click position and visibility expressions
+  const { x: xExpr, y: yExpr } = buildOverlayExpressions(keyframes, config, viewport, srcRes)
+  const enableExpr = buildEnableExpression(keyframes)
+
+  const escapedClipPath = cursorClipPath.replace(/'/g, "'\\''").replace(/\\/g, '\\\\')
+
+  // movie loads the cursor clip as an infinitely looping source;
+  // overlay animates position; enable controls per-click visibility
+  const cursorStream = `movie='${escapedClipPath}':loop=0,setpts=N/30/TB,format=rgba[cursor]`
+  const filterParts = [
+    cursorStream,
+    `[0:v][cursor]overlay=x='${xExpr}':y='${yExpr}':enable='${enableExpr}':eof_action=pass:format=auto[out]`,
+  ]
+
+  const outputPath = path.join(tmpDir, 'cursor-overlay.mp4')
+  console.log(`  Cursor overlay: ${keyframes.length} keyframes via movie+overlay`)
+
+  ffmpeg([
+    '-y', '-i', sourceVideo,
+    '-filter_complex', filterParts.join(';'),
+    '-map', '[out]',
+    '-c:v', 'libx264', '-preset', 'fast', '-crf', '18', '-an',
+    outputPath,
+  ])
 
   return outputPath
 }
@@ -514,6 +455,18 @@ export function renderVideo(
       resolution.width,
       resolution.height,
       tmpDir,
+      trace.zoomConfig,
+    )
+  }
+
+  // Phase 3.25: Apply cursor overlay (renders below click effects)
+  if (trace.cursorKeyframes && trace.cursorKeyframes.length > 0 && trace.cursorOverlayConfig) {
+    videoInput = renderWithCursorOverlay(
+      videoInput,
+      trace.cursorKeyframes,
+      trace.cursorOverlayConfig,
+      trace.metadata.viewport,
+      tmpDir,
     )
   }
 
@@ -583,7 +536,7 @@ export function renderVideo(
     const mixedPath = path.join(tmpDir, 'mixed-audio.mp3')
     ffmpeg([
       '-y', '-i', finalAudioPath, '-i', clickSoundTrackPath,
-      '-filter_complex', 'amix=inputs=2:duration=longest:dropout_transition=0',
+      '-filter_complex', '[0:a]aresample=44100,aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo[a0];[1:a]aresample=44100,aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo[a1];[a0][a1]amix=inputs=2:duration=longest:dropout_transition=0',
       '-c:a', 'libmp3lame', '-q:a', '2', mixedPath,
     ])
     finalAudioPath = mixedPath

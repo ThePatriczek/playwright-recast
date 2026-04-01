@@ -27,6 +27,8 @@ OPTIONS
       --format         Output format: mp4 | webm (default: mp4)
       --resolution     Output resolution: 720p | 1080p (default: 1080p)
       --burn-subs      Burn subtitles into video
+      --cursor-overlay      Enable animated cursor overlay
+      --cursor-overlay-config <path>  JSON config for cursor overlay
       --click-effect       Enable click highlighting with default config
       --click-effect-config <path>  JSON config for click effects
       --click-sound <path> Custom click sound audio file
@@ -62,6 +64,8 @@ async function main(): Promise<void> {
       'text-processing': { type: 'boolean', default: false },
       'text-processing-config': { type: 'string' },
       'burn-subs': { type: 'boolean', default: false },
+      'cursor-overlay': { type: 'boolean', default: false },
+      'cursor-overlay-config': { type: 'string' },
       'click-effect': { type: 'boolean', default: false },
       'click-effect-config': { type: 'string' },
       'click-sound': { type: 'string' },
@@ -123,6 +127,14 @@ async function main(): Promise<void> {
     pipeline = pipeline.textProcessing(config)
   } else if (values['text-processing']) {
     pipeline = pipeline.textProcessing({ builtins: true })
+  }
+
+  // Cursor overlay
+  if (values['cursor-overlay-config']) {
+    const raw = fs.readFileSync(values['cursor-overlay-config'], 'utf-8')
+    pipeline = pipeline.cursorOverlay(JSON.parse(raw))
+  } else if (values['cursor-overlay']) {
+    pipeline = pipeline.cursorOverlay()
   }
 
   // Click effect

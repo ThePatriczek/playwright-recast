@@ -19,6 +19,9 @@ import { writeVtt } from '../subtitles/vtt-writer.js'
 import { assertFfmpegAvailable } from '../utils/ffmpeg.js'
 import type { ClickEvent } from '../types/click-effect.js'
 import { resolveClickEffectConfig } from '../click-effect/defaults.js'
+import type { CursorKeyframe } from '../types/cursor-overlay.js'
+import { resolveCursorOverlayConfig, type ResolvedCursorOverlayConfig } from '../cursor-overlay/defaults.js'
+import { buildTrajectory } from '../cursor-overlay/trajectory.js'
 
 type PipelineState = {
   parsed?: ParsedTrace
@@ -30,6 +33,9 @@ type PipelineState = {
   _blankTrimApplied?: boolean
   clickEvents?: ClickEvent[]
   clickEffectConfig?: ReturnType<typeof resolveClickEffectConfig>
+  cursorKeyframes?: CursorKeyframe[]
+  cursorOverlayConfig?: ResolvedCursorOverlayConfig
+  zoomConfig?: { transitionMs?: number; easing?: import('../types/easing.js').EasingSpec }
 }
 
 /**
@@ -70,6 +76,9 @@ export class PipelineExecutor {
       speedSegments: state.speedMapped?.speedSegments,
       clickEvents: state.clickEvents,
       clickEffectConfig: state.clickEffectConfig,
+      cursorKeyframes: state.cursorKeyframes,
+      cursorOverlayConfig: state.cursorOverlayConfig,
+      zoomConfig: state.zoomConfig,
     }
 
     // Render final video
@@ -393,6 +402,53 @@ export class PipelineExecutor {
               endMs: zoomEndMs,
             }
           }
+
+          // Pass easing config through to renderer
+          state.zoomConfig = {
+            transitionMs: stage.config.transitionMs,
+            easing: stage.config.easing,
+          }
+          break
+        }
+
+        case 'cursorOverlay': {
+          if (!state.parsed) throw new Error('cursorOverlay() requires parse() first')
+
+          const cursorConfig = resolveCursorOverlayConfig(stage.config)
+
+          // Base time for video-relative timestamps
+          const cursorFirstFrameTime = state.parsed.frames.length > 0
+            ? (state.parsed.frames[0]!.timestamp as number)
+            : (state.parsed.metadata.startTime as number)
+
+          // Compute time remap + offset for trajectory builder
+          let cursorTimeRemap: ((t: number) => number) | undefined
+          let cursorVideoStartOffset = cursorFirstFrameTime
+
+          if (state.speedMapped && state.speedMapped.speedSegments.length > 0) {
+            const recPageId = state.parsed.frames.length > 0
+              ? state.parsed.frames[state.parsed.frames.length - 1]!.pageId : undefined
+            const recFrames = recPageId
+              ? state.parsed.frames.filter(f => f.pageId === recPageId) : state.parsed.frames
+            const firstRecFrameMs = recFrames[0]?.timestamp as number ?? cursorFirstFrameTime
+            const videoStartOutput = state.speedMapped.timeRemap(toMonotonic(firstRecFrameMs))
+            cursorTimeRemap = (t: number) => state.speedMapped!.timeRemap(toMonotonic(t))
+            cursorVideoStartOffset = videoStartOutput
+          }
+
+          const keyframes = buildTrajectory({
+            actions: state.parsed.actions as Array<{ point?: { x: number; y: number }; startTime: number }>,
+            filter: stage.config.filter as ((a: { point?: { x: number; y: number }; startTime: number }) => boolean) | undefined,
+            timeRemap: cursorTimeRemap,
+            videoStartOffsetMs: cursorVideoStartOffset,
+          })
+
+          state.cursorKeyframes = keyframes
+          state.cursorOverlayConfig = cursorConfig
+          console.log(`  cursorOverlay: ${keyframes.length} keyframes detected`)
+          for (const kf of keyframes) {
+            console.log(`    kf: (${kf.x}, ${kf.y}) @ ${kf.videoTimeSec.toFixed(3)}s`)
+          }
           break
         }
 
@@ -445,6 +501,9 @@ export class PipelineExecutor {
           state.clickEvents = clickEvents
           state.clickEffectConfig = config
           console.log(`  clickEffect: ${clickEvents.length} clicks detected`)
+          for (const ce of clickEvents) {
+            console.log(`    click: (${ce.x}, ${ce.y}) @ ${ce.videoTimeMs}ms`)
+          }
           break
         }
 

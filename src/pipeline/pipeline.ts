@@ -5,6 +5,7 @@ import type { TtsProvider } from '../types/voiceover.js'
 import type { RenderConfig } from '../types/render.js'
 import type { TextProcessingConfig } from '../types/text-processing.js'
 import type { ClickEffectConfig } from '../types/click-effect.js'
+import type { CursorOverlayConfig } from '../types/cursor-overlay.js'
 import type { StageDescriptor, AutoZoomConfig } from './stages.js'
 import { PipelineExecutor } from './executor.js'
 
@@ -101,6 +102,15 @@ export class Pipeline {
     steps: Array<{ zoom?: { x: number; y: number; level: number } | null }>,
   ): Pipeline {
     return this.addStage({ type: 'enrichZoomFromReport', steps })
+  }
+
+  /**
+   * Add a smooth cursor overlay that animates between action positions.
+   * Renders a visible cursor dot that follows the trace's action coordinates.
+   * Requires parse() first (needs trace actions with cursor positions).
+   */
+  cursorOverlay(config: CursorOverlayConfig = {}): Pipeline {
+    return this.addStage({ type: 'cursorOverlay', config })
   }
 
   /**

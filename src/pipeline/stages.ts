@@ -5,6 +5,8 @@ import type { TtsProvider } from '../types/voiceover.js'
 import type { RenderConfig } from '../types/render.js'
 import type { TextProcessingConfig } from '../types/text-processing.js'
 import type { ClickEffectConfig } from '../types/click-effect.js'
+import type { CursorOverlayConfig } from '../types/cursor-overlay.js'
+import type { EasingSpec } from '../types/easing.js'
 
 export type StageDescriptor =
   | { type: 'parse' }
@@ -20,6 +22,7 @@ export type StageDescriptor =
   | { type: 'textProcessing'; config: TextProcessingConfig }
   | { type: 'autoZoom'; config: AutoZoomConfig }
   | { type: 'enrichZoomFromReport'; steps: Array<{ zoom?: { x: number; y: number; level: number } | null }> }
+  | { type: 'cursorOverlay'; config: CursorOverlayConfig }
   | { type: 'clickEffect'; config: ClickEffectConfig }
   | { type: 'voiceover'; provider: TtsProvider }
   | { type: 'render'; config: RenderConfig }
@@ -34,6 +37,10 @@ export interface AutoZoomConfig {
   idleLevel?: number
   /** Bias zoom center toward viewport center (0 = raw coords, 1 = always center). Default: 0.2 */
   centerBias?: number
+  /** Transition duration in ms for zoom in/out easing (default: 400) */
+  transitionMs?: number
+  /** Easing function for zoom transitions (default: 'ease-in-out') */
+  easing?: EasingSpec
   /** @deprecated Use clickLevel instead */
   actionLevel?: number
   followCursor?: boolean

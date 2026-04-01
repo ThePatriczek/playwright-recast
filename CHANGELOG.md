@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.7.0 (2026-04-01)
+
+### Features
+
+- **Cursor overlay** — New `.cursorOverlay(config)` pipeline stage renders an animated cursor that appears briefly before each click, moves to the click position with ease-out animation, then disappears. Bundled default arrow cursor (30x44 PNG) or custom image via config.
+- **Animated zoom with easing** — Replaced the segment-based zoom renderer with a single-pass `zoompan` filter. Zoom transitions now use customizable easing functions instead of linear fades.
+- **Easing API** — `AutoZoomConfig` accepts `easing` parameter: built-in presets (`'linear'`, `'ease-in'`, `'ease-out'`, `'ease-in-out'`), cubic-bezier (`{ cubicBezier: [0.42, 0, 0.58, 1] }`), or custom JS functions (`{ fn: t => t * t }`). Default: `'ease-in-out'` (smoothstep).
+- **Configurable transition duration** — `AutoZoomConfig.transitionMs` controls zoom in/out transition speed (default: 400ms).
+- **Zoom-to-zoom panning** — When two zoom targets are close together, the camera pans smoothly between them instead of returning to 1.0x.
+- **Cursor overlay CLI** — `--cursor-overlay` enables with defaults, `--cursor-overlay-config <path>` loads JSON config.
+
+### Architecture
+
+- Cursor overlay uses `movie` + `overlay` with per-click `enable` expressions and ease-out movement via `st()/ld()` temp variables
+- Zoom now uses `zoompan` filter with `d=1` (per-frame for video) and `in/fps` as time variable, replacing the old multi-segment crop+concat approach
+- New `src/render/easing.ts` — hybrid easing: analytic ffmpeg expressions for built-in presets, pre-sampled piecewise-linear for cubic-bezier/custom functions
+- New `src/render/zoom-expression.ts` — zoompan expression builder with segment timeline (transition-in, hold, transition-out, pan)
+- New `src/types/easing.ts` — `EasingSpec`, `EasingPreset` types
+- New `src/cursor-overlay/` — defaults, trajectory builder, expression builder
+- Audio mixing fix: `aresample=44100,aformat` before `amix` to handle mixed sample rate tracks
+
+### Breaking Changes
+
+- Internal zoom rendering changed from segment-based to expression-based. Public API (`autoZoom()` config) is backward-compatible — existing configs work unchanged.
+
 ## 0.6.0 (2026-03-31)
 
 ### Features
