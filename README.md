@@ -467,18 +467,6 @@ await base.subtitlesFromSrt('./cs.srt').render({ burnSubtitles: true }).toFile('
 
 ---
 
-## Roadmap
-
-- [x] ~~**Smooth zoom transitions**~~ — Done in v0.5.0
-- [x] ~~**Click highlighting**~~ — Done in v0.6.0
-- [ ] **Edge TTS provider** — Free TTS without API key using Microsoft Edge's online voices
-- [ ] **Playwright Reporter plugin** — Auto-generate demo videos as part of your test run
-- [ ] **Multi-language support** — Generate video variants from the same trace with different SRT/voiceover per language
-- [ ] **Intro/outro cards** — Configurable title cards, branding overlays, and end screens
-- [ ] **Background music** — Mix ambient music track under voiceover with auto-ducking
-
----
-
 ## Contributing
 
 Contributions welcome! Please check the [issues](https://github.com/ThePatriczek/playwright-recast/issues) for open tasks.
