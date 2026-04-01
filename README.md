@@ -298,6 +298,7 @@ import { ElevenLabsProvider } from 'playwright-recast/providers/elevenlabs'
 ElevenLabsProvider({
   voiceId: 'onwK4e9ZLuTAKqWW03F9',  // Daniel
   modelId: 'eleven_multilingual_v2',
+  languageCode: 'cs',                // Force Czech (ISO 639-1)
 })
 ```
 

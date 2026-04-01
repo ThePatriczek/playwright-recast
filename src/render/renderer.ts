@@ -447,19 +447,7 @@ export function renderVideo(
     videoInput = renderWithSpeed(videoInput, trace.speedSegments, firstRecFrameTime, tmpDir)
   }
 
-  // Phase 3: Apply zoom if needed (operates on speed-adjusted video with speed-adjusted times)
-  if (hasZoom && trace.subtitles) {
-    videoInput = renderWithZoom(
-      videoInput,
-      trace.subtitles,
-      resolution.width,
-      resolution.height,
-      tmpDir,
-      trace.zoomConfig,
-    )
-  }
-
-  // Phase 3.25: Apply cursor overlay (renders below click effects)
+  // Phase 3: Apply cursor overlay (before zoom so overlays follow content through crop)
   if (trace.cursorKeyframes && trace.cursorKeyframes.length > 0 && trace.cursorOverlayConfig) {
     videoInput = renderWithCursorOverlay(
       videoInput,
@@ -470,7 +458,7 @@ export function renderVideo(
     )
   }
 
-  // Phase 3.5: Apply click effect overlays
+  // Phase 3.25: Apply click effect overlays (before zoom so overlays follow content through crop)
   if (trace.clickEvents && trace.clickEvents.length > 0 && trace.clickEffectConfig) {
     videoInput = renderWithClickEffects(
       videoInput,
@@ -478,6 +466,18 @@ export function renderVideo(
       trace.clickEffectConfig,
       trace.metadata.viewport,
       tmpDir,
+    )
+  }
+
+  // Phase 3.5: Apply zoom if needed (operates on speed-adjusted video with baked-in overlays)
+  if (hasZoom && trace.subtitles) {
+    videoInput = renderWithZoom(
+      videoInput,
+      trace.subtitles,
+      resolution.width,
+      resolution.height,
+      tmpDir,
+      trace.zoomConfig,
     )
   }
 

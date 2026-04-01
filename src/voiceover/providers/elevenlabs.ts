@@ -4,6 +4,7 @@ export interface ElevenLabsProviderConfig {
   apiKey?: string
   voiceId?: string
   modelId?: string
+  languageCode?: string
 }
 
 const DEFAULT_VOICE_ID = 'onwK4e9ZLuTAKqWW03F9' // Daniel
@@ -28,6 +29,7 @@ export function ElevenLabsProvider(config: ElevenLabsProviderConfig = {}): TtsPr
   const apiKey = config.apiKey ?? process.env.ELEVENLABS_API_KEY
   const voiceId = config.voiceId ?? DEFAULT_VOICE_ID
   const modelId = config.modelId ?? DEFAULT_MODEL_ID
+  const languageCode = config.languageCode
 
   let client: ElevenLabsClient | null = null
 
@@ -47,6 +49,7 @@ export function ElevenLabsProvider(config: ElevenLabsProviderConfig = {}): TtsPr
         text,
         modelId,
         outputFormat: 'mp3_44100_128',
+        ...(languageCode ? { languageCode } : {}),
       })
 
       const reader = audio.getReader()

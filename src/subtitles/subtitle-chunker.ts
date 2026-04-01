@@ -126,6 +126,10 @@ function splitAtWordBoundary(text: string, maxChars: number): string[] {
     let splitAt = -1
     for (let i = maxChars; i >= 1; i--) {
       if (remaining[i] === ' ') {
+        // Don't break after single-character words (typography: prepositions, conjunctions)
+        if (i >= 1 && remaining[i - 1] !== ' ' && (i < 2 || remaining[i - 2] === ' ')) {
+          continue
+        }
         splitAt = i
         break
       }

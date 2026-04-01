@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.1 (2026-04-01)
+
+### Features
+
+- **ElevenLabs language code** — New `languageCode` option in `ElevenLabsProviderConfig` forces the TTS language via ISO 639-1 code (e.g. `'cs'` for Czech). Prevents auto-detection errors in multilingual content.
+- **Typography-aware subtitle chunking** — Word-boundary splitting no longer breaks after single-character words (prepositions, conjunctions like Czech "v", "s", "k", "a", "i"). Follows standard typographic rules.
+
+### Fixes
+
+- **Cursor/click overlay coordinates with zoom** — Cursor overlay and click effects are now applied before zoom cropping. Previously, overlays used original viewport coordinates on the already-cropped frame, causing misaligned click positions during zoomed segments.
+
 ## 0.7.0 (2026-04-01)
 
 ### Features
