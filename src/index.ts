@@ -2,7 +2,7 @@
 export { Pipeline as Recast } from './pipeline/pipeline.js'
 
 // Step helpers (narrate, zoom, pace)
-export { setupRecast, narrate, zoom, pace } from './helpers.js'
+export { setupRecast, narrate, zoom, pace, highlight } from './helpers.js'
 
 // Providers
 export { OpenAIProvider } from './voiceover/providers/openai.js'
@@ -69,6 +69,9 @@ export type { EasingSpec, EasingPreset } from './types/easing.js'
 
 // Frame interpolation
 export type { InterpolateConfig, InterpolateMode, InterpolateQuality } from './types/interpolate.js'
+
+// Text highlight
+export type { TextHighlightConfig, HighlightEvent } from './types/text-highlight.js'
 
 // Subtitle writers & utilities
 export { writeAss, hexToAss } from './subtitles/ass-writer.js'

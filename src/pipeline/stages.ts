@@ -8,6 +8,7 @@ import type { ClickEffectConfig } from '../types/click-effect.js'
 import type { CursorOverlayConfig } from '../types/cursor-overlay.js'
 import type { EasingSpec } from '../types/easing.js'
 import type { InterpolateConfig } from '../types/interpolate.js'
+import type { TextHighlightConfig } from '../types/text-highlight.js'
 
 export type StageDescriptor =
   | { type: 'parse' }
@@ -25,6 +26,7 @@ export type StageDescriptor =
   | { type: 'enrichZoomFromReport'; steps: Array<{ zoom?: { x: number; y: number; level: number } | null }> }
   | { type: 'cursorOverlay'; config: CursorOverlayConfig }
   | { type: 'clickEffect'; config: ClickEffectConfig }
+  | { type: 'textHighlight'; config: TextHighlightConfig }
   | { type: 'interpolate'; config: InterpolateConfig }
   | { type: 'voiceover'; provider: TtsProvider }
   | { type: 'render'; config: RenderConfig }

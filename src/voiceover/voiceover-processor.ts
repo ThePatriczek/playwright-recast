@@ -99,7 +99,7 @@ export async function generateVoiceover(
   const concatList = path.join(tmpDir, 'concat.txt')
   fs.writeFileSync(
     concatList,
-    segmentFiles.map((f) => `file '${f}'`).join('\n'),
+    segmentFiles.map((f) => `file '${path.basename(f)}'`).join('\n'),
   )
 
   const audioTrackPath = path.join(tmpDir, 'voiceover.mp3')

@@ -7,6 +7,7 @@ import type { TextProcessingConfig } from '../types/text-processing.js'
 import type { ClickEffectConfig } from '../types/click-effect.js'
 import type { CursorOverlayConfig } from '../types/cursor-overlay.js'
 import type { InterpolateConfig } from '../types/interpolate.js'
+import type { TextHighlightConfig } from '../types/text-highlight.js'
 import type { StageDescriptor, AutoZoomConfig } from './stages.js'
 import { PipelineExecutor } from './executor.js'
 
@@ -121,6 +122,15 @@ export class Pipeline {
    */
   clickEffect(config: ClickEffectConfig = {}): Pipeline {
     return this.addStage({ type: 'clickEffect', config })
+  }
+
+  /**
+   * Add text highlight overlays to the video.
+   * Renders animated marker (swipe reveal + fade out) at positions
+   * captured by the highlight() helper in test steps.
+   */
+  textHighlight(config: TextHighlightConfig = {}): Pipeline {
+    return this.addStage({ type: 'textHighlight', config })
   }
 
   /**

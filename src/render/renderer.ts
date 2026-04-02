@@ -13,6 +13,8 @@ import { writeDefaultCursorImage } from '../cursor-overlay/defaults.js'
 import { buildOverlayExpressions, buildEnableExpression } from '../cursor-overlay/expression-builder.js'
 import { buildZoomFilter, stepZoomsToKeyframes, type ZoomExprConfig } from './zoom-expression.js'
 import { generateRippleClip } from '../click-effect/ripple-generator.js'
+import type { HighlightEvent } from '../types/text-highlight.js'
+import { generateHighlightClip } from '../text-highlight/highlight-generator.js'
 import { writeDefaultClickSound } from '../click-effect/defaults.js'
 import { generateClickSoundTrack, getAudioDurationMs as getClickAudioDurationMs } from '../click-effect/sound-track.js'
 import { writeSrt } from '../subtitles/srt-writer.js'
@@ -76,6 +78,8 @@ export interface RenderableTrace extends ParsedTrace {
   cursorOverlayConfig?: ResolvedCursorOverlayConfig
   zoomConfig?: { transitionMs?: number; easing?: import('../types/easing.js').EasingSpec }
   interpolateConfig?: import('../types/interpolate.js').InterpolateConfig
+  highlightEvents?: import('../types/text-highlight.js').HighlightEvent[]
+  highlightConfig?: import('../text-highlight/defaults.js').ResolvedTextHighlightConfig
 }
 
 function ffmpeg(args: string[]): void {
@@ -331,6 +335,75 @@ function renderWithClickEffects(
 }
 
 /**
+ * Render text highlight overlays onto the video.
+ * For each highlight, generates a marker clip (swipe-in + hold + fade-out)
+ * and overlays it at the correct position and time.
+ */
+function renderWithHighlights(
+  sourceVideo: string,
+  highlightEvents: HighlightEvent[],
+  viewport: { width: number; height: number },
+  tmpDir: string,
+): string {
+  if (highlightEvents.length === 0) return sourceVideo
+
+  const srcRes = probeResolution(sourceVideo)
+  const scaleX = srcRes.width / viewport.width
+  const scaleY = srcRes.height / viewport.height
+
+  const filterParts: string[] = []
+  let prevLabel = '0:v'
+
+  for (let i = 0; i < highlightEvents.length; i++) {
+    const hl = highlightEvents[i]!
+    const scaledW = Math.max(2, Math.round(hl.width * scaleX))
+    const scaledH = Math.max(2, Math.round(hl.height * scaleY))
+
+    // Generate a unique highlight clip for this event
+    const clipPath = path.join(tmpDir, `highlight_${i}.mov`)
+    generateHighlightClip({
+      color: hl.color,
+      opacity: hl.opacity,
+      width: scaledW,
+      height: scaledH,
+      swipeDuration: hl.swipeDuration,
+      duration: hl.endTimeMs - hl.videoTimeMs - hl.fadeOut,
+      fadeOut: hl.fadeOut,
+      outputPath: clipPath,
+    })
+
+    const ox = Math.max(0, Math.round(hl.x * scaleX))
+    const oy = Math.max(0, Math.round(hl.y * scaleY))
+    const timeSec = (hl.videoTimeMs / 1000).toFixed(3)
+    const outLabel = `hl${i}`
+    const hlLabel = `h${i}`
+
+    const escapedPath = clipPath.replace(/'/g, "'\\''").replace(/\\/g, '\\\\')
+    filterParts.push(
+      `movie='${escapedPath}',setpts=PTS+${timeSec}/TB,format=rgba[${hlLabel}]`,
+    )
+    filterParts.push(
+      `[${prevLabel}][${hlLabel}]overlay=${ox}:${oy}:eof_action=pass:format=auto[${outLabel}]`,
+    )
+    prevLabel = outLabel
+  }
+
+  const outputPath = path.join(tmpDir, 'highlight-overlay.mp4')
+
+  console.log(`  Highlight overlay: ${highlightEvents.length} markers via movie+overlay`)
+
+  ffmpeg([
+    '-y', '-i', sourceVideo,
+    '-filter_complex', filterParts.join(';'),
+    '-map', `[${prevLabel}]`,
+    '-c:v', 'libx264', '-preset', 'fast', '-crf', '18', '-an',
+    outputPath,
+  ])
+
+  return outputPath
+}
+
+/**
  * Apply speed segments to video: split into chunks, apply speed factor
  * with setpts, concatenate back together.
  *
@@ -389,7 +462,7 @@ function renderWithSpeed(
 
   // Concatenate all segments
   const concatFile = path.join(tmpDir, 'speed-concat.txt')
-  fs.writeFileSync(concatFile, segmentPaths.map((p) => `file '${p}'`).join('\n'))
+  fs.writeFileSync(concatFile, segmentPaths.map((p) => `file '${path.basename(p)}'`).join('\n'))
 
   const concatOutput = path.join(tmpDir, 'speed-combined.mp4')
   ffmpeg(['-y', '-f', 'concat', '-safe', '0', '-i', concatFile, '-c', 'copy', concatOutput])
@@ -473,6 +546,16 @@ export function renderVideo(
       videoInput,
       trace.clickEvents,
       trace.clickEffectConfig,
+      trace.metadata.viewport,
+      tmpDir,
+    )
+  }
+
+  // Phase 3.3: Apply text highlight overlays (after click effects, before zoom)
+  if (trace.highlightEvents && trace.highlightEvents.length > 0) {
+    videoInput = renderWithHighlights(
+      videoInput,
+      trace.highlightEvents,
       trace.metadata.viewport,
       tmpDir,
     )

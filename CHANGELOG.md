@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.9.0 (2026-04-02)
+
+### Features
+
+- **Text highlight** — New `.textHighlight(config?)` pipeline stage renders animated marker overlays on text. Swipe-in animation reveals the highlight left-to-right, then disappears at subtitle boundary. Reads highlight data from `report.json` automatically.
+- **`highlight()` helper** — New step helper captures element bounding box (or specific text substring via Range API) and stores it as an annotation. Supports `text` option for highlighting specific substrings inside elements, including input/textarea via mirror measurement.
+- **Recording context filtering** — Click effects, cursor overlay, and auto-zoom now filter out actions from setup/background contexts. Only actions after the first recording frame are processed, preventing phantom clicks and incorrect zoom targets.
+
+### Bug fixes
+
+- **ffmpeg concat path doubling** — Fixed path doubling in concat.txt files for voiceover, click sound, and speed segment concatenation. All concat files now use `path.basename()` for relative paths.
+- **Speed baseline** — Fixed speed segment baseline to use first recording frame timestamp instead of first recording action. Prevents timing drift when recording starts before user actions.
+- **Auto-zoom fill detection** — Fixed auto-zoom not detecting `fill` actions due to 24s timing offset between setup and recording contexts. Auto-zoom now uses recording context baseline for video time calculation.
+- **Auto-zoom input fallback** — When fill/type actions lack cursor coordinates (Playwright doesn't record point for programmatic fill), auto-zoom falls back to viewport center.
+- **Highlight subtitle clamping** — Highlight end time is clamped to subtitle boundary so overlays don't overflow into the next step.
+- **Speed fast-forward threshold** — Segments with TTS duration significantly shorter than original duration now trigger fast-forward, not just segments exceeding the absolute 30s threshold.
+
+### Architecture
+
+- New `src/types/text-highlight.ts` — `TextHighlightConfig`, `HighlightEvent` types
+- New `src/text-highlight/defaults.ts` — Default config, `resolveTextHighlightConfig()`
+- New `src/text-highlight/highlight-generator.ts` — ffmpeg lavfi marker clip generation with geq-based swipe animation
+- Pipeline writes `recast-report.json` instead of overwriting `report.json`
+
 ## 0.8.0 (2026-04-01)
 
 ### Features

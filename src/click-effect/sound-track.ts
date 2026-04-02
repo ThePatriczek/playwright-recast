@@ -86,7 +86,7 @@ export function generateClickSoundTrack(
 
   // Concat all segments
   const concatList = path.join(tmpDir, 'click-concat.txt')
-  fs.writeFileSync(concatList, segmentFiles.map(f => `file '${f}'`).join('\n'))
+  fs.writeFileSync(concatList, segmentFiles.map(f => `file '${path.basename(f)}'`).join('\n'))
 
   execFileSync('ffmpeg', [
     '-y', '-f', 'concat', '-safe', '0', '-i', concatList,

@@ -80,6 +80,117 @@ export async function zoom(
 }
 
 /**
+ * Highlight text in the demo video.
+ *
+ * - `highlight(locator)` — highlights the entire element
+ * - `highlight(locator, { text: 'substring' })` — highlights only the matching text inside the element
+ *
+ * For input/textarea elements, the text option uses a temporary overlay measurement
+ * since form elements don't expose text node bounding boxes.
+ *
+ * @param locator Playwright Locator pointing to the element containing the text
+ * @param opts.text Specific text to highlight (substring). If omitted, highlights entire element.
+ * @param opts.color Highlight color as hex '#RRGGBB' (default: '#FFEB3B' yellow)
+ * @param opts.opacity Opacity 0.0–1.0 (default: 0.35)
+ * @param opts.duration Visibility duration in ms (default: 3000)
+ * @param opts.fadeOut Fade out duration in ms (default: 500)
+ * @param opts.swipeDuration Swipe animation duration in ms (default: 300)
+ */
+export async function highlight(
+  locator: Locator,
+  opts?: {
+    text?: string
+    color?: string
+    opacity?: number
+    duration?: number
+    fadeOut?: number
+    swipeDuration?: number
+  },
+): Promise<void> {
+  const { text, ...styleOpts } = opts ?? {}
+
+  let box: { x: number; y: number; width: number; height: number } | null
+
+  if (text) {
+    // Measure bounding box of specific text inside the element.
+    // Works for regular elements (via Range API) and input/textarea (via overlay measurement).
+    box = await locator.evaluate((el, searchText) => {
+      const isFormElement = el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement
+      if (isFormElement) {
+        // For input/textarea: create a temporary mirror div to measure text position
+        const value = el.value
+        const idx = value.indexOf(searchText)
+        if (idx === -1) return null
+
+        const style = window.getComputedStyle(el)
+        const mirror = document.createElement('div')
+        // Copy relevant styles
+        for (const prop of ['font', 'fontSize', 'fontFamily', 'fontWeight', 'letterSpacing', 'wordSpacing', 'textIndent', 'padding', 'paddingLeft', 'paddingTop', 'paddingRight', 'border', 'boxSizing', 'whiteSpace', 'wordWrap', 'overflowWrap', 'lineHeight'] as const) {
+          mirror.style.setProperty(prop, style.getPropertyValue(prop))
+        }
+        mirror.style.position = 'absolute'
+        mirror.style.visibility = 'hidden'
+        mirror.style.width = `${el.offsetWidth}px`
+        mirror.style.whiteSpace = 'pre-wrap'
+
+        const before = document.createTextNode(value.slice(0, idx))
+        const mark = document.createElement('span')
+        mark.textContent = searchText
+        const after = document.createTextNode(value.slice(idx + searchText.length))
+        mirror.append(before, mark, after)
+        document.body.appendChild(mirror)
+
+        const elRect = el.getBoundingClientRect()
+        const markRect = mark.getBoundingClientRect()
+        const mirrorRect = mirror.getBoundingClientRect()
+
+        // Offset: mark position relative to mirror, then add element position
+        const result = {
+          x: elRect.left + (markRect.left - mirrorRect.left),
+          y: elRect.top + (markRect.top - mirrorRect.top),
+          width: markRect.width,
+          height: markRect.height,
+        }
+
+        document.body.removeChild(mirror)
+        return result
+      }
+
+      // For regular elements: use Range API to find text node and measure
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+      let node: Node | null
+      while ((node = walker.nextNode())) {
+        const content = node.textContent ?? ''
+        const idx = content.indexOf(searchText)
+        if (idx === -1) continue
+
+        const range = document.createRange()
+        range.setStart(node, idx)
+        range.setEnd(node, idx + searchText.length)
+        const rect = range.getBoundingClientRect()
+        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+      }
+      return null
+    }, text)
+  } else {
+    box = await locator.boundingBox()
+  }
+
+  if (!box) return
+
+  _getTestInfo().annotations.push({
+    type: 'highlight',
+    description: JSON.stringify({
+      x: box.x,
+      y: box.y,
+      width: box.width,
+      height: box.height,
+      ...styleOpts,
+    }),
+  })
+}
+
+/**
  * Ensure a demo step takes at least `ms` milliseconds.
  * Call at the END of a step to pad with a visual pause
  * so the video has enough time for voiceover narration.

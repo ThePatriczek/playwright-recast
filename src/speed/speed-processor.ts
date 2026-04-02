@@ -106,12 +106,10 @@ export function processSpeed(
       ? trace.frames[trace.frames.length - 1]!.pageId : undefined
     const recFrames = recPageId
       ? trace.frames.filter((f) => f.pageId === recPageId) : trace.frames
-    const recActions = trace.actions.filter((a) => a.pageId === recPageId)
-    const baseline = recActions.length > 0
-      ? (recActions[0]!.startTime as number)
-      : recFrames.length > 0
-        ? (recFrames[0]!.timestamp as number)
-        : visibleStart
+    // Baseline = first recording frame (not first action — actions may start later)
+    const baseline = recFrames.length > 0
+      ? (recFrames[0]!.timestamp as number)
+      : visibleStart
 
     const speedSegments: SpeedSegment[] = config.segments.map((seg) => ({
       originalStart: toMonotonic(seg.startMs + baseline),

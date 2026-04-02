@@ -22,6 +22,8 @@ import { resolveClickEffectConfig } from '../click-effect/defaults.js'
 import type { CursorKeyframe } from '../types/cursor-overlay.js'
 import { resolveCursorOverlayConfig, type ResolvedCursorOverlayConfig } from '../cursor-overlay/defaults.js'
 import { buildTrajectory } from '../cursor-overlay/trajectory.js'
+import type { HighlightEvent } from '../types/text-highlight.js'
+import { resolveTextHighlightConfig, type ResolvedTextHighlightConfig } from '../text-highlight/defaults.js'
 
 type PipelineState = {
   parsed?: ParsedTrace
@@ -37,6 +39,8 @@ type PipelineState = {
   cursorOverlayConfig?: ResolvedCursorOverlayConfig
   zoomConfig?: { transitionMs?: number; easing?: import('../types/easing.js').EasingSpec }
   interpolateConfig?: import('../types/interpolate.js').InterpolateConfig
+  highlightEvents?: HighlightEvent[]
+  highlightConfig?: ResolvedTextHighlightConfig
 }
 
 /**
@@ -81,6 +85,8 @@ export class PipelineExecutor {
       cursorOverlayConfig: state.cursorOverlayConfig,
       zoomConfig: state.zoomConfig,
       interpolateConfig: state.interpolateConfig,
+      highlightEvents: state.highlightEvents,
+      highlightConfig: state.highlightConfig,
     }
 
     // Render final video
@@ -95,9 +101,9 @@ export class PipelineExecutor {
       fs.writeFileSync(vttPath, writeVtt(state.subtitled.subtitles))
     }
 
-    // Write report.json
+    // Write recast-report.json (separate from demo-report-writer's report.json)
     if (state.parsed) {
-      const reportPath = path.join(outputDir, 'report.json')
+      const reportPath = path.join(outputDir, 'recast-report.json')
       const report = {
         scenario: 'playwright-recast output',
         sourceVideo: state.sourceVideoPath,
@@ -325,12 +331,19 @@ export class PipelineExecutor {
           const CLICK_METHODS = new Set(['click', 'selectOption'])
           const ALL_METHODS = new Set([...INPUT_METHODS, ...CLICK_METHODS])
 
-          // All user actions with video-relative timing (ms)
+          // Only include actions from the recording context
+          const recPageIdZoom = state.parsed.frames.length > 0
+            ? state.parsed.frames[state.parsed.frames.length - 1]!.pageId : undefined
+          const recFramesZoom = recPageIdZoom
+            ? state.parsed.frames.filter(f => f.pageId === recPageIdZoom) : state.parsed.frames
+          const recStartZoom = recFramesZoom[0]?.timestamp as number ?? firstFrameTime
+
           const allActions = state.parsed.actions
+            .filter((a) => (a.startTime as number) >= recStartZoom)
             .map((a) => ({
               method: a.method,
-              videoStartMs: Math.round(((a.startTime as number) - firstFrameTime)),
-              videoEndMs: Math.round(((a.endTime as number) - firstFrameTime)),
+              videoStartMs: Math.round(((a.startTime as number) - recStartZoom)),
+              videoEndMs: Math.round(((a.endTime as number) - recStartZoom)),
               point: a.point as { x: number; y: number } | undefined,
               isInput: INPUT_METHODS.has(a.method),
               isUser: ALL_METHODS.has(a.method),
@@ -343,18 +356,18 @@ export class PipelineExecutor {
           for (const subtitle of state.subtitled.subtitles) {
             if (subtitle.zoom) continue // already set by enrichZoomFromReport
 
-            // Find input actions (fill/type) within this subtitle window
+            // Find input actions (fill/type) within this subtitle window (wider tolerance for timing drift)
             const inputActions = userActions.filter(
               (a) => a.isInput &&
-                a.videoStartMs >= subtitle.startMs - 1000 &&
-                a.videoStartMs <= subtitle.endMs + 1000,
+                a.videoStartMs >= subtitle.startMs - 2000 &&
+                a.videoStartMs <= subtitle.endMs + 2000,
             )
 
             // Find click actions within this subtitle window
             const clickActions = userActions.filter(
               (a) => !a.isInput &&
-                a.videoStartMs >= subtitle.startMs - 1000 &&
-                a.videoStartMs <= subtitle.endMs + 1000,
+                a.videoStartMs >= subtitle.startMs - 2000 &&
+                a.videoStartMs <= subtitle.endMs + 2000,
             )
 
             const hasInput = inputActions.length > 0
@@ -390,6 +403,13 @@ export class PipelineExecutor {
               if (nearest.length > 0 && nearest[0]!.dist < 10000) {
                 bestPoint = nearest[0]!.point
               }
+            }
+
+            // For input actions (fill/type) without coordinates, zoom to viewport center.
+            // This is better than skipping zoom entirely — fill targets are typically
+            // in the main content area.
+            if (!bestPoint && targetAction.isInput) {
+              bestPoint = { x: viewport.width / 2, y: viewport.height / 2 }
             }
 
             if (!bestPoint) continue
@@ -438,8 +458,16 @@ export class PipelineExecutor {
             cursorVideoStartOffset = videoStartOutput
           }
 
+          // Only include actions from the recording context
+          const recPageIdCursor = state.parsed.frames.length > 0
+            ? state.parsed.frames[state.parsed.frames.length - 1]!.pageId : undefined
+          const recFramesCursor = recPageIdCursor
+            ? state.parsed.frames.filter(f => f.pageId === recPageIdCursor) : state.parsed.frames
+          const recStartCursor = recFramesCursor[0]?.timestamp as number ?? 0
+          const cursorActions = state.parsed.actions.filter(a => (a.startTime as number) >= recStartCursor)
+
           const keyframes = buildTrajectory({
-            actions: state.parsed.actions as Array<{ point?: { x: number; y: number }; startTime: number }>,
+            actions: cursorActions as Array<{ point?: { x: number; y: number }; startTime: number }>,
             filter: stage.config.filter as ((a: { point?: { x: number; y: number }; startTime: number }) => boolean) | undefined,
             timeRemap: cursorTimeRemap,
             videoStartOffsetMs: cursorVideoStartOffset,
@@ -460,9 +488,17 @@ export class PipelineExecutor {
           const config = resolveClickEffectConfig(stage.config)
           const CLICK_METHODS = new Set(['click', 'selectOption'])
 
-          // Extract click actions with coordinates
+          // Determine recording context's first frame time
+          // (last frame's pageId = recording context, since setup context is created first)
+          const recPageIdClick = state.parsed.frames.length > 0
+            ? state.parsed.frames[state.parsed.frames.length - 1]!.pageId : undefined
+          const recFramesClick = recPageIdClick
+            ? state.parsed.frames.filter(f => f.pageId === recPageIdClick) : state.parsed.frames
+          const recStartClick = recFramesClick[0]?.timestamp as number ?? 0
+
+          // Only include actions from the recording context (after recording started)
           let clickActions = state.parsed.actions.filter(
-            (a) => CLICK_METHODS.has(a.method) && a.point,
+            (a) => CLICK_METHODS.has(a.method) && a.point && (a.startTime as number) >= recStartClick,
           )
 
           // Apply user filter if configured
@@ -505,6 +541,68 @@ export class PipelineExecutor {
           console.log(`  clickEffect: ${clickEvents.length} clicks detected`)
           for (const ce of clickEvents) {
             console.log(`    click: (${ce.x}, ${ce.y}) @ ${ce.videoTimeMs}ms`)
+          }
+          break
+        }
+
+        case 'textHighlight': {
+          const hlConfig = resolveTextHighlightConfig(stage.config)
+
+          // Read highlight data from report.json next to the trace source
+          const reportJsonPath = path.join(path.dirname(this.findTraceZip()), 'report.json')
+          if (!fs.existsSync(reportJsonPath)) {
+            console.log('  textHighlight: no report.json found')
+            break
+          }
+
+          const report = JSON.parse(fs.readFileSync(reportJsonPath, 'utf-8')) as {
+            steps?: Array<{ hidden?: boolean; highlights?: Array<{ x: number; y: number; width: number; height: number; color?: string; opacity?: number; duration?: number; fadeOut?: number; swipeDuration?: number }> }>
+          }
+
+          const subtitles = state.subtitled?.subtitles ?? []
+          // Skip hidden steps — subtitles only contain visible steps
+          const visibleReportSteps = (report.steps ?? []).filter(s => !s.hidden)
+          const highlightEvents: HighlightEvent[] = []
+
+          for (let i = 0; i < Math.min(subtitles.length, visibleReportSteps.length); i++) {
+            const hls = visibleReportSteps[i]?.highlights ?? []
+            for (const hl of hls) {
+              const videoTimeMs = subtitles[i]!.startMs
+              const subtitleEndMs = subtitles[i]!.endMs
+              const duration = hl.duration ?? hlConfig.duration
+              const fadeOut = hl.fadeOut ?? hlConfig.fadeOut
+              // Clamp end time to subtitle boundary — highlight must not overflow into next step
+              const rawEndMs = videoTimeMs + duration + fadeOut
+              const endTimeMs = Math.min(rawEndMs, subtitleEndMs)
+              highlightEvents.push({
+                x: hl.x,
+                y: hl.y,
+                width: hl.width,
+                height: hl.height,
+                videoTimeMs: Math.max(0, Math.round(videoTimeMs)),
+                endTimeMs: Math.round(endTimeMs),
+                color: hl.color ?? hlConfig.color,
+                opacity: hl.opacity ?? hlConfig.opacity,
+                swipeDuration: hl.swipeDuration ?? hlConfig.swipeDuration,
+                fadeOut,
+              })
+            }
+          }
+
+          if (highlightEvents.length === 0) {
+            console.log('  textHighlight: no highlights in report')
+            break
+          }
+
+          const filtered = hlConfig.filter
+            ? highlightEvents.filter(hlConfig.filter)
+            : highlightEvents
+
+          state.highlightEvents = filtered
+          state.highlightConfig = hlConfig
+          console.log(`  textHighlight: ${filtered.length} highlight(s) from report`)
+          for (const he of filtered) {
+            console.log(`    highlight: (${he.x}, ${he.y}) ${he.width}x${he.height} @ ${he.videoTimeMs}ms [${he.color}]`)
           }
           break
         }
