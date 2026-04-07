@@ -2,71 +2,42 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a CLI tool (`recast-studio`) that lets non-technical users record a browser session, have Claude generate voiceover scripts, and produce a polished demo video — all in one command.
+**Goal:** Build a recording CLI (`recast-studio`) and a Claude Code skill (`studio-workflow`) that together let non-technical users create product demo videos from browser sessions.
 
-**Architecture:** Three-phase pipeline: (1) Playwright browser recording → trace.zip, (2) Claude API analysis → SRT + hide predicate, (3) standard recast pipeline → MP4. All phases orchestrated by a single CLI entry point.
+**Architecture:** CLI handles only recording (Playwright browser → trace.zip). The Claude Code skill handles AI analysis (voiceover generation) and recast pipeline execution. No AI SDK in code — the agent IS the AI.
 
-**Tech Stack:** TypeScript (ESM, NodeNext), Playwright (recording), Anthropic SDK (Claude API), existing playwright-recast pipeline, vitest for tests.
+**Tech Stack:** TypeScript (ESM, NodeNext), Playwright (recording), existing playwright-recast pipeline, vitest for tests.
 
 ---
 
-### Task 1: Types and interfaces
+### Task 1: Types
 
 **Files:**
 - Create: `src/studio/types.ts`
 
-- [ ] **Step 1: Create studio types file**
+- [ ] **Step 1: Create types file**
 
 ```typescript
 // src/studio/types.ts
 
-/** CLI options parsed from command line */
-export interface StudioConfig {
-  url: string
-  output: string
+/** Options for the browser recorder */
+export interface RecordOptions {
   viewport: { width: number; height: number }
   loadStorage?: string
   ignoreHttpsErrors: boolean
-  lang: string
-  tone: 'marketing' | 'technical' | 'neutral'
-  voice?: string
-  noVoiceover: boolean
-  intro?: string
-  outro?: string
-  resolution: string
-  keepTrace: boolean
-  dryRun: boolean
 }
 
-/** A single step from Claude's analysis */
-export interface AnalysisStep {
-  actionIndices: number[]
-  hidden: boolean
-  voiceover: string | null
-}
-
-/** Full analysis result from Claude */
-export interface AnalysisResult {
-  title: string
-  steps: AnalysisStep[]
-}
-
-/** Simplified action sent to Claude for analysis */
-export interface ActionSummary {
-  index: number
-  method: string
-  selector?: string
-  url?: string
-  value?: string
-  timestamp: number
-}
-
-/** Output from the recorder phase */
+/** Output from the recorder */
 export interface RecordingResult {
-  traceDir: string
+  /** Directory containing trace.zip and video */
+  outputDir: string
+  /** Path to trace.zip */
   tracePath: string
+  /** Path to recorded .webm video */
   videoPath: string
+  /** Number of actions detected in trace */
   actionCount: number
+  /** Total recording duration in ms */
   durationMs: number
 }
 ```
@@ -80,475 +51,15 @@ Expected: no errors
 
 ```bash
 git add src/studio/types.ts
-git commit -m "feat(studio): add type definitions for recast-studio"
+git commit -m "feat(studio): add recording types"
 ```
 
 ---
 
-### Task 2: SRT builder (with TDD)
-
-**Files:**
-- Create: `src/studio/srt-builder.ts`
-- Create: `tests/unit/studio/srt-builder.test.ts`
-
-- [ ] **Step 1: Write the failing tests**
-
-```typescript
-// tests/unit/studio/srt-builder.test.ts
-import { describe, it, expect } from 'vitest'
-import { buildSrt } from '../../../src/studio/srt-builder'
-import type { AnalysisStep } from '../../../src/studio/types'
-
-const actions = [
-  { startTime: 0, endTime: 1000 },
-  { startTime: 2000, endTime: 3000 },
-  { startTime: 3500, endTime: 4000 },
-  { startTime: 5000, endTime: 6000 },
-  { startTime: 8000, endTime: 9000 },
-  { startTime: 10000, endTime: 12000 },
-  { startTime: 14000, endTime: 15000 },
-  { startTime: 18000, endTime: 19000 },
-]
-
-describe('buildSrt', () => {
-  it('generates SRT entries for visible steps only', () => {
-    const steps: AnalysisStep[] = [
-      { actionIndices: [0], hidden: true, voiceover: null },
-      { actionIndices: [1, 2], hidden: false, voiceover: 'First visible step.' },
-      { actionIndices: [3], hidden: false, voiceover: 'Second visible step.' },
-    ]
-    const srt = buildSrt(steps, actions)
-    expect(srt).toContain('First visible step.')
-    expect(srt).toContain('Second visible step.')
-    expect(srt).not.toContain('null')
-    // Two SRT entries (hidden step excluded)
-    const blocks = srt.trim().split(/\n\n+/)
-    expect(blocks).toHaveLength(2)
-  })
-
-  it('uses first action timestamp as start time', () => {
-    const steps: AnalysisStep[] = [
-      { actionIndices: [3], hidden: false, voiceover: 'Step at 5s.' },
-    ]
-    const srt = buildSrt(steps, actions)
-    expect(srt).toContain('00:00:05,000')
-  })
-
-  it('uses last action endTime of next step (or +5s) as end time', () => {
-    const steps: AnalysisStep[] = [
-      { actionIndices: [1], hidden: false, voiceover: 'First.' },
-      { actionIndices: [3], hidden: false, voiceover: 'Second.' },
-    ]
-    const srt = buildSrt(steps, actions)
-    // First step ends when second step starts (action index 3 → 5000ms)
-    expect(srt).toContain('00:00:02,000 --> 00:00:05,000')
-  })
-
-  it('handles steps with no voiceover (skips them)', () => {
-    const steps: AnalysisStep[] = [
-      { actionIndices: [0], hidden: false, voiceover: null },
-      { actionIndices: [1], hidden: false, voiceover: 'Has text.' },
-    ]
-    const srt = buildSrt(steps, actions)
-    const blocks = srt.trim().split(/\n\n+/)
-    expect(blocks).toHaveLength(1)
-    expect(srt).toContain('Has text.')
-  })
-
-  it('returns empty string when no visible steps with voiceover', () => {
-    const steps: AnalysisStep[] = [
-      { actionIndices: [0], hidden: true, voiceover: null },
-    ]
-    const srt = buildSrt(steps, actions)
-    expect(srt).toBe('')
-  })
-
-  it('numbers SRT entries sequentially starting from 1', () => {
-    const steps: AnalysisStep[] = [
-      { actionIndices: [0], hidden: true, voiceover: null },
-      { actionIndices: [1], hidden: false, voiceover: 'A.' },
-      { actionIndices: [3], hidden: false, voiceover: 'B.' },
-      { actionIndices: [5], hidden: false, voiceover: 'C.' },
-    ]
-    const srt = buildSrt(steps, actions)
-    const blocks = srt.trim().split(/\n\n+/)
-    expect(blocks[0]).toMatch(/^1\n/)
-    expect(blocks[1]).toMatch(/^2\n/)
-    expect(blocks[2]).toMatch(/^3\n/)
-  })
-})
-```
-
-- [ ] **Step 2: Run tests to verify they fail**
-
-Run: `cd ~/Work/playwright-recast && bun test tests/unit/studio/srt-builder.test.ts`
-Expected: FAIL — module not found
-
-- [ ] **Step 3: Implement srt-builder**
-
-```typescript
-// src/studio/srt-builder.ts
-import type { AnalysisStep } from './types.js'
-
-function formatSrtTime(ms: number): string {
-  const rounded = Math.round(ms)
-  const h = Math.floor(rounded / 3600000)
-  const m = Math.floor((rounded % 3600000) / 60000)
-  const s = Math.floor((rounded % 60000) / 1000)
-  const mil = rounded % 1000
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')},${String(mil).padStart(3, '0')}`
-}
-
-/**
- * Build an SRT string from analysis steps and trace action timings.
- *
- * Only visible steps with non-null voiceover are included.
- * Timing: start = first action in step, end = first action of next visible step (or start + 5s).
- */
-export function buildSrt(
-  steps: AnalysisStep[],
-  actions: Array<{ startTime: number; endTime: number }>,
-): string {
-  // Collect visible steps with voiceover and their start times
-  const visible = steps
-    .filter((s) => !s.hidden && s.voiceover !== null)
-    .map((s) => ({
-      voiceover: s.voiceover!,
-      startMs: actions[s.actionIndices[0]!]?.startTime ?? 0,
-      actionIndices: s.actionIndices,
-    }))
-
-  if (visible.length === 0) return ''
-
-  const entries: string[] = []
-
-  for (let i = 0; i < visible.length; i++) {
-    const step = visible[i]!
-    const startMs = step.startMs
-    // End time = start of next visible step, or current start + 5000ms
-    const endMs = i + 1 < visible.length
-      ? visible[i + 1]!.startMs
-      : startMs + 5000
-
-    entries.push(
-      `${i + 1}\n${formatSrtTime(startMs)} --> ${formatSrtTime(endMs)}\n${step.voiceover}`,
-    )
-  }
-
-  return entries.join('\n\n') + '\n'
-}
-```
-
-- [ ] **Step 4: Run tests to verify they pass**
-
-Run: `cd ~/Work/playwright-recast && bun test tests/unit/studio/srt-builder.test.ts`
-Expected: all 6 tests PASS
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add src/studio/srt-builder.ts tests/unit/studio/srt-builder.test.ts
-git commit -m "feat(studio): add SRT builder with tests"
-```
-
----
-
-### Task 3: Claude prompt template
-
-**Files:**
-- Create: `src/studio/prompts.ts`
-- Create: `tests/unit/studio/prompts.test.ts`
-
-- [ ] **Step 1: Write failing tests**
-
-```typescript
-// tests/unit/studio/prompts.test.ts
-import { describe, it, expect } from 'vitest'
-import { buildAnalysisPrompt } from '../../../src/studio/prompts'
-import type { ActionSummary } from '../../../src/studio/types'
-
-describe('buildAnalysisPrompt', () => {
-  const actions: ActionSummary[] = [
-    { index: 0, method: 'goto', url: 'https://example.com', timestamp: 0 },
-    { index: 1, method: 'click', selector: 'button.login', timestamp: 2000 },
-    { index: 2, method: 'fill', selector: '#username', value: 'user@test.com', timestamp: 3000 },
-  ]
-
-  it('returns system and user messages', () => {
-    const result = buildAnalysisPrompt(actions, { lang: 'cs', tone: 'marketing' })
-    expect(result.system).toContain('product demo video')
-    expect(result.user).toContain('goto')
-    expect(result.user).toContain('button.login')
-  })
-
-  it('includes language in system prompt', () => {
-    const result = buildAnalysisPrompt(actions, { lang: 'en', tone: 'marketing' })
-    expect(result.system).toContain('en')
-  })
-
-  it('includes tone in system prompt', () => {
-    const result = buildAnalysisPrompt(actions, { lang: 'cs', tone: 'technical' })
-    expect(result.system).toContain('technical')
-  })
-
-  it('masks password values', () => {
-    const pwActions: ActionSummary[] = [
-      { index: 0, method: 'fill', selector: '#password', value: 'secret123', timestamp: 0 },
-    ]
-    const result = buildAnalysisPrompt(pwActions, { lang: 'cs', tone: 'marketing' })
-    expect(result.user).not.toContain('secret123')
-    expect(result.user).toContain('***')
-  })
-
-  it('serializes actions as JSON in user message', () => {
-    const result = buildAnalysisPrompt(actions, { lang: 'cs', tone: 'marketing' })
-    // Should be valid JSON embedded in the user message
-    const jsonMatch = result.user.match(/\[[\s\S]*\]/)
-    expect(jsonMatch).not.toBeNull()
-    const parsed = JSON.parse(jsonMatch![0])
-    expect(parsed).toHaveLength(3)
-  })
-})
-```
-
-- [ ] **Step 2: Run tests to verify they fail**
-
-Run: `cd ~/Work/playwright-recast && bun test tests/unit/studio/prompts.test.ts`
-Expected: FAIL
-
-- [ ] **Step 3: Implement prompts module**
-
-```typescript
-// src/studio/prompts.ts
-import type { ActionSummary } from './types.js'
-
-const PASSWORD_SELECTORS = /password|passwd|pwd|secret/i
-
-export function buildAnalysisPrompt(
-  actions: ActionSummary[],
-  options: { lang: string; tone: string },
-): { system: string; user: string } {
-  // Mask password values
-  const sanitized = actions.map((a) => {
-    if (a.value && a.selector && PASSWORD_SELECTORS.test(a.selector)) {
-      return { ...a, value: '***' }
-    }
-    return a
-  })
-
-  const system = `You are a product demo video script writer. Your job is to analyze raw browser interaction actions and produce a structured video script.
-
-Instructions:
-- Group related actions into logical steps (e.g., login = multiple clicks/fills grouped as one step)
-- Mark setup/navigation actions as hidden (they won't appear in the video narration)
-- Write voiceover text for each visible step in language: ${options.lang}
-- Tone: ${options.tone} — ${options.tone === 'marketing' ? 'benefit-focused, professional, concise. Highlight value for the user.' : options.tone === 'technical' ? 'precise, factual, describe what happens step by step.' : 'clear, neutral, informative.'}
-- Voiceover should describe WHAT the user achieves, not the mechanical click/fill actions
-- Ignore password fields — never mention credentials in voiceover
-- Each voiceover text should be 1-2 sentences, suitable for TTS narration
-
-Respond with ONLY valid JSON matching this schema:
-{
-  "title": "string — short title for the demo video",
-  "steps": [
-    {
-      "actionIndices": [0, 1, 2],
-      "hidden": true,
-      "voiceover": null
-    },
-    {
-      "actionIndices": [3, 4],
-      "hidden": false,
-      "voiceover": "Voiceover text for this step."
-    }
-  ]
-}
-
-Rules:
-- Every action index must appear in exactly one step
-- actionIndices must be sorted ascending within each step
-- Steps must be sorted by their first actionIndex
-- hidden steps must have voiceover: null
-- visible steps must have voiceover as a non-empty string`
-
-  const user = `Analyze these ${sanitized.length} browser actions and create a demo video script:
-
-${JSON.stringify(sanitized, null, 2)}`
-
-  return { system, user }
-}
-```
-
-- [ ] **Step 4: Run tests to verify they pass**
-
-Run: `cd ~/Work/playwright-recast && bun test tests/unit/studio/prompts.test.ts`
-Expected: all 5 tests PASS
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add src/studio/prompts.ts tests/unit/studio/prompts.test.ts
-git commit -m "feat(studio): add Claude prompt template with tests"
-```
-
----
-
-### Task 4: Analyzer (Claude API integration)
-
-**Files:**
-- Create: `src/studio/analyzer.ts`
-- Create: `tests/unit/studio/analyzer.test.ts`
-
-- [ ] **Step 1: Write failing tests (mocked Claude)**
-
-```typescript
-// tests/unit/studio/analyzer.test.ts
-import { describe, it, expect, vi } from 'vitest'
-import { analyzeActions } from '../../../src/studio/analyzer'
-import type { ActionSummary } from '../../../src/studio/types'
-
-// Mock the Anthropic SDK
-vi.mock('@anthropic-ai/sdk', () => {
-  return {
-    default: class MockAnthropic {
-      messages = {
-        create: vi.fn(),
-      }
-    },
-  }
-})
-
-const sampleActions: ActionSummary[] = [
-  { index: 0, method: 'goto', url: 'https://example.com', timestamp: 0 },
-  { index: 1, method: 'click', selector: 'button.login', timestamp: 2000 },
-  { index: 2, method: 'fill', selector: '#search', value: 'test query', timestamp: 5000 },
-  { index: 3, method: 'click', selector: '.result', timestamp: 10000 },
-]
-
-describe('analyzeActions', () => {
-  it('parses valid Claude JSON response', async () => {
-    const mockResponse = {
-      title: 'Test Demo',
-      steps: [
-        { actionIndices: [0, 1], hidden: true, voiceover: null },
-        { actionIndices: [2], hidden: false, voiceover: 'Search for content.' },
-        { actionIndices: [3], hidden: false, voiceover: 'Open the result.' },
-      ],
-    }
-
-    const { default: Anthropic } = await import('@anthropic-ai/sdk')
-    const mockCreate = vi.mocked(new Anthropic().messages.create)
-    mockCreate.mockResolvedValue({
-      content: [{ type: 'text', text: JSON.stringify(mockResponse) }],
-    } as any)
-
-    const result = await analyzeActions(sampleActions, { lang: 'en', tone: 'marketing' })
-    expect(result.title).toBe('Test Demo')
-    expect(result.steps).toHaveLength(3)
-    expect(result.steps[0]!.hidden).toBe(true)
-    expect(result.steps[1]!.voiceover).toBe('Search for content.')
-  })
-
-  it('throws on missing ANTHROPIC_API_KEY', async () => {
-    const originalKey = process.env.ANTHROPIC_API_KEY
-    delete process.env.ANTHROPIC_API_KEY
-    try {
-      await expect(
-        analyzeActions(sampleActions, { lang: 'en', tone: 'marketing' }),
-      ).rejects.toThrow('ANTHROPIC_API_KEY')
-    } finally {
-      if (originalKey) process.env.ANTHROPIC_API_KEY = originalKey
-    }
-  })
-})
-```
-
-- [ ] **Step 2: Run tests to verify they fail**
-
-Run: `cd ~/Work/playwright-recast && bun test tests/unit/studio/analyzer.test.ts`
-Expected: FAIL
-
-- [ ] **Step 3: Implement analyzer**
-
-```typescript
-// src/studio/analyzer.ts
-import type { ActionSummary, AnalysisResult } from './types.js'
-import { buildAnalysisPrompt } from './prompts.js'
-
-/**
- * Send trace actions to Claude for analysis.
- * Returns structured steps with voiceover text.
- */
-export async function analyzeActions(
-  actions: ActionSummary[],
-  options: { lang: string; tone: string },
-): Promise<AnalysisResult> {
-  const apiKey = process.env.ANTHROPIC_API_KEY
-  if (!apiKey) {
-    throw new Error(
-      'ANTHROPIC_API_KEY environment variable is required.\n' +
-      'Get your key at https://console.anthropic.com/settings/keys\n' +
-      'Then: export ANTHROPIC_API_KEY=sk-ant-...',
-    )
-  }
-
-  const { default: Anthropic } = await import('@anthropic-ai/sdk')
-  const client = new Anthropic({ apiKey })
-
-  const { system, user } = buildAnalysisPrompt(actions, options)
-
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 4096,
-    system,
-    messages: [{ role: 'user', content: user }],
-  })
-
-  const text = response.content
-    .filter((block): block is { type: 'text'; text: string } => block.type === 'text')
-    .map((block) => block.text)
-    .join('')
-
-  return parseAnalysisResponse(text)
-}
-
-function parseAnalysisResponse(text: string): AnalysisResult {
-  // Extract JSON from response (Claude may wrap in markdown code blocks)
-  const jsonMatch = text.match(/\{[\s\S]*\}/)
-  if (!jsonMatch) {
-    throw new Error(`Claude did not return valid JSON. Response:\n${text.substring(0, 500)}`)
-  }
-
-  const parsed = JSON.parse(jsonMatch[0]) as AnalysisResult
-
-  if (!parsed.title || !Array.isArray(parsed.steps)) {
-    throw new Error(`Invalid analysis format. Expected { title, steps[] }. Got: ${JSON.stringify(parsed).substring(0, 200)}`)
-  }
-
-  return parsed
-}
-```
-
-- [ ] **Step 4: Run tests to verify they pass**
-
-Run: `cd ~/Work/playwright-recast && bun test tests/unit/studio/analyzer.test.ts`
-Expected: all 2 tests PASS
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add src/studio/analyzer.ts tests/unit/studio/analyzer.test.ts
-git commit -m "feat(studio): add Claude analyzer with mocked tests"
-```
-
----
-
-### Task 5: Browser recorder
+### Task 2: Browser recorder
 
 **Files:**
 - Create: `src/studio/recorder.ts`
-
-This uses Playwright programmatic API. No unit tests here — it requires a real browser. Will be tested manually and via integration test later.
 
 - [ ] **Step 1: Implement recorder**
 
@@ -556,19 +67,17 @@ This uses Playwright programmatic API. No unit tests here — it requires a real
 // src/studio/recorder.ts
 import * as fs from 'node:fs'
 import * as path from 'node:path'
-import type { RecordingResult } from './types.js'
-
-export interface RecordOptions {
-  viewport: { width: number; height: number }
-  loadStorage?: string
-  ignoreHttpsErrors: boolean
-}
+import type { RecordOptions, RecordingResult } from './types.js'
 
 /**
  * Open a browser, let the user interact, and capture a Playwright trace + video.
  * Returns when the user closes the browser.
  */
-export async function record(url: string, outputDir: string, options: RecordOptions): Promise<RecordingResult> {
+export async function record(
+  url: string,
+  outputDir: string,
+  options: RecordOptions,
+): Promise<RecordingResult> {
   const { chromium } = await import('playwright')
 
   fs.mkdirSync(outputDir, { recursive: true })
@@ -584,7 +93,6 @@ export async function record(url: string, outputDir: string, options: RecordOpti
     ignoreHTTPSErrors: options.ignoreHttpsErrors,
   }
 
-  // Load pre-saved auth state if provided
   if (options.loadStorage) {
     const storagePath = path.resolve(options.loadStorage)
     if (!fs.existsSync(storagePath)) {
@@ -608,7 +116,7 @@ export async function record(url: string, outputDir: string, options: RecordOpti
   try {
     await context.tracing.stop({ path: tracePath })
   } catch {
-    // Browser already closed — tracing.stop may fail, but trace.zip is usually written
+    // Browser already closed — trace.zip is usually written before disconnect
   }
 
   // Find the recorded video file
@@ -616,20 +124,22 @@ export async function record(url: string, outputDir: string, options: RecordOpti
   const videoFile = files.find((f) => f.endsWith('.webm'))
   const videoPath = videoFile ? path.join(outputDir, videoFile) : ''
 
-  // Count actions from trace (quick parse)
+  // Quick parse for stats (non-critical)
   let actionCount = 0
   let durationMs = 0
-  try {
-    const { parseTrace } = await import('../parse/trace-parser.js')
-    const trace = await parseTrace(tracePath)
-    actionCount = trace.actions.length
-    durationMs = (trace.metadata.endTime as number) - (trace.metadata.startTime as number)
-    trace.frameReader.dispose()
-  } catch {
-    // Non-critical — just for display
+  if (fs.existsSync(tracePath)) {
+    try {
+      const { parseTrace } = await import('../parse/trace-parser.js')
+      const trace = await parseTrace(tracePath)
+      actionCount = trace.actions.length
+      durationMs = (trace.metadata.endTime as number) - (trace.metadata.startTime as number)
+      trace.frameReader.dispose()
+    } catch {
+      // Non-critical — just for display
+    }
   }
 
-  return { traceDir: outputDir, tracePath, videoPath, actionCount, durationMs }
+  return { outputDir, tracePath, videoPath, actionCount, durationMs }
 }
 ```
 
@@ -642,12 +152,12 @@ Expected: no errors
 
 ```bash
 git add src/studio/recorder.ts
-git commit -m "feat(studio): add browser recorder via Playwright API"
+git commit -m "feat(studio): add browser recorder"
 ```
 
 ---
 
-### Task 6: CLI entry point and orchestrator
+### Task 3: CLI entry point
 
 **Files:**
 - Create: `src/studio/cli.ts`
@@ -657,30 +167,17 @@ git commit -m "feat(studio): add browser recorder via Playwright API"
 ```typescript
 #!/usr/bin/env node
 // src/studio/cli.ts
-import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { parseArgs } from 'node:util'
-import type { StudioConfig, ActionSummary } from './types.js'
 import { record } from './recorder.js'
-import { analyzeActions } from './analyzer.js'
-import { buildSrt } from './srt-builder.js'
 
 const { values: args, positionals } = parseArgs({
   allowPositionals: true,
   options: {
-    output: { type: 'string', short: 'o', default: './demo.mp4' },
+    output: { type: 'string', short: 'o', default: '.recast-studio' },
     viewport: { type: 'string', default: '1920x1080' },
     'load-storage': { type: 'string' },
     'ignore-https-errors': { type: 'boolean', default: false },
-    lang: { type: 'string', default: 'cs' },
-    tone: { type: 'string', default: 'marketing' },
-    voice: { type: 'string' },
-    'no-voiceover': { type: 'boolean', default: false },
-    intro: { type: 'string' },
-    outro: { type: 'string' },
-    resolution: { type: 'string', default: '4k' },
-    'keep-trace': { type: 'boolean', default: false },
-    'dry-run': { type: 'boolean', default: false },
     help: { type: 'boolean', short: 'h', default: false },
   },
   strict: true,
@@ -690,201 +187,46 @@ if (args.help || positionals.length === 0) {
   console.log(`
 Usage: recast-studio [options] <url>
 
-Record a browser session and generate a polished demo video.
+Record a browser session as a Playwright trace for demo video generation.
 
 Arguments:
   url                         URL to open in the browser
 
-Recording:
+Options:
+  -o, --output <dir>          Output directory (default: .recast-studio/)
   --viewport <WxH>            Browser viewport (default: 1920x1080)
-  --load-storage <path>       Pre-load auth state (cookies, localStorage)
+  --load-storage <path>       Pre-load auth state (from playwright codegen --save-storage)
   --ignore-https-errors       Ignore certificate errors
-
-AI:
-  --lang <code>               Voiceover language ISO 639-1 (default: cs)
-  --tone <tone>               marketing | technical | neutral (default: marketing)
-
-Video:
-  -o, --output <path>         Output file (default: ./demo.mp4)
-  --voice <id>                ElevenLabs voice ID
-  --no-voiceover              Skip TTS, subtitles only
-  --intro <path>              Intro video file
-  --outro <path>              Outro video file
-  --resolution <res>          720p | 1080p | 1440p | 4k (default: 4k)
-
-Debug:
-  --keep-trace                Don't delete trace directory after completion
-  --dry-run                   Record + analyze only, don't render
   -h, --help                  Show this help
+
+After recording, use the studio-workflow Claude Code skill to generate the video:
+  > /studio-workflow .recast-studio/
 `)
   process.exit(positionals.length === 0 && !args.help ? 1 : 0)
 }
 
 const url = positionals[0]!
 const [vw, vh] = (args.viewport ?? '1920x1080').split('x').map(Number)
-
-const config: StudioConfig = {
-  url,
-  output: args.output ?? './demo.mp4',
-  viewport: { width: vw ?? 1920, height: vh ?? 1080 },
-  loadStorage: args['load-storage'],
-  ignoreHttpsErrors: args['ignore-https-errors'] ?? false,
-  lang: args.lang ?? 'cs',
-  tone: (args.tone ?? 'marketing') as StudioConfig['tone'],
-  voice: args.voice,
-  noVoiceover: args['no-voiceover'] ?? false,
-  intro: args.intro,
-  outro: args.outro,
-  resolution: args.resolution ?? '4k',
-  keepTrace: args['keep-trace'] ?? false,
-  dryRun: args['dry-run'] ?? false,
-}
+const outputDir = path.resolve(args.output ?? '.recast-studio')
 
 async function main() {
-  const tmpDir = path.join(process.cwd(), '.recast-studio-tmp')
-
-  // ── Phase 1: Record ──
-  console.log(`\n🎬  Opening browser at ${config.url}`)
+  console.log(`\n🎬  Opening browser at ${url}`)
   console.log('    Navigate and interact. Close the browser when done.\n')
 
-  const recording = await record(config.url, tmpDir, {
-    viewport: config.viewport,
-    loadStorage: config.loadStorage,
-    ignoreHttpsErrors: config.ignoreHttpsErrors,
+  const result = await record(url, outputDir, {
+    viewport: { width: vw ?? 1920, height: vh ?? 1080 },
+    loadStorage: args['load-storage'],
+    ignoreHttpsErrors: args['ignore-https-errors'] ?? false,
   })
 
-  if (recording.actionCount === 0) {
-    console.error('❌  No interactions recorded. Nothing to process.')
+  if (result.actionCount === 0) {
+    console.error('❌  No interactions recorded. Try again and click around before closing.')
     process.exit(1)
   }
 
-  console.log(`✅  Session recorded (${(recording.durationMs / 1000).toFixed(0)}s, ${recording.actionCount} actions)\n`)
-
-  // ── Phase 2: AI Analyze ──
-  console.log('🤖  Analyzing with Claude...')
-
-  // Parse trace to get action details for Claude
-  const { parseTrace } = await import('../parse/trace-parser.js')
-  const trace = await parseTrace(recording.tracePath)
-
-  const actionSummaries: ActionSummary[] = trace.actions.map((a, i) => ({
-    index: i,
-    method: a.method,
-    selector: a.params.selector as string | undefined,
-    url: a.params.url as string | undefined,
-    value: a.params.value as string | undefined,
-    timestamp: a.startTime as number,
-  }))
-
-  trace.frameReader.dispose()
-
-  const analysis = await analyzeActions(actionSummaries, {
-    lang: config.lang,
-    tone: config.tone,
-  })
-
-  const visibleSteps = analysis.steps.filter((s) => !s.hidden)
-  const hiddenSteps = analysis.steps.filter((s) => s.hidden)
-  console.log(`    → ${visibleSteps.length} meaningful steps (${hiddenSteps.length} hidden as setup)`)
-  console.log(`    → Voiceover generated (${config.lang}, ${config.tone} tone)\n`)
-
-  // Build SRT file
-  const actionsForSrt = trace.actions.map((a) => ({
-    startTime: a.startTime as number,
-    endTime: a.endTime as number,
-  }))
-  // Re-parse trace to get fresh actions (frameReader was disposed)
-  const srtContent = buildSrt(analysis.steps, actionsForSrt)
-  const srtPath = path.join(tmpDir, 'subtitles.srt')
-  fs.writeFileSync(srtPath, srtContent)
-
-  if (config.dryRun) {
-    console.log('🔍  Dry run — skipping video render.')
-    console.log(`    Title: ${analysis.title}`)
-    console.log(`    SRT: ${srtPath}`)
-    for (const step of analysis.steps) {
-      const status = step.hidden ? '  (hidden)' : ''
-      console.log(`    [${step.actionIndices.join(',')}]${status} ${step.voiceover ?? '—'}`)
-    }
-    if (!config.keepTrace) fs.rmSync(tmpDir, { recursive: true, force: true })
-    return
-  }
-
-  // ── Phase 3: Recast Pipeline ──
-  console.log('🎥  Running recast pipeline...')
-
-  const { Pipeline: Recast } = await import('../pipeline/pipeline.js')
-  const { ElevenLabsProvider } = await import('../voiceover/providers/elevenlabs.js')
-
-  // Build set of hidden action indices for hideSteps
-  const hiddenIndices = new Set<number>()
-  for (const step of analysis.steps) {
-    if (step.hidden) {
-      for (const idx of step.actionIndices) hiddenIndices.add(idx)
-    }
-  }
-
-  let pipeline = Recast.from(tmpDir)
-    .parse()
-    .hideSteps((action) => {
-      const idx = actionsForSrt.findIndex(
-        (a) => a.startTime === (action.startTime as number) && a.endTime === (action.endTime as number),
-      )
-      return hiddenIndices.has(idx)
-    })
-    .speedUp({ duringIdle: 3.0, duringUserAction: 1.0, duringNetworkWait: 2.0 })
-    .subtitlesFromSrt(srtPath)
-    .textProcessing({ builtins: true })
-    .autoZoom({ inputLevel: 1.2, clickLevel: 1.0, centerBias: 0.3 })
-    .cursorOverlay()
-    .clickEffect({ sound: true })
-
-  if (config.intro) pipeline = pipeline.intro({ path: path.resolve(config.intro) })
-  if (config.outro) pipeline = pipeline.outro({ path: path.resolve(config.outro) })
-
-  if (!config.noVoiceover) {
-    pipeline = pipeline.voiceover(
-      ElevenLabsProvider({
-        voiceId: config.voice ?? undefined,
-        modelId: 'eleven_multilingual_v2',
-        languageCode: config.lang,
-      }),
-    )
-  }
-
-  pipeline = pipeline.render({
-    format: 'mp4',
-    resolution: config.resolution as '720p' | '1080p' | '1440p' | '4k',
-    fps: 120,
-    burnSubtitles: true,
-    subtitleStyle: {
-      fontFamily: 'Arial',
-      fontSize: 96,
-      primaryColor: '#1a1a1a',
-      backgroundColor: '#FFFFFF',
-      backgroundOpacity: 0.75,
-      padding: 40,
-      bold: true,
-      position: 'bottom',
-      marginVertical: 100,
-      marginHorizontal: 200,
-      chunkOptions: { maxCharsPerLine: 55 },
-    },
-  })
-
-  const outputPath = path.resolve(config.output)
-  fs.mkdirSync(path.dirname(outputPath), { recursive: true })
-  await pipeline.toFile(outputPath)
-
-  const size = (fs.statSync(outputPath).size / (1024 * 1024)).toFixed(1)
-  console.log(`\n✅  ${path.basename(outputPath)} (${size} MB)\n`)
-
-  // Cleanup
-  if (!config.keepTrace) {
-    fs.rmSync(tmpDir, { recursive: true, force: true })
-  } else {
-    console.log(`    Trace kept at: ${tmpDir}`)
-  }
+  console.log(`✅  Trace saved to ${result.outputDir}/ (${(result.durationMs / 1000).toFixed(0)}s, ${result.actionCount} actions)`)
+  console.log(`\n    Next: use the studio-workflow skill to generate the video:`)
+  console.log(`    > /studio-workflow ${result.outputDir}/\n`)
 }
 
 main().catch((err) => {
@@ -902,125 +244,306 @@ Expected: no errors
 
 ```bash
 git add src/studio/cli.ts
-git commit -m "feat(studio): add CLI entry point and orchestrator"
+git commit -m "feat(studio): add CLI entry point"
 ```
 
 ---
 
-### Task 7: Package.json and dependency setup
+### Task 4: Package.json setup
 
 **Files:**
 - Modify: `package.json`
 
-- [ ] **Step 1: Add bin entry, peerDependency, devDependency**
+- [ ] **Step 1: Add recast-studio bin entry**
 
-In `package.json`, make these changes:
+Add `"recast-studio": "./dist/studio/cli.js"` to the `"bin"` object in `package.json`, so it becomes:
 
-Add to `"bin"`:
 ```json
-"recast-studio": "./dist/studio/cli.js"
+"bin": {
+  "playwright-recast": "./dist/cli.js",
+  "recast-studio": "./dist/studio/cli.js"
+},
 ```
 
-Add to `"peerDependencies"`:
-```json
-"@anthropic-ai/sdk": ">=0.80.0"
-```
-
-Add to `"peerDependenciesMeta"`:
-```json
-"@anthropic-ai/sdk": {
-  "optional": true
-}
-```
-
-Add to `"devDependencies"`:
-```json
-"@anthropic-ai/sdk": "^0.82.0"
-```
-
-- [ ] **Step 2: Install the new dependency**
-
-Run: `cd ~/Work/playwright-recast && bun install`
-Expected: successful install
-
-- [ ] **Step 3: Build to verify everything compiles**
+- [ ] **Step 2: Build and verify**
 
 Run: `cd ~/Work/playwright-recast && bun run build`
 Expected: no errors, `dist/studio/cli.js` exists
 
+- [ ] **Step 3: Verify CLI help works**
+
+Run: `cd ~/Work/playwright-recast && node dist/studio/cli.js --help`
+Expected: help text displayed
+
 - [ ] **Step 4: Run all tests to verify nothing broke**
 
 Run: `cd ~/Work/playwright-recast && bun test`
-Expected: all tests pass (existing + new studio tests)
+Expected: all existing tests pass
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add package.json bun.lockb
-git commit -m "chore(studio): add recast-studio bin entry and @anthropic-ai/sdk dependency"
+git add package.json
+git commit -m "chore(studio): add recast-studio bin entry"
 ```
 
 ---
 
-### Task 8: Manual local testing
+### Task 5: Claude Code skill — studio-workflow
 
-**No files created.** This is a verification task.
+**Files:**
+- Create: `.claude/playwright-recast/skills/studio-workflow/SKILL.md`
 
-- [ ] **Step 1: Set environment variables**
+This is the core intelligence — the Claude Code agent itself analyzes the trace and drives the pipeline. No compiled code, just a skill prompt.
 
-Ensure `ANTHROPIC_API_KEY` and `ELEVENLABS_API_KEY` are set in the shell.
+- [ ] **Step 1: Create the skill**
 
-- [ ] **Step 2: Build the project**
+```markdown
+---
+name: studio-workflow
+description: Generate a polished demo video from a Playwright trace recording. Reads trace actions, writes voiceover scripts, generates SRT subtitles, and runs the recast pipeline. Use when the user has recorded a browser session with recast-studio and wants to produce a video.
+---
 
-Run: `cd ~/Work/playwright-recast && bun run build`
+# Studio Workflow
 
-- [ ] **Step 3: Test help output**
+Generate a demo video from a raw Playwright trace recorded by `recast-studio`.
 
-Run: `cd ~/Work/playwright-recast && node dist/studio/cli.js --help`
-Expected: help text with all options displayed
+## When to Use
 
-- [ ] **Step 4: Test dry-run on a real URL**
+- User recorded a session with `recast-studio` and wants to generate a video
+- User says "generate video from trace", "process my recording", "make a demo from this trace"
+- User points to a directory with `trace.zip` and `.webm` files
 
-Run: `cd ~/Work/playwright-recast && node dist/studio/cli.js --dry-run --keep-trace https://example.com`
-Expected: browser opens, user clicks around, closes browser, Claude analyzes, SRT is printed (no video render).
+## Input
 
-- [ ] **Step 5: Test full pipeline (if dry-run worked)**
+A directory path containing:
+- `trace.zip` — Playwright trace
+- `*.webm` — screen recording
 
-Run: `cd ~/Work/playwright-recast && node dist/studio/cli.js -o /tmp/studio-test.mp4 --resolution 1080p https://example.com`
-Expected: full video generated at `/tmp/studio-test.mp4`
+Produced by: `npx recast-studio <url>`
 
-- [ ] **Step 6: Test with --no-voiceover**
+## Workflow
 
-Run: `cd ~/Work/playwright-recast && node dist/studio/cli.js --no-voiceover --dry-run https://example.com`
-Expected: works without ELEVENLABS_API_KEY
+### Step 1: Parse the trace
+
+Read the trace.zip to understand what the user did:
+
+```typescript
+import { parseTrace } from '~/Work/playwright-recast/src/parse/trace-parser'
+const trace = await parseTrace('<dir>/trace.zip')
+```
+
+List all actions with: method, selector/url, value (mask passwords), timestamp.
+
+### Step 2: Analyze and group actions
+
+As the agent, YOU analyze the actions. Group them into logical steps:
+
+- **Hidden steps** — setup, login, navigation to starting point. These get hidden from the video.
+- **Visible steps** — the actual demo content the viewer should see.
+
+Rules:
+- Login flows (goto + fill username + fill password + click submit) = one hidden step
+- Related rapid actions (click input + fill value) = one visible step
+- Each visible step gets a voiceover sentence
+
+### Step 3: Write voiceover
+
+For each visible step, write 1-2 sentences of voiceover text following the script-writer skill guidelines:
+- Marketing tone, benefit-focused
+- Language: match the UI language or user's request
+- Never describe mechanical clicks — describe what the user ACHIEVES
+- Never mention credentials
+
+### Step 4: Generate SRT file
+
+Create an SRT file mapping voiceover text to trace timestamps:
+
+```
+1
+00:00:02,000 --> 00:00:07,000
+Voiceover text for first visible step.
+
+2
+00:00:07,001 --> 00:00:14,000
+Voiceover text for second visible step.
+```
+
+Timing: each entry starts at the first action's timestamp in that step. Ends at the start of the next visible step (or +5s for the last one).
+
+Write the SRT to `<dir>/subtitles.srt`.
+
+### Step 5: Run recast pipeline
+
+Build and execute the pipeline. Adjust parameters based on the recording:
+
+```typescript
+import { Recast, ElevenLabsProvider } from 'playwright-recast'
+
+const hiddenIndices = new Set([/* indices of hidden actions */])
+
+let pipeline = Recast.from('<dir>')
+  .parse()
+  .hideSteps((action) => {
+    // Match by timestamp to identify hidden actions
+    return hiddenIndices.has(actionIndex)
+  })
+  .speedUp({ duringIdle: 3.0, duringUserAction: 1.0, duringNetworkWait: 2.0 })
+  .subtitlesFromSrt('<dir>/subtitles.srt')
+  .textProcessing({ builtins: true })
+  .autoZoom({ inputLevel: 1.2, clickLevel: 1.0, centerBias: 0.3 })
+  .cursorOverlay()
+  .clickEffect({ sound: true })
+
+// Add intro/outro if user requests
+// pipeline = pipeline.intro({ path: '...' })
+// pipeline = pipeline.outro({ path: '...' })
+
+// Voiceover (requires ELEVENLABS_API_KEY)
+pipeline = pipeline.voiceover(
+  ElevenLabsProvider({
+    modelId: 'eleven_multilingual_v2',
+    languageCode: 'cs', // adjust to content language
+  })
+)
+
+pipeline = pipeline.render({
+  format: 'mp4',
+  resolution: '4k',
+  fps: 120,
+  burnSubtitles: true,
+  subtitleStyle: {
+    fontFamily: 'Arial',
+    fontSize: 96,
+    primaryColor: '#1a1a1a',
+    backgroundColor: '#FFFFFF',
+    backgroundOpacity: 0.75,
+    padding: 40,
+    bold: true,
+    position: 'bottom',
+    marginVertical: 100,
+    marginHorizontal: 200,
+    chunkOptions: { maxCharsPerLine: 55 },
+  },
+})
+
+await pipeline.toFile('<dir>/demo.mp4')
+```
+
+### Step 6: Report result
+
+Tell the user:
+- Video path and file size
+- Number of steps (visible / hidden)
+- Voiceover texts used
+- Suggest `--keep-trace` if they want to re-render with different settings
+
+## User Interaction
+
+- If the trace has <3 actions, warn the user and ask if they want to proceed
+- If unsure about which actions are setup vs. demo content, ASK the user
+- If user wants to adjust voiceover tone/language, re-generate SRT and re-render
+- Support `--no-voiceover` requests — skip TTS, keep subtitles only
+
+## Example Session
+
+```
+User: /studio-workflow .recast-studio/
+
+Agent: Reading trace from .recast-studio/trace.zip...
+
+Found 9 actions:
+  0: goto https://app.codexis.cz
+  1: click "Přihlásit se"
+  2: fill #username → "jana@..."
+  3: fill #password → "***"
+  4: click "Přihlásit"
+  5: click .search-input
+  6: fill .search-input → "pracovní právo"
+  7: click .result-item
+  8: click "Stáhnout"
+
+I'll group these into steps:
+  [hidden] Actions 0-4: Login flow
+  [visible] Actions 5-6: "Do vyhledávače zadáme klíčový pojem z oblasti pracovního práva."
+  [visible] Action 7: "Z výsledků vybereme nejrelevantnější dokument."
+  [visible] Action 8: "Jedním kliknutím dokument stáhneme pro offline práci."
+
+Generating SRT and running recast pipeline...
+
+✅ demo.mp4 (8.2 MB) saved to .recast-studio/demo.mp4
+```
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add .claude/playwright-recast/skills/studio-workflow/SKILL.md
+git commit -m "feat(studio): add studio-workflow Claude Code skill"
+```
 
 ---
 
-### Task 9: Final commit — all tests green
+### Task 6: Manual local testing
+
+**No files created.** Verification task.
+
+- [ ] **Step 1: Build the project**
+
+Run: `cd ~/Work/playwright-recast && bun run build`
+
+- [ ] **Step 2: Test CLI help**
+
+Run: `cd ~/Work/playwright-recast && node dist/studio/cli.js --help`
+Expected: help text with usage, options, and "Next: use studio-workflow skill" hint
+
+- [ ] **Step 3: Test recording on a real URL**
+
+Run: `cd ~/Work/playwright-recast && node dist/studio/cli.js -o /tmp/recast-test https://example.com`
+Expected: browser opens, user clicks around, closes browser, trace saved to `/tmp/recast-test/`
+
+- [ ] **Step 4: Verify trace output**
+
+Run: `ls /tmp/recast-test/`
+Expected: `trace.zip` and a `.webm` file exist
+
+- [ ] **Step 5: Test with --load-storage**
+
+Run: `cd ~/Work/playwright-recast && node dist/studio/cli.js --load-storage /nonexistent.json https://example.com`
+Expected: clear error "Storage file not found"
+
+- [ ] **Step 6: Test the skill**
+
+In Claude Code, invoke: `/studio-workflow /tmp/recast-test/`
+Expected: agent reads trace, groups actions, writes SRT, runs pipeline, produces video
+
+---
+
+### Task 7: Final verification
 
 - [ ] **Step 1: Run full test suite**
 
 Run: `cd ~/Work/playwright-recast && bun test`
 Expected: all tests pass
 
-- [ ] **Step 2: Build clean**
+- [ ] **Step 2: Clean build**
 
 Run: `cd ~/Work/playwright-recast && rm -rf dist && bun run build`
 Expected: clean build, `dist/studio/cli.js` exists
 
-- [ ] **Step 3: Verify shebang**
+- [ ] **Step 3: Check shebang**
 
 Run: `head -1 dist/studio/cli.js`
-Expected: `#!/usr/bin/env node` (TypeScript compiles it through from the source)
+Expected: `#!/usr/bin/env node`
 
-Note: If the shebang is missing (tsc strips it), add a `postbuild` script or manually prepend it. This is a known TypeScript limitation — the `#!/usr/bin/env node` comment in the source may not survive compilation. Fix: add to package.json scripts:
+If missing (tsc strips shebangs), add a postbuild script to `package.json`:
 ```json
 "postbuild": "echo '#!/usr/bin/env node' | cat - dist/studio/cli.js > /tmp/cli-shebang && mv /tmp/cli-shebang dist/studio/cli.js"
 ```
 
-- [ ] **Step 4: Final commit if any fixes were needed**
+- [ ] **Step 4: Commit if any fixes needed**
 
 ```bash
 git add -A
-git commit -m "feat(studio): recast-studio CLI — record, analyze, render in one command"
+git commit -m "feat(studio): recast-studio recording CLI + studio-workflow skill"
 ```
