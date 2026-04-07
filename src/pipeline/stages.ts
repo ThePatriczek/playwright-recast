@@ -9,6 +9,7 @@ import type { CursorOverlayConfig } from '../types/cursor-overlay.js'
 import type { EasingSpec } from '../types/easing.js'
 import type { InterpolateConfig } from '../types/interpolate.js'
 import type { TextHighlightConfig } from '../types/text-highlight.js'
+import type { IntroConfig, OutroConfig } from '../types/intro-outro.js'
 
 export type StageDescriptor =
   | { type: 'parse' }
@@ -27,6 +28,8 @@ export type StageDescriptor =
   | { type: 'cursorOverlay'; config: CursorOverlayConfig }
   | { type: 'clickEffect'; config: ClickEffectConfig }
   | { type: 'textHighlight'; config: TextHighlightConfig }
+  | { type: 'intro'; config: IntroConfig }
+  | { type: 'outro'; config: OutroConfig }
   | { type: 'interpolate'; config: InterpolateConfig }
   | { type: 'voiceover'; provider: TtsProvider }
   | { type: 'render'; config: RenderConfig }

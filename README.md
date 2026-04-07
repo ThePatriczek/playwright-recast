@@ -53,6 +53,8 @@ await Recast
 - **Animated zoom with easing** — Auto-zoom uses customizable easing functions (ease-in-out, ease-out, cubic-bezier, or custom JS functions) with smooth zoom-to-zoom panning.
 - **Frame interpolation** — Smooth out choppy browser recordings with ffmpeg minterpolate. Blend, duplicate, or motion-compensated modes with multi-pass support.
 - **Step helpers** — `narrate()`, `zoom()`, `pace()` — importable helpers for Playwright step definitions.
+- **Intro/outro** — Prepend/append branded video clips with smooth crossfade transitions. Audio preserved.
+- **recast-studio** — Record browser sessions via Playwright Codegen, then generate videos with a Claude Code skill. No code required.
 - **CLI included** — `npx playwright-recast -i trace.zip -o demo.mp4` — no code needed.
 - **Zero lock-in** — Every stage is optional. Use just the trace parser, just the subtitle generator, or the full pipeline.
 
@@ -196,6 +198,9 @@ Every stage is optional and composable:
 | `.enrichZoomFromReport(steps)` | Apply zoom coordinates from external report data |
 | `.cursorOverlay(config)` | Animated cursor at click positions (appears, moves, disappears) |
 | `.clickEffect(config)` | Add visual ripple + optional click sound at click positions |
+| `.textHighlight(config)` | Animated marker overlay on text (swipe-in reveal, auto-positioned from report) |
+| `.intro({ path, fadeDuration? })` | Prepend intro video with crossfade transition |
+| `.outro({ path, fadeDuration? })` | Append outro video with crossfade transition |
 | `.interpolate(config)` | Frame interpolation for smoother video (ffmpeg minterpolate) |
 | `.voiceover(provider)` | Generate TTS audio from subtitle text |
 | `.render(config)` | Render final video (format, resolution, fps, styled subtitle burn-in) |

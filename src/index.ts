@@ -73,6 +73,9 @@ export type { InterpolateConfig, InterpolateMode, InterpolateQuality } from './t
 // Text highlight
 export type { TextHighlightConfig, HighlightEvent } from './types/text-highlight.js'
 
+// Intro/Outro
+export type { IntroConfig, OutroConfig } from './types/intro-outro.js'
+
 // Subtitle writers & utilities
 export { writeAss, hexToAss } from './subtitles/ass-writer.js'
 export type { AssResolution } from './subtitles/ass-writer.js'

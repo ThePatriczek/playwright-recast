@@ -8,6 +8,7 @@ import type { ClickEffectConfig } from '../types/click-effect.js'
 import type { CursorOverlayConfig } from '../types/cursor-overlay.js'
 import type { InterpolateConfig } from '../types/interpolate.js'
 import type { TextHighlightConfig } from '../types/text-highlight.js'
+import type { IntroConfig, OutroConfig } from '../types/intro-outro.js'
 import type { StageDescriptor, AutoZoomConfig } from './stages.js'
 import { PipelineExecutor } from './executor.js'
 
@@ -131,6 +132,16 @@ export class Pipeline {
    */
   textHighlight(config: TextHighlightConfig = {}): Pipeline {
     return this.addStage({ type: 'textHighlight', config })
+  }
+
+  /** Prepend an intro video with a crossfade transition into the main content */
+  intro(config: IntroConfig): Pipeline {
+    return this.addStage({ type: 'intro', config })
+  }
+
+  /** Append an outro video with a crossfade transition from the main content */
+  outro(config: OutroConfig): Pipeline {
+    return this.addStage({ type: 'outro', config })
   }
 
   /**

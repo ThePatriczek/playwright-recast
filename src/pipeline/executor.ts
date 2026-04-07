@@ -24,6 +24,8 @@ import { resolveCursorOverlayConfig, type ResolvedCursorOverlayConfig } from '..
 import { buildTrajectory } from '../cursor-overlay/trajectory.js'
 import type { HighlightEvent } from '../types/text-highlight.js'
 import { resolveTextHighlightConfig, type ResolvedTextHighlightConfig } from '../text-highlight/defaults.js'
+import type { IntroConfig, OutroConfig } from '../types/intro-outro.js'
+import { applyIntroOutro } from '../render/intro-outro.js'
 
 type PipelineState = {
   parsed?: ParsedTrace
@@ -41,6 +43,8 @@ type PipelineState = {
   interpolateConfig?: import('../types/interpolate.js').InterpolateConfig
   highlightEvents?: HighlightEvent[]
   highlightConfig?: ResolvedTextHighlightConfig
+  introConfig?: IntroConfig
+  outroConfig?: OutroConfig
 }
 
 /**
@@ -91,6 +95,11 @@ export class PipelineExecutor {
 
     // Render final video
     renderVideo(traceWithVideo, renderConfig, outputPath, tmpDir)
+
+    // Phase 6: Apply intro/outro with crossfade transitions
+    if (state.introConfig || state.outroConfig) {
+      applyIntroOutro(outputPath, state.introConfig, state.outroConfig, tmpDir)
+    }
 
     // Write subtitle files next to the output
     if (state.subtitled) {
@@ -604,6 +613,24 @@ export class PipelineExecutor {
           for (const he of filtered) {
             console.log(`    highlight: (${he.x}, ${he.y}) ${he.width}x${he.height} @ ${he.videoTimeMs}ms [${he.color}]`)
           }
+          break
+        }
+
+        case 'intro': {
+          if (!fs.existsSync(stage.config.path)) {
+            throw new Error(`Intro video not found: ${stage.config.path}`)
+          }
+          state.introConfig = stage.config
+          console.log(`  intro: ${path.basename(stage.config.path)}`)
+          break
+        }
+
+        case 'outro': {
+          if (!fs.existsSync(stage.config.path)) {
+            throw new Error(`Outro video not found: ${stage.config.path}`)
+          }
+          state.outroConfig = stage.config
+          console.log(`  outro: ${path.basename(stage.config.path)}`)
           break
         }
 

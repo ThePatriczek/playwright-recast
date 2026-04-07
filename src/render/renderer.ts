@@ -82,7 +82,7 @@ export interface RenderableTrace extends ParsedTrace {
   highlightConfig?: import('../text-highlight/defaults.js').ResolvedTextHighlightConfig
 }
 
-function ffmpeg(args: string[]): void {
+export function ffmpeg(args: string[]): void {
   execFileSync('ffmpeg', args, { stdio: 'pipe' })
 }
 
@@ -91,7 +91,7 @@ function ffmpeg(args: string[]): void {
  * (e.g., Playwright webm recordings). Tries format duration first, then falls
  * back to probing the last packet timestamp.
  */
-function getVideoDuration(videoPath: string): number {
+export function getVideoDuration(videoPath: string): number {
   // Try format-level duration first (fast)
   const durationStr = execFileSync('ffprobe', [
     '-v', 'quiet', '-show_entries', 'format=duration', '-of', 'csv=p=0', videoPath,
@@ -127,7 +127,7 @@ function getVideoDuration(videoPath: string): number {
 /**
  * Probe the actual resolution of a video file.
  */
-function probeResolution(videoPath: string): { width: number; height: number } {
+export function probeResolution(videoPath: string): { width: number; height: number } {
   const output = execFileSync('ffprobe', [
     '-v', 'quiet', '-select_streams', 'v:0',
     '-show_entries', 'stream=width,height', '-of', 'csv=p=0', videoPath,

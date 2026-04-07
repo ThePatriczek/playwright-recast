@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.10.0 (2026-04-07)
+
+### Features
+
+- **Intro/outro** — New `.intro({ path, fadeDuration? })` and `.outro({ path, fadeDuration? })` pipeline stages. Prepend/append video clips with smooth crossfade transitions (video `xfade` + audio `acrossfade`). Resolution and FPS are auto-normalized to match the main content. Original audio from intro/outro is preserved through the crossfade.
+- **recast-studio CLI** — New `recast-studio` binary for recording browser sessions. Launches Playwright Codegen for interaction capture, then replays the generated script with tracing enabled to produce a deterministic `trace.zip`. Usage: `npx recast-studio <url>`.
+- **studio-workflow skill** — Claude Code skill that analyzes a recorded trace, generates voiceover scripts, builds SRT subtitles, and runs the full recast pipeline. The AI analysis runs inside the agent — no API SDK dependency.
+
+### Architecture
+
+- New `src/types/intro-outro.ts` — `IntroConfig`, `OutroConfig` interfaces
+- New `src/render/intro-outro.ts` — `applyIntroOutro()` with two-pass crossfade, resolution normalization, silent audio generation for videos without audio tracks
+- New `src/studio/` — Recording CLI (`cli.ts`, `recorder.ts`, `types.ts`) using Playwright Codegen + replay with tracing
+- New `.claude/playwright-recast/skills/studio-workflow/` — Claude Code skill for trace-to-video workflow
+- Exported `probeResolution`, `getVideoDuration`, `ffmpeg` from `renderer.ts` for reuse
+
 ## 0.9.0 (2026-04-02)
 
 ### Features
