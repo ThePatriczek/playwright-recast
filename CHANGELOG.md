@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.11.0 (2026-04-07)
+
+### Features
+
+- **Background music** — New `.backgroundMusic({ path, volume?, ducking?, duckLevel?, duckFadeMs?, fadeOutMs?, loop? })` pipeline stage. Add background music that auto-ducks during voiceover, loops if shorter than video, and fades out at the end. Music covers the full output including intro/outro segments. Ducking can be disabled for fixed-volume mode.
+
+### Bug fixes
+
+- **Click sound desync** — Fixed click sound timing not matching visual click effects. Click events and cursor keyframes now compensate for blank lead-in trim, matching the voiceover/subtitle compensation that was already in place. Previously, click sounds could be up to several seconds late depending on speed configuration.
+
+### Architecture
+
+- New `src/types/background-music.ts` — `BackgroundMusicConfig` interface
+- New `src/background-music/defaults.ts` — Default config, `resolveBackgroundMusicConfig()`
+- New `src/background-music/music-processor.ts` — Music track generation with loop/trim, ducking via ffmpeg volume expressions, fade-out
+- Background music mixing runs as post-processing after intro/outro (covers full video duration)
+
 ## 0.10.0 (2026-04-07)
 
 ### Features

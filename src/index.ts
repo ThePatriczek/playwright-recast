@@ -76,6 +76,9 @@ export type { TextHighlightConfig, HighlightEvent } from './types/text-highlight
 // Intro/Outro
 export type { IntroConfig, OutroConfig } from './types/intro-outro.js'
 
+// Background music
+export type { BackgroundMusicConfig } from './types/background-music.js'
+
 // Subtitle writers & utilities
 export { writeAss, hexToAss } from './subtitles/ass-writer.js'
 export type { AssResolution } from './subtitles/ass-writer.js'

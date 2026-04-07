@@ -9,6 +9,7 @@ import type { CursorOverlayConfig } from '../types/cursor-overlay.js'
 import type { InterpolateConfig } from '../types/interpolate.js'
 import type { TextHighlightConfig } from '../types/text-highlight.js'
 import type { IntroConfig, OutroConfig } from '../types/intro-outro.js'
+import type { BackgroundMusicConfig } from '../types/background-music.js'
 import type { StageDescriptor, AutoZoomConfig } from './stages.js'
 import { PipelineExecutor } from './executor.js'
 
@@ -151,6 +152,11 @@ export class Pipeline {
    */
   interpolate(config: InterpolateConfig = {}): Pipeline {
     return this.addStage({ type: 'interpolate', config })
+  }
+
+  /** Add background music that auto-ducks during voiceover */
+  backgroundMusic(config: BackgroundMusicConfig): Pipeline {
+    return this.addStage({ type: 'backgroundMusic', config })
   }
 
   /** Generate voiceover audio from subtitles using a TTS provider */

@@ -1,5 +1,6 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
+import { execFileSync } from 'node:child_process'
 import type { StageDescriptor } from './stages.js'
 import type { ParsedTrace, FilteredTrace, TraceAction } from '../types/trace.js'
 import { toMonotonic } from '../types/trace.js'
@@ -26,6 +27,8 @@ import type { HighlightEvent } from '../types/text-highlight.js'
 import { resolveTextHighlightConfig, type ResolvedTextHighlightConfig } from '../text-highlight/defaults.js'
 import type { IntroConfig, OutroConfig } from '../types/intro-outro.js'
 import { applyIntroOutro } from '../render/intro-outro.js'
+import { resolveBackgroundMusicConfig, type ResolvedBackgroundMusicConfig } from '../background-music/defaults.js'
+import { generateMusicTrack } from '../background-music/music-processor.js'
 
 type PipelineState = {
   parsed?: ParsedTrace
@@ -45,6 +48,7 @@ type PipelineState = {
   highlightConfig?: ResolvedTextHighlightConfig
   introConfig?: IntroConfig
   outroConfig?: OutroConfig
+  backgroundMusicConfig?: ResolvedBackgroundMusicConfig
 }
 
 /**
@@ -76,6 +80,31 @@ export class PipelineExecutor {
       throw new Error('Pipeline has no data to render. Did you call .parse()?')
     }
 
+    // Compensate click events and cursor keyframes for blank lead-in.
+    // The renderer trims blank frames from the start of the video (Phase 1),
+    // and voiceover/subtitle timing is already adjusted for this in the voiceover/render
+    // cases. But click sound timing and cursor keyframes are computed earlier without
+    // this compensation, causing audio desync when blank lead-in is non-zero.
+    if (state.sourceVideoPath && (state.clickEvents || state.cursorKeyframes)) {
+      const blankTmpDir = path.join(outputDir, '.recast-blank-probe')
+      fs.mkdirSync(blankTmpDir, { recursive: true })
+      const blankLeadIn = detectBlankLeadIn(state.sourceVideoPath, blankTmpDir)
+      fs.rmSync(blankTmpDir, { recursive: true, force: true })
+      if (blankLeadIn > 0) {
+        const offsetMs = blankLeadIn * 1000
+        if (state.clickEvents) {
+          for (const ce of state.clickEvents) {
+            ce.videoTimeMs = Math.max(0, Math.round(ce.videoTimeMs - offsetMs))
+          }
+        }
+        if (state.cursorKeyframes) {
+          for (const kf of state.cursorKeyframes) {
+            kf.videoTimeSec = Math.max(0, kf.videoTimeSec - blankLeadIn)
+          }
+        }
+      }
+    }
+
     // Build the renderable trace with source video and optional subtitle/voiceover fields
     const traceWithVideo: RenderableTrace = {
       ...renderableTrace,
@@ -99,6 +128,68 @@ export class PipelineExecutor {
     // Phase 6: Apply intro/outro with crossfade transitions
     if (state.introConfig || state.outroConfig) {
       applyIntroOutro(outputPath, state.introConfig, state.outroConfig, tmpDir)
+    }
+
+    // Phase 7: Mix background music into the final video (after intro/outro
+    // so music covers the entire output including intro/outro segments).
+    if (state.backgroundMusicConfig) {
+      const { getVideoDuration, ffmpeg } = await import('../render/renderer.js')
+      const finalDur = getVideoDuration(outputPath)
+
+      // Extract voiceover segment timings for ducking.
+      // Offset by intro duration so ducking aligns with voiceover in the final video.
+      let introDurationSec = 0
+      if (state.introConfig) {
+        const introDur = getVideoDuration(state.introConfig.path)
+        const fadeSec = (state.introConfig.fadeDuration ?? 500) / 1000
+        introDurationSec = introDur - fadeSec // crossfade overlap
+      }
+      const introOffsetMs = introDurationSec * 1000
+
+      const voiceoverSegments = state.voiceovered?.voiceover.entries
+        ? (state.voiceovered.voiceover.entries as Array<{ outputStartMs: number; outputEndMs: number }>)
+            .map(e => ({ startMs: e.outputStartMs + introOffsetMs, endMs: e.outputEndMs + introOffsetMs }))
+        : []
+
+      const musicTrackPath = generateMusicTrack(
+        state.backgroundMusicConfig,
+        finalDur,
+        voiceoverSegments,
+        tmpDir,
+      )
+      console.log(`  Background music: generated ${finalDur.toFixed(1)}s track (covers intro/outro)`)
+
+      // Mix music into the final video's audio track
+      const musicOutputPath = path.join(tmpDir, 'final-with-music.mp4')
+      const hasExistingAudio = (() => {
+        try {
+          const out = execFileSync('ffprobe', [
+            '-v', 'quiet', '-select_streams', 'a',
+            '-show_entries', 'stream=index', '-of', 'csv=p=0', outputPath,
+          ]).toString().trim()
+          return out.length > 0
+        } catch { return false }
+      })()
+
+      if (hasExistingAudio) {
+        ffmpeg([
+          '-y', '-i', outputPath, '-i', musicTrackPath,
+          '-filter_complex',
+          '[0:a]aresample=44100,aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo[a0];' +
+          '[1:a]aresample=44100,aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo[a1];' +
+          '[a0][a1]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0[aout]',
+          '-map', '0:v', '-map', '[aout]',
+          '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k', musicOutputPath,
+        ])
+      } else {
+        ffmpeg([
+          '-y', '-i', outputPath, '-i', musicTrackPath,
+          '-map', '0:v', '-map', '1:a',
+          '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k', musicOutputPath,
+        ])
+      }
+
+      fs.copyFileSync(musicOutputPath, outputPath)
     }
 
     // Write subtitle files next to the output
@@ -637,6 +728,15 @@ export class PipelineExecutor {
         case 'interpolate': {
           state.interpolateConfig = stage.config
           console.log(`  interpolate: fps=${stage.config.fps ?? 60}, mode=${stage.config.mode ?? 'mci'}, quality=${stage.config.quality ?? 'balanced'}`)
+          break
+        }
+
+        case 'backgroundMusic': {
+          if (!fs.existsSync(stage.config.path)) {
+            throw new Error(`Background music file not found: ${stage.config.path}`)
+          }
+          state.backgroundMusicConfig = resolveBackgroundMusicConfig(stage.config)
+          console.log(`  backgroundMusic: ${path.basename(stage.config.path)}`)
           break
         }
 

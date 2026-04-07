@@ -242,4 +242,34 @@ describe('Pipeline (fluent chain)', () => {
       expect(stage.config).toEqual({})
     }
   })
+
+  it('adds backgroundMusic stage with config', () => {
+    const config = { path: '/tmp/music.mp3', volume: 0.5, ducking: false }
+    const pipeline = Recast.from('./trace.zip')
+      .parse()
+      .backgroundMusic(config)
+      .render()
+
+    const stage = pipeline.getStages().find(s => s.type === 'backgroundMusic')
+    expect(stage).toBeDefined()
+    if (stage?.type === 'backgroundMusic') {
+      expect(stage.config.path).toBe('/tmp/music.mp3')
+      expect(stage.config.volume).toBe(0.5)
+      expect(stage.config.ducking).toBe(false)
+    }
+  })
+
+  it('preserves backgroundMusic config defaults as undefined', () => {
+    const pipeline = Recast.from('./trace.zip')
+      .parse()
+      .backgroundMusic({ path: '/tmp/music.mp3' })
+
+    const stage = pipeline.getStages().find(s => s.type === 'backgroundMusic')
+    expect(stage).toBeDefined()
+    if (stage?.type === 'backgroundMusic') {
+      expect(stage.config.path).toBe('/tmp/music.mp3')
+      expect(stage.config.volume).toBeUndefined()
+      expect(stage.config.loop).toBeUndefined()
+    }
+  })
 })

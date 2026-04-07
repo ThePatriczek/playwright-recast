@@ -10,6 +10,7 @@ import type { EasingSpec } from '../types/easing.js'
 import type { InterpolateConfig } from '../types/interpolate.js'
 import type { TextHighlightConfig } from '../types/text-highlight.js'
 import type { IntroConfig, OutroConfig } from '../types/intro-outro.js'
+import type { BackgroundMusicConfig } from '../types/background-music.js'
 
 export type StageDescriptor =
   | { type: 'parse' }
@@ -31,6 +32,7 @@ export type StageDescriptor =
   | { type: 'intro'; config: IntroConfig }
   | { type: 'outro'; config: OutroConfig }
   | { type: 'interpolate'; config: InterpolateConfig }
+  | { type: 'backgroundMusic'; config: BackgroundMusicConfig }
   | { type: 'voiceover'; provider: TtsProvider }
   | { type: 'render'; config: RenderConfig }
 
