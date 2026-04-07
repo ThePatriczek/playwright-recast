@@ -44,6 +44,10 @@
     "./providers/elevenlabs": {
       "types": "./dist/voiceover/providers/elevenlabs.d.ts",
       "default": "./dist/voiceover/providers/elevenlabs.js"
+    },
+    "./studio": {
+      "types": "./dist/studio/types.d.ts",
+      "default": "./dist/studio/recorder.js"
     }
   },
   "files": [
