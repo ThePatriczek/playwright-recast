@@ -624,11 +624,30 @@ export function renderVideo(
   }
 
   if (clickSoundTrackPath && finalAudioPath) {
+    // Pad click sound track to match voiceover length via concat (no re-encoding).
+    // Without this, amix doubles voiceover volume when the shorter click track ends.
+    const voDurMs = getClickAudioDurationMs(finalAudioPath)
+    const clickDurMs = getClickAudioDurationMs(clickSoundTrackPath)
+    let clickInput = clickSoundTrackPath
+    if (clickDurMs < voDurMs - 100) {
+      const padDurSec = ((voDurMs - clickDurMs) / 1000).toFixed(3)
+      const silencePath = path.join(tmpDir, 'click-tail-silence.mp3')
+      ffmpeg([
+        '-y', '-f', 'lavfi', '-i', `anullsrc=r=44100:cl=mono`,
+        '-t', padDurSec, '-c:a', 'libmp3lame', '-q:a', '9', silencePath,
+      ])
+      const concatList = path.join(tmpDir, 'click-pad-concat.txt')
+      fs.writeFileSync(concatList, `file '${path.basename(clickSoundTrackPath)}'\nfile '${path.basename(silencePath)}'`)
+      const paddedPath = path.join(tmpDir, 'click-sound-padded.mp3')
+      ffmpeg(['-y', '-f', 'concat', '-safe', '0', '-i', concatList, '-c', 'copy', paddedPath])
+      clickInput = paddedPath
+    }
+
     // Mix click sound into voiceover track
     const mixedPath = path.join(tmpDir, 'mixed-audio.mp3')
     ffmpeg([
-      '-y', '-i', finalAudioPath, '-i', clickSoundTrackPath,
-      '-filter_complex', '[0:a]aresample=44100,aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo[a0];[1:a]aresample=44100,aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo[a1];[a0][a1]amix=inputs=2:duration=longest:dropout_transition=0',
+      '-y', '-i', finalAudioPath, '-i', clickInput,
+      '-filter_complex', '[0:a]aresample=44100,aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo[a0];[1:a]aresample=44100,aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo[a1];[a0][a1]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0',
       '-c:a', 'libmp3lame', '-q:a', '2', mixedPath,
     ])
     finalAudioPath = mixedPath

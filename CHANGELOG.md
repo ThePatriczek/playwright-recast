@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.1 (2026-04-07)
+
+### Bug fixes
+
+- **Voiceover volume jump** — Fixed audible volume increase when click sound track ends during voiceover playback. Click sound track is now padded with silence to match voiceover length, and `amix` uses `normalize=0` to prevent automatic gain redistribution.
+
 ## 0.11.0 (2026-04-07)
 
 ### Features
