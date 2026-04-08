@@ -1,0 +1,47 @@
+# playwright-recast
+
+> Transform Playwright traces into polished demo videos with voiceover, subtitles, zoom, click effects, and more.
+
+playwright-recast is a fluent pipeline library that turns Playwright trace files into production-ready product videos. Your tests already capture everything — traces, screenshots, cursor positions. This library turns those artifacts into narrated, styled videos with a single pipeline.
+
+## Docs
+
+- [Installation](https://thepatriczek.github.io/playwright-recast/docs/getting-started/installation): Install the npm package and system dependencies (ffmpeg)
+- [Quick Start](https://thepatriczek.github.io/playwright-recast/docs/getting-started/quick-start): Minimal setup to generate your first video
+- [Your First Video](https://thepatriczek.github.io/playwright-recast/docs/getting-started/your-first-video): Step-by-step tutorial
+- [System Requirements](https://thepatriczek.github.io/playwright-recast/docs/getting-started/system-requirements): ffmpeg, Node.js, and optional TTS API keys
+- [Pipeline Overview](https://thepatriczek.github.io/playwright-recast/docs/pipeline/overview): Architecture, lazy evaluation, and immutable branching
+- [Parse](https://thepatriczek.github.io/playwright-recast/docs/pipeline/parse): Extract structured data from Playwright trace.zip
+- [Hide Steps](https://thepatriczek.github.io/playwright-recast/docs/pipeline/hide-steps): Filter out setup/login steps
+- [Speed Control](https://thepatriczek.github.io/playwright-recast/docs/pipeline/speed-up): Smart speed adjustment based on activity type
+- [Subtitles](https://thepatriczek.github.io/playwright-recast/docs/pipeline/subtitles): Generate or import subtitles (SRT, WebVTT, ASS)
+- [Text Processing](https://thepatriczek.github.io/playwright-recast/docs/pipeline/text-processing): Sanitize subtitle text before TTS
+- [Voiceover](https://thepatriczek.github.io/playwright-recast/docs/pipeline/voiceover): TTS audio generation from subtitles
+- [Auto Zoom](https://thepatriczek.github.io/playwright-recast/docs/pipeline/auto-zoom): Animated zoom to user actions with easing
+- [Cursor Overlay](https://thepatriczek.github.io/playwright-recast/docs/pipeline/cursor-overlay): Animated cursor at click positions
+- [Click Effect](https://thepatriczek.github.io/playwright-recast/docs/pipeline/click-effect): Ripple animation and sound at clicks
+- [Text Highlight](https://thepatriczek.github.io/playwright-recast/docs/pipeline/text-highlight): Animated marker overlay on text
+- [Frame Interpolation](https://thepatriczek.github.io/playwright-recast/docs/pipeline/frame-interpolation): Smooth out choppy recordings (minterpolate)
+- [Background Music](https://thepatriczek.github.io/playwright-recast/docs/pipeline/background-music): Background music with auto-ducking
+- [Intro/Outro](https://thepatriczek.github.io/playwright-recast/docs/pipeline/intro-outro): Branded clips with crossfade transitions
+- [Render](https://thepatriczek.github.io/playwright-recast/docs/pipeline/render): Final video encoding and subtitle burn-in
+- [CLI Reference](https://thepatriczek.github.io/playwright-recast/docs/cli/reference): Command-line interface
+- [OpenAI Provider](https://thepatriczek.github.io/playwright-recast/docs/providers/openai): OpenAI TTS configuration
+- [ElevenLabs Provider](https://thepatriczek.github.io/playwright-recast/docs/providers/elevenlabs): ElevenLabs TTS configuration
+- [Recast Class API](https://thepatriczek.github.io/playwright-recast/docs/api-reference/recast-class): Complete pipeline API reference
+- [Types](https://thepatriczek.github.io/playwright-recast/docs/api-reference/types): TypeScript type definitions
+- [Subtitle Utilities](https://thepatriczek.github.io/playwright-recast/docs/api-reference/subtitle-utilities): SRT/VTT/ASS writer utilities
+- [playwright-bdd Integration](https://thepatriczek.github.io/playwright-recast/docs/integrations/playwright-bdd): BDD step definitions with narrate/zoom/pace helpers
+- [recast-studio Integration](https://thepatriczek.github.io/playwright-recast/docs/integrations/recast-studio): Record and generate via Claude Code
+- [narrate() Helper](https://thepatriczek.github.io/playwright-recast/docs/helpers/narrate): Add voiceover narration to steps
+- [zoom() Helper](https://thepatriczek.github.io/playwright-recast/docs/helpers/zoom): Capture zoom targets during tests
+- [pace() Helper](https://thepatriczek.github.io/playwright-recast/docs/helpers/pace): Control pacing in step definitions
+- [highlight() Helper](https://thepatriczek.github.io/playwright-recast/docs/helpers/highlight): Mark text for highlight overlay
+- [setupRecast() Helper](https://thepatriczek.github.io/playwright-recast/docs/helpers/setup-recast): Register recast fixtures with Playwright
+- [Minimal Pipeline Example](https://thepatriczek.github.io/playwright-recast/docs/examples/minimal-pipeline): Simplest possible pipeline
+- [Full Pipeline Example](https://thepatriczek.github.io/playwright-recast/docs/examples/full-pipeline): All features combined
+- [Branching Pipelines Example](https://thepatriczek.github.io/playwright-recast/docs/examples/branching-pipelines): Multiple outputs from one trace
+
+## Optional
+
+- [Full Documentation](https://thepatriczek.github.io/playwright-recast/llms-full.txt): Complete documentation content for LLMs

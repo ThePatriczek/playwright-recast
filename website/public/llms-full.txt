@@ -1,0 +1,5220 @@
+# playwright-recast
+
+> Transform Playwright traces into polished demo videos with voiceover, subtitles, zoom, click effects, and more.
+
+playwright-recast is a fluent pipeline library that turns Playwright trace files into production-ready product videos. Your tests already capture everything — traces, screenshots, cursor positions. This library turns those artifacts into narrated, styled videos with a single pipeline.
+
+- npm: https://www.npmjs.com/package/playwright-recast
+- GitHub: https://github.com/ThePatriczek/playwright-recast
+- Docs: https://thepatriczek.github.io/playwright-recast/docs
+- License: MIT
+
+## Documentation
+
+
+Welcome to the **playwright-recast** documentation.
+
+## What is playwright-recast?
+
+playwright-recast is a fluent pipeline library that transforms Playwright trace files into polished demo videos — complete with TTS voiceover, styled subtitles, speed control, click effects, animated zoom, cursor overlay, and more.
+
+## Getting Started
+
+
+## Pipeline Stages
+
+Every stage is optional and composable. Chain them to build your video processing pipeline:
+
+
+---
+
+## Installation
+
+
+## Install the package
+
+```bash
+npm install playwright-recast
+```
+
+Or with Bun:
+
+```bash
+bun add playwright-recast
+```
+
+## Install ffmpeg
+
+playwright-recast uses ffmpeg and ffprobe for all video processing. Both must be available on your `PATH`.
+
+### macOS
+
+```bash
+brew install ffmpeg
+```
+
+### Ubuntu / Debian
+
+```bash
+sudo apt install ffmpeg
+```
+
+### Windows
+
+Download from [ffmpeg.org](https://ffmpeg.org/download.html) and add the `bin` directory to your system `PATH`.
+
+### Verify installation
+
+```bash
+ffmpeg -version
+ffprobe -version
+```
+
+Both commands should print version information without errors.
+
+## TTS providers (optional)
+
+If you plan to use voiceover, install the provider SDK and set the API key:
+
+### OpenAI
+
+```bash
+export OPENAI_API_KEY="sk-..."
+```
+
+### ElevenLabs
+
+```bash
+export ELEVENLABS_API_KEY="..."
+```
+
+See the [Providers](/docs/providers) section for full configuration details.
+
+## Next steps
+
+Once installed, head to the [Quick Start](/docs/getting-started/quick-start) to generate your first video.
+
+---
+
+## Quick Start
+
+
+## CLI usage
+
+The fastest way to turn a Playwright trace into a video:
+
+```bash
+npx playwright-recast -i ./test-results/trace.zip -o demo.mp4
+```
+
+### Common CLI options
+
+```bash
+# With speed processing
+npx playwright-recast -i ./traces --speed-idle 4.0 --speed-action 1.0
+
+# With external SRT subtitles
+npx playwright-recast -i ./traces --srt narration.srt --burn-subs
+
+# With TTS voiceover (OpenAI)
+npx playwright-recast -i ./traces --srt narration.srt --provider openai --voice nova
+
+# With TTS voiceover (ElevenLabs)
+npx playwright-recast -i ./traces --srt narration.srt --provider elevenlabs --voice onwK4e9ZLuTAKqWW03F9
+```
+
+See the [CLI Reference](/docs/cli) for all available flags.
+
+## Programmatic API
+
+For full control, use the fluent TypeScript API:
+
+```typescript
+import { Recast } from 'playwright-recast'
+
+// Minimal — trace to video
+await Recast.from('./traces').parse().render().toFile('output.mp4')
+```
+
+### Full pipeline example
+
+```typescript
+import { Recast, OpenAIProvider } from 'playwright-recast'
+
+await Recast
+  .from('./test-results/')
+  .parse()
+  .hideSteps(s => s.keyword === 'Given' && s.text?.includes('logged in'))
+  .speedUp({
+    duringIdle: 4.0,
+    duringUserAction: 1.0,
+    duringNetworkWait: 2.0,
+    minSegmentDuration: 500,
+  })
+  .subtitlesFromSrt('./narration.srt')
+  .voiceover(OpenAIProvider({
+    voice: 'nova',
+    speed: 1.2,
+    instructions: 'Professional product demo narration.',
+  }))
+  .render({
+    format: 'mp4',
+    resolution: '1080p',
+    fps: 60,
+    burnSubtitles: true,
+    subtitleStyle: {
+      fontSize: 48,
+      primaryColor: '#1a1a1a',
+      backgroundColor: '#FFFFFF',
+      backgroundOpacity: 0.75,
+      padding: 20,
+      bold: true,
+      chunkOptions: { maxCharsPerLine: 55 },
+    },
+  })
+  .toFile('demo.mp4')
+```
+
+Every stage is optional. Use just the ones you need and chain them in order. See the [Pipeline Overview](/docs/pipeline/overview) for the full list.
+
+## Next steps
+
+Follow the [Your First Video](/docs/getting-started/your-first-video) tutorial for a step-by-step walkthrough.
+
+---
+
+## Your First Video
+
+
+This tutorial walks you through creating a demo video from scratch: writing a Playwright test, capturing a trace, and running it through the recast pipeline.
+
+## 1. Write a Playwright test
+
+Create a test that demonstrates the workflow you want to capture:
+
+```typescript
+// tests/demo.spec.ts
+import { test } from '@playwright/test'
+
+test('dashboard demo', async ({ page }) => {
+  await page.goto('https://your-app.com/login')
+  await page.fill('#email', 'demo@example.com')
+  await page.fill('#password', 'password')
+  await page.click('button[type="submit"]')
+  await page.waitForURL('/dashboard')
+  await page.click('.analytics-tab')
+  await page.waitForTimeout(2000)
+})
+```
+
+## 2. Run the test with tracing
+
+Enable tracing in your Playwright config or run with the `--trace on` flag:
+
+```bash
+npx playwright test tests/demo.spec.ts --trace on
+```
+
+This produces a `trace.zip` file in your `test-results/` directory.
+
+## 3. Generate the video
+
+### Option A: CLI (quick)
+
+```bash
+npx playwright-recast -i ./test-results/demo-dashboard-demo/trace.zip -o demo.mp4
+```
+
+### Option B: Programmatic (full control)
+
+```typescript
+// scripts/generate-video.ts
+import { Recast } from 'playwright-recast'
+
+await Recast
+  .from('./test-results/demo-dashboard-demo/trace.zip')
+  .parse()
+  .speedUp({
+    duringIdle: 4.0,
+    duringUserAction: 1.0,
+  })
+  .clickEffect({ color: '#3B82F6' })
+  .render({
+    format: 'mp4',
+    resolution: '1080p',
+  })
+  .toFile('demo.mp4')
+```
+
+Run it:
+
+```bash
+npx tsx scripts/generate-video.ts
+```
+
+## 4. Add narration (optional)
+
+Create an SRT subtitle file with your narration script:
+
+```text
+1
+00:00:01,000 --> 00:00:04,000
+First, we log in to the application.
+
+2
+00:00:05,000 --> 00:00:08,000
+Navigate to the analytics dashboard.
+
+3
+00:00:09,000 --> 00:00:12,000
+Here we can see real-time metrics.
+```
+
+Then add subtitles and voiceover to your pipeline:
+
+```typescript
+import { Recast, OpenAIProvider } from 'playwright-recast'
+
+await Recast
+  .from('./test-results/demo-dashboard-demo/trace.zip')
+  .parse()
+  .speedUp({ duringIdle: 4.0, duringUserAction: 1.0 })
+  .subtitlesFromSrt('./narration.srt')
+  .textProcessing({ builtins: true })
+  .voiceover(OpenAIProvider({ voice: 'nova' }))
+  .clickEffect({ color: '#3B82F6' })
+  .render({
+    format: 'mp4',
+    resolution: '1080p',
+    burnSubtitles: true,
+    subtitleStyle: {
+      fontSize: 48,
+      primaryColor: '#1a1a1a',
+      backgroundColor: '#FFFFFF',
+      backgroundOpacity: 0.75,
+      padding: 20,
+    },
+  })
+  .toFile('demo.mp4')
+```
+
+## 5. Review your video
+
+Open `demo.mp4` in any video player. The pipeline produces a polished video with:
+
+- Idle time compressed at 4x speed
+- Click effects highlighting user interactions
+- Burnt-in subtitles with styled background boxes
+- AI-generated voiceover narration
+
+## What's next
+
+- Explore [Pipeline Stages](/docs/pipeline/overview) to customize each step
+- Add [Auto Zoom](/docs/pipeline/auto-zoom) to focus on input fields
+- Include [Background Music](/docs/pipeline/background-music) for a professional finish
+- Add [Intro/Outro](/docs/pipeline/intro-outro) clips for branding
+
+---
+
+## System Requirements
+
+
+## Runtime requirements
+
+| Dependency | Minimum version | Purpose |
+|---|---|---|
+| **Node.js** | 18.0+ | Runtime environment |
+| **ffmpeg** | 5.0+ | Video encoding, filtering, audio mixing |
+| **ffprobe** | 5.0+ (bundled with ffmpeg) | Media file inspection |
+
+Both `ffmpeg` and `ffprobe` must be available on your system `PATH`. The library invokes them as child processes.
+
+## Supported platforms
+
+| Platform | Status |
+|---|---|
+| macOS (Apple Silicon) | Fully supported |
+| macOS (Intel) | Fully supported |
+| Linux (x64) | Fully supported |
+| Windows (x64) | Supported |
+
+## Optional dependencies
+
+| Dependency | Required for |
+|---|---|
+| **OpenAI API key** | `.voiceover()` with `OpenAIProvider` |
+| **ElevenLabs API key** | `.voiceover()` with `ElevenLabsProvider` |
+| **Playwright** | Generating trace files (not needed if you already have `trace.zip`) |
+
+## Performance considerations
+
+- **Frame interpolation** (`mci` mode) is CPU-intensive, especially at 4K resolution. Expect longer processing times on lower-end hardware.
+- **Multi-pass interpolation** multiplies processing time by the number of passes.
+- **TTS voiceover** requires network access to the provider API. Processing time depends on subtitle count and audio length.
+- Video resolution directly impacts rendering time. Use `720p` for faster iteration during development, then switch to `1080p` or `4k` for final output.
+
+## Verifying your setup
+
+Run these commands to confirm everything is installed:
+
+```bash
+# Check Node.js
+node --version
+
+# Check ffmpeg
+ffmpeg -version
+
+# Check ffprobe
+ffprobe -version
+
+# Check playwright-recast
+npx playwright-recast --help
+```
+
+---
+
+## Pipeline Overview
+
+
+playwright-recast uses a fluent pipeline API where every processing step is a chainable method. Stages are optional and composable — use just the ones you need.
+
+## Pipeline architecture
+
+```
+Trace.zip → parse() → hideSteps() → speedUp() → subtitles() → textProcessing() → voiceover() → render() → MP4
+```
+
+Each stage transforms the pipeline state and passes it to the next. The full processing flow:
+
+| Stage | Method | Description |
+|---|---|---|
+| **Parse** | `.parse()` | Extract actions, frames, network events, and cursor positions from trace.zip |
+| **Filter** | `.hideSteps(predicate)` | Remove setup/login steps from the output |
+| **Speed** | `.speedUp(config)` | Adjust playback speed based on activity type |
+| **Subtitles** | `.subtitles()` / `.subtitlesFromSrt()` / `.subtitlesFromTrace()` | Generate or import subtitle text |
+| **Text Processing** | `.textProcessing(config)` | Sanitize subtitle text for TTS synthesis |
+| **Auto Zoom** | `.autoZoom(config)` | Zoom into user actions with easing transitions |
+| **Cursor Overlay** | `.cursorOverlay(config)` | Animated cursor at click positions |
+| **Click Effect** | `.clickEffect(config)` | Ripple animation and sound at click positions |
+| **Text Highlight** | `.textHighlight(config)` | Animated marker overlay on text elements |
+| **Frame Interpolation** | `.interpolate(config)` | Smooth out choppy recordings |
+| **Voiceover** | `.voiceover(provider)` | Generate TTS audio from subtitle text |
+| **Background Music** | `.backgroundMusic(config)` | Add background music with auto-ducking |
+| **Intro/Outro** | `.intro(config)` / `.outro(config)` | Prepend/append video clips |
+| **Render** | `.render(config)` | Encode the final video with subtitle burn-in |
+| **Output** | `.toFile(path)` | Execute the pipeline and write the result |
+
+## Lazy evaluation
+
+Calling pipeline methods does not execute anything immediately. Each method builds up a pipeline description. Processing only starts when you call `.toFile()` or `.toBuffer()`:
+
+```typescript
+// Nothing happens here — just building the pipeline
+const pipeline = Recast
+  .from('./traces')
+  .parse()
+  .speedUp({ duringIdle: 4.0 })
+  .render({ format: 'mp4' })
+
+// Execution starts here
+await pipeline.toFile('output.mp4')
+```
+
+## Immutable branching
+
+Every pipeline method returns a new pipeline instance. The original is never modified. This lets you branch from a shared base:
+
+```typescript
+const base = Recast.from('./traces').parse().speedUp({ duringIdle: 3.0 })
+
+// Branch A: English voiceover
+await base
+  .subtitlesFromSrt('./en.srt')
+  .voiceover(openaiProvider)
+  .render()
+  .toFile('demo-en.mp4')
+
+// Branch B: Czech subtitles only
+await base
+  .subtitlesFromSrt('./cs.srt')
+  .render({ burnSubtitles: true })
+  .toFile('demo-cs.mp4')
+```
+
+Both branches share the same parse and speed processing. Each produces a different output without re-running earlier stages.
+
+## Zero lock-in
+
+Every stage is optional. You can use playwright-recast for just one piece of the workflow:
+
+- Parse a trace without rendering
+- Generate subtitles without voiceover
+- Speed-process and render without any overlays
+- Use the full pipeline end-to-end
+
+Start simple and add stages as you need them.
+
+---
+
+## Parse
+
+
+The `.parse()` stage reads a Playwright trace archive and extracts all the data needed for video generation.
+
+## Basic usage
+
+```typescript
+import { Recast } from 'playwright-recast'
+
+const pipeline = Recast
+  .from('./test-results/trace.zip')
+  .parse()
+```
+
+You can also point to a directory containing trace files:
+
+```typescript
+const pipeline = Recast
+  .from('./test-results/')
+  .parse()
+```
+
+## What gets extracted
+
+The parser reads the `trace.zip` and produces a structured representation containing:
+
+| Data | Source | Used by |
+|---|---|---|
+| **Actions** | User interactions (click, fill, type, navigation) | Speed processing, click effects, auto-zoom |
+| **Screenshots** | Frame-by-frame page captures | Video frames |
+| **Network events** | API calls, resource loading | Speed classification (network wait) |
+| **Cursor positions** | Mouse coordinates at each action | Cursor overlay, click effects, auto-zoom |
+| **BDD step titles** | playwright-bdd Gherkin step names | Subtitle generation via `.subtitlesFromTrace()` |
+
+## CLI equivalent
+
+```bash
+# Parse is implicit in CLI mode — it always runs
+npx playwright-recast -i ./test-results/trace.zip -o demo.mp4
+```
+
+## Tips
+
+- The trace file must be generated with Playwright's tracing enabled (`--trace on` or via `playwright.config.ts`).
+- `.parse()` should always be the first stage after `.from()`. Other stages depend on the parsed trace data.
+- Parsing is fast — the trace is read once and the structured data is passed through the pipeline.
+
+---
+
+## Hide Steps
+
+
+The `.hideSteps()` stage removes unwanted steps from the pipeline. Use it to cut login flows, test setup, or any other actions that should not appear in the final video.
+
+## Basic usage
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .hideSteps(step => step.keyword === 'Given' && step.text?.includes('logged in'))
+  .render()
+  .toFile('demo.mp4')
+```
+
+The predicate function receives each step and returns `true` to hide it.
+
+## Common patterns
+
+### Hide all "Given" steps
+
+```typescript
+.hideSteps(step => step.keyword === 'Given')
+```
+
+### Hide by step text
+
+```typescript
+.hideSteps(step => step.text?.includes('setup') || step.text?.includes('login'))
+```
+
+### Hide multiple conditions
+
+```typescript
+.hideSteps(step =>
+  step.keyword === 'Given' ||
+  step.text?.includes('navigate to login') ||
+  step.text?.includes('accept cookies')
+)
+```
+
+## CLI equivalent
+
+Step filtering is available through the programmatic API. Use the API for complex filtering logic.
+
+## Tips
+
+- Place `.hideSteps()` early in the pipeline, right after `.parse()`. Downstream stages like speed processing and subtitles will only see the remaining steps.
+- The predicate receives the parsed step object, which includes `keyword`, `text`, and timing information from the trace.
+- Hidden steps are removed entirely — their frames, actions, and timing are excluded from the output.
+
+---
+
+## Speed Processing
+
+
+The `.speedUp()` stage classifies every moment of the trace into activity types and applies different playback speeds to each. Idle time flies by while user actions play at normal speed.
+
+## Basic usage
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .speedUp({
+    duringIdle: 4.0,
+    duringUserAction: 1.0,
+  })
+  .render()
+  .toFile('demo.mp4')
+```
+
+## Activity classification
+
+The speed processor analyzes the trace and classifies each segment:
+
+| Activity | Default Speed | Description |
+|---|---|---|
+| **User Action** | 1.0x | Clicks, fills, keyboard input — plays at real-time |
+| **Navigation** | 2.0x | Page loads, redirects — slightly faster |
+| **Network Wait** | 2.0x | API calls in flight — compresses wait time |
+| **Idle** | 4.0x | Nothing happening — skips quickly |
+
+## Configuration options
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `duringIdle` | `number` | `4.0` | Speed multiplier for idle segments |
+| `duringUserAction` | `number` | `1.0` | Speed multiplier for user interactions |
+| `duringNetworkWait` | `number` | `2.0` | Speed multiplier for network activity |
+| `duringNavigation` | `number` | `2.0` | Speed multiplier for page navigations |
+| `minSegmentDuration` | `number` | `500` | Minimum segment length in ms (avoids jarring speed changes) |
+| `maxSpeed` | `number` | `8.0` | Safety cap on speed multiplier |
+
+### Full example
+
+```typescript
+.speedUp({
+  duringIdle: 4.0,
+  duringUserAction: 1.0,
+  duringNetworkWait: 2.0,
+  duringNavigation: 2.0,
+  minSegmentDuration: 500,
+  maxSpeed: 8.0,
+})
+```
+
+## CLI equivalent
+
+```bash
+npx playwright-recast -i ./traces --speed-idle 4.0 --speed-action 1.0
+```
+
+## Tips
+
+- Speed processing respects segment boundaries. Setting `minSegmentDuration` prevents rapid speed switching that can look jarring in the output.
+- When voiceover is active, segments where TTS audio is significantly shorter than the original timing trigger fast-forward automatically.
+- Click effect and cursor overlay timestamps are automatically remapped through speed processing, so visual effects appear at the correct video time.
+- Start with the defaults and adjust per-activity speeds based on your content. A product demo might use `duringIdle: 6.0` to aggressively compress waits, while a tutorial might keep everything closer to 1.0x.
+
+---
+
+## Subtitles
+
+
+playwright-recast supports three ways to add subtitles to your pipeline. You can also combine subtitles with [voiceover](/docs/pipeline/voiceover) for narrated videos.
+
+## Import from SRT
+
+Load subtitles from an external SRT file:
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .subtitlesFromSrt('./narration.srt')
+  .render({ burnSubtitles: true })
+  .toFile('demo.mp4')
+```
+
+Standard SRT format:
+
+```text
+1
+00:00:01,000 --> 00:00:04,000
+First, we log in to the application.
+
+2
+00:00:05,000 --> 00:00:08,000
+Navigate to the analytics dashboard.
+```
+
+## Generate from trace
+
+Auto-generate subtitles from BDD step titles found in the trace:
+
+```typescript
+.subtitlesFromTrace()
+```
+
+This reads the step names from your Playwright BDD test and uses them as subtitle text. Works with [playwright-bdd](https://github.com/nickkuprin/playwright-bdd) Gherkin steps.
+
+## Generate from actions
+
+Create subtitles from trace actions with a custom text function:
+
+```typescript
+.subtitles(action => `${action.method}: ${action.selector}`)
+```
+
+## Subtitle output formats
+
+Subtitles are generated as SRT by default. The pipeline also supports WebVTT and ASS output formats for use outside of burnt-in rendering.
+
+## Subtitle styling
+
+When burning subtitles into the video, you have full control over appearance. See the [Render](/docs/pipeline/render) page for all `subtitleStyle` options.
+
+```typescript
+.render({
+  burnSubtitles: true,
+  subtitleStyle: {
+    fontFamily: 'Arial',
+    fontSize: 48,
+    primaryColor: '#1a1a1a',
+    backgroundColor: '#FFFFFF',
+    backgroundOpacity: 0.75,
+    padding: 20,
+    bold: true,
+    position: 'bottom',
+    marginVertical: 50,
+  },
+})
+```
+
+## Punctuation-based chunking
+
+Long subtitle text is automatically split into shorter single-line entries. Time is distributed proportionally by character count.
+
+Splitting priority:
+1. Sentence boundaries (`. ! ?`) first
+2. Clause boundaries (`, ; :`) if still too long
+
+Configure chunking via `subtitleStyle.chunkOptions`:
+
+```typescript
+subtitleStyle: {
+  chunkOptions: {
+    maxCharsPerLine: 55,   // Split when text exceeds this length
+    minCharsPerChunk: 15,  // Merge tiny fragments
+  },
+}
+```
+
+## CLI equivalent
+
+```bash
+# With external SRT
+npx playwright-recast -i ./traces --srt narration.srt --burn-subs
+
+# Auto-generate from trace
+npx playwright-recast -i ./traces --burn-subs
+```
+
+## Tips
+
+- Use `.subtitlesFromSrt()` when you have a pre-written narration script with precise timing.
+- Use `.subtitlesFromTrace()` for quick drafts — BDD step titles are already descriptive.
+- Subtitles work independently of voiceover. You can burn subtitles without generating audio, or generate audio without burning subtitles.
+- For TTS-friendly text, add [Text Processing](/docs/pipeline/text-processing) before the voiceover stage.
+
+---
+
+## Text Processing
+
+
+The `.textProcessing()` stage cleans subtitle text before sending it to a TTS provider. It removes typographic characters that cause artifacts in voice synthesis while preserving the original text for visual subtitles.
+
+## Basic usage
+
+```typescript
+// Built-in sanitization
+.textProcessing({ builtins: true })
+```
+
+## How it works
+
+Text processing writes to a separate `ttsText` field on each subtitle entry. The voiceover stage reads `ttsText` for speech synthesis, while burnt-in subtitles and SRT/VTT output use the original `text`.
+
+This means your displayed subtitles keep smart quotes and em dashes, but the TTS provider receives clean, artifact-free text.
+
+## Built-in rules
+
+When `builtins: true`, the following transformations are applied:
+
+| Input | Output | Description |
+|---|---|---|
+| `"` `"` `"` `„` `«` `»` `"` | *(removed)* | Double quotes |
+| `'` `'` `‚` `‛` `‹` `›` | *(removed)* | Single quotes |
+| `—` `–` | `, ` | Dashes to comma |
+| `…` | `...` | Ellipsis |
+| NBSP | space | Non-breaking space |
+| Multiple spaces | single space | Whitespace normalization |
+
+## Custom regex rules
+
+Add project-specific replacements:
+
+```typescript
+.textProcessing({
+  builtins: true,
+  rules: [
+    { pattern: '\\bNSS\\b', flags: 'g', replacement: 'Nejvyšší správní soud' },
+    { pattern: '\\bAPI\\b', flags: 'g', replacement: 'A P I' },
+  ],
+})
+```
+
+Rules are applied in order after the built-in rules.
+
+## Programmatic transform
+
+For complex transformations, use a `transform` function:
+
+```typescript
+.textProcessing({
+  transform: (text) => text.replace(/\[.*?\]/g, ''),
+})
+```
+
+## Combining all three
+
+Built-in rules, custom rules, and transform can be combined. They are applied in this order:
+
+1. Built-in rules (if `builtins: true`)
+2. Custom regex rules (in array order)
+3. Transform function
+
+```typescript
+.textProcessing({
+  builtins: true,
+  rules: [
+    { pattern: '\\bNSS\\b', flags: 'g', replacement: 'Nejvyšší správní soud' },
+  ],
+  transform: (text) => text.replace(/\[.*?\]/g, ''),
+})
+```
+
+## CLI equivalent
+
+```bash
+# Built-in sanitization
+npx playwright-recast -i ./traces --text-processing --provider openai
+
+# Custom rules from JSON file
+npx playwright-recast -i ./traces --text-processing-config ./rules.json --provider elevenlabs
+```
+
+## Tips
+
+- Always use text processing when generating voiceover. Smart quotes and em dashes cause audible artifacts in most TTS models.
+- Place `.textProcessing()` after subtitle generation and before `.voiceover()` in the pipeline.
+- The standalone `processText()` export lets you use the processing engine outside the pipeline.
+
+---
+
+## Voiceover
+
+
+The `.voiceover()` stage sends subtitle text to a TTS provider and generates audio narration timed to match the video. The resulting audio is mixed into the final output.
+
+## Basic usage
+
+```typescript
+import { Recast, OpenAIProvider } from 'playwright-recast'
+
+await Recast
+  .from('./traces')
+  .parse()
+  .subtitlesFromSrt('./narration.srt')
+  .voiceover(OpenAIProvider({ voice: 'nova' }))
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+## Provider concept
+
+Voiceover requires a TTS provider. playwright-recast ships with two built-in providers:
+
+### OpenAI TTS
+
+```typescript
+import { OpenAIProvider } from 'playwright-recast/providers/openai'
+
+.voiceover(OpenAIProvider({
+  voice: 'nova',             // alloy, echo, fable, onyx, nova, shimmer
+  model: 'gpt-4o-mini-tts',
+  speed: 1.2,
+  instructions: 'Calm, professional demo narration.',
+}))
+```
+
+Requires `OPENAI_API_KEY` environment variable or `apiKey` option.
+
+### ElevenLabs
+
+```typescript
+import { ElevenLabsProvider } from 'playwright-recast/providers/elevenlabs'
+
+.voiceover(ElevenLabsProvider({
+  voiceId: 'onwK4e9ZLuTAKqWW03F9',   // Daniel
+  modelId: 'eleven_multilingual_v2',
+  languageCode: 'cs',                  // Force language (ISO 639-1)
+}))
+```
+
+Requires `ELEVENLABS_API_KEY` environment variable or `apiKey` option.
+
+See the [Providers](/docs/providers) section for full provider documentation.
+
+## Timing
+
+Each subtitle entry generates a separate TTS audio clip. Clips are placed at the subtitle's start time with silence padding between them. When TTS audio is shorter than the subtitle duration, the remaining time is silence. When TTS audio would run longer, the speed processor can fast-forward to accommodate.
+
+## Text processing
+
+For best TTS results, add [Text Processing](/docs/pipeline/text-processing) before voiceover:
+
+```typescript
+.subtitlesFromSrt('./narration.srt')
+.textProcessing({ builtins: true })
+.voiceover(OpenAIProvider({ voice: 'nova' }))
+```
+
+Text processing cleans smart quotes, em dashes, and other typographic characters that cause artifacts in TTS output, without affecting the displayed subtitle text.
+
+## CLI equivalent
+
+```bash
+# OpenAI
+npx playwright-recast -i ./traces --srt narration.srt --provider openai --voice nova
+
+# ElevenLabs
+npx playwright-recast -i ./traces --srt narration.srt --provider elevenlabs --voice onwK4e9ZLuTAKqWW03F9
+```
+
+## Tips
+
+- Voiceover requires subtitles. Add a subtitle stage (`.subtitlesFromSrt()`, `.subtitlesFromTrace()`, or `.subtitles()`) before `.voiceover()`.
+- If using text processing, place it between subtitles and voiceover in the pipeline.
+- TTS providers require network access. API calls are made for each subtitle entry.
+- Combine with [Background Music](/docs/pipeline/background-music) for a professional result — music auto-ducks during voiceover.
+
+---
+
+## Auto Zoom
+
+
+The `.autoZoom()` stage detects user interactions from the Playwright trace and zooms into the relevant UI area. The viewer's attention is drawn to exactly where the action happens.
+
+## Basic usage
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .autoZoom()
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+## Auto-zoom from trace
+
+Automatically zoom into input elements (fill/type actions) detected from the trace. The zoom window follows the actual action duration — zooms in when the user starts typing, zooms out when they move on.
+
+```typescript
+.autoZoom({
+  inputLevel: 1.4,    // Zoom level for fill/type actions
+  clickLevel: 1.0,    // 1.0 = no zoom on clicks (default)
+  centerBias: 0.3,    // Blend coordinates toward center (0-1)
+})
+```
+
+## Configuration options
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `inputLevel` | `number` | `1.4` | Zoom level for fill/type actions |
+| `clickLevel` | `number` | `1.0` | Zoom level for click actions |
+| `idleLevel` | `number` | `1.0` | Zoom level when no action is happening |
+| `centerBias` | `number` | `0` | Blend zoom coordinates toward viewport center (0-1) |
+| `easing` | `EasingSpec` | `'ease-in-out'` | Easing function for zoom transitions |
+| `transitionMs` | `number` | `400` | Zoom in/out transition duration in ms |
+
+## Easing options
+
+Zoom transitions support several easing modes:
+
+```typescript
+// Built-in presets
+.autoZoom({ easing: 'linear' })
+.autoZoom({ easing: 'ease-in' })
+.autoZoom({ easing: 'ease-out' })
+.autoZoom({ easing: 'ease-in-out' })  // default
+
+// Cubic bezier
+.autoZoom({ easing: { cubicBezier: [0.42, 0, 0.58, 1] } })
+
+// Custom JS function
+.autoZoom({ easing: { fn: t => t * t } })
+```
+
+## Zoom-to-zoom panning
+
+When two zoom targets are close together in time, the camera pans smoothly between them instead of zooming out and back in. This creates a natural follow-along feel.
+
+## Zoom from report data
+
+Apply zoom coordinates from an external source:
+
+```typescript
+const reportSteps = [
+  { zoom: null },                             // Step 1: no zoom
+  { zoom: { x: 0.5, y: 0.8, level: 1.4 } },  // Step 2: zoom to input area
+  { zoom: null },                             // Step 3: no zoom
+  { zoom: { x: 0.78, y: 0.45, level: 1.3 } }, // Step 4: zoom to sidebar
+]
+
+await Recast
+  .from('./traces')
+  .parse()
+  .subtitlesFromSrt('./narration.srt')
+  .enrichZoomFromReport(reportSteps)
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+## Zoom from step helpers
+
+Capture zoom coordinates during test execution using the `zoom()` helper:
+
+```typescript
+import { zoom } from 'playwright-recast'
+
+When('the user opens the sidebar', async ({ page }) => {
+  const sidebar = page.locator('.sidebar-panel')
+  await zoom(sidebar, 1.3)
+  await sidebar.click()
+})
+```
+
+The helper records the element's bounding box as a Playwright annotation. Apply these coordinates with `.enrichZoomFromReport()`.
+
+## Zoom coordinates
+
+All zoom coordinates use viewport-relative fractions (0.0-1.0):
+
+| Field | Description | Default |
+|---|---|---|
+| `x` | Center X (0 = left, 1 = right) | `0.5` |
+| `y` | Center Y (0 = top, 1 = bottom) | `0.5` |
+| `level` | Zoom level (1.0 = no zoom, 2.0 = 2x) | `1.0` |
+
+The renderer applies zoom by cropping the video to `(width/level x height/level)` centered at `(x, y)`, then scaling back to the output resolution.
+
+## Tips
+
+- Use `centerBias` to prevent zoom targets near edges from cropping important content. A value of `0.3` blends 30% toward the center.
+- Cursor overlay and click effects are applied before zoom cropping, so overlay coordinates stay accurate during zoomed segments.
+- For fill actions that lack cursor coordinates (programmatic fills), auto-zoom falls back to viewport center.
+
+---
+
+## Cursor Overlay
+
+
+The `.cursorOverlay()` stage renders an animated cursor that appears before each click, moves to the click position with an ease-out animation, then disappears. It gives viewers a clear visual indicator of where interactions happen.
+
+## Basic usage
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .cursorOverlay()
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+## Configuration options
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `image` | `string` | bundled arrow cursor | Path to a custom cursor image (PNG) |
+| `size` | `number` | `30` | Cursor width in pixels (relative to 1080p) |
+
+### Custom cursor image
+
+```typescript
+.cursorOverlay({
+  image: './assets/custom-cursor.png',
+  size: 40,
+})
+```
+
+The bundled default is a 30x44 arrow cursor PNG. Provide your own image for branded or stylized cursors.
+
+## How it works
+
+For each click action detected in the trace:
+
+1. The cursor appears near the click target
+2. It moves to the exact click position with an ease-out animation
+3. It disappears after the click
+
+The animation uses ffmpeg `movie` + `overlay` filters with per-click `enable` expressions and ease-out movement calculated via `st()/ld()` temp variables.
+
+## CLI equivalent
+
+```bash
+# Enable with defaults
+npx playwright-recast -i ./traces --cursor-overlay
+
+# With custom config
+npx playwright-recast -i ./traces --cursor-overlay-config cursor.json
+```
+
+## Tips
+
+- Cursor overlay works well combined with [Click Effect](/docs/pipeline/click-effect) — the cursor moves into position, then the ripple appears on click.
+- Cursor positions are remapped through speed processing, so the animation timing stays accurate after speed changes.
+- Only actions from the recording context are processed — setup/background actions are filtered out automatically.
+- The overlay is applied before zoom cropping, so cursor positions stay accurate during zoomed segments.
+
+---
+
+## Click Effect
+
+
+The `.clickEffect()` stage renders animated ripple highlights at click positions with optional click sounds. It makes user interactions visually obvious in the final video.
+
+## Basic usage
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .clickEffect()
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+## Configuration options
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `color` | `string` | `'#3B82F6'` | Ripple color (hex) |
+| `opacity` | `number` | `0.5` | Ripple opacity (0.0-1.0) |
+| `radius` | `number` | `30` | Maximum radius in pixels (relative to 1080p) |
+| `duration` | `number` | `400` | Animation duration in milliseconds |
+| `sound` | `boolean \| string` | `false` | `true` for bundled click sound, or path to custom audio |
+| `soundVolume` | `number` | `0.8` | Sound volume (0.0-1.0) |
+| `filter` | `function` | all clicks | Filter which actions get the effect |
+
+### Full example
+
+```typescript
+.clickEffect({
+  color: '#3B82F6',
+  opacity: 0.5,
+  radius: 30,
+  duration: 400,
+  sound: true,
+  soundVolume: 0.8,
+})
+```
+
+## Filtering clicks
+
+By default, both `click` and `selectOption` actions receive the ripple effect. Use the `filter` option to restrict which actions are highlighted:
+
+```typescript
+// Only regular clicks, not select options
+.clickEffect({
+  filter: (action) => action.method === 'click',
+})
+```
+
+## Click sound
+
+Enable the bundled click sound with `sound: true`, or provide a path to a custom audio file:
+
+```typescript
+// Bundled sound
+.clickEffect({ sound: true })
+
+// Custom sound
+.clickEffect({ sound: './assets/click.mp3', soundVolume: 0.6 })
+```
+
+Click sounds are mixed into the audio track alongside voiceover. Volume is independently adjustable.
+
+## CLI equivalent
+
+```bash
+# Enable with defaults
+npx playwright-recast -i ./traces --click-effect
+
+# With custom sound
+npx playwright-recast -i ./traces --click-effect --click-sound click.mp3
+
+# With full config
+npx playwright-recast -i ./traces --click-effect-config config.json
+```
+
+## Tips
+
+- Click timestamps are automatically remapped through speed processing, so ripples appear at the correct video time even after speed changes.
+- The ripple is generated once via ffmpeg lavfi (expanding circle with fade-out), then overlaid at each click position.
+- Combine with [Cursor Overlay](/docs/pipeline/cursor-overlay) for maximum clarity — the cursor moves to position, then the ripple appears.
+- Only actions from the recording context are processed. Setup/background clicks are filtered out automatically.
+
+---
+
+## Text Highlight
+
+
+The `.textHighlight()` stage renders animated marker overlays on text elements. A swipe-in animation reveals the highlight left-to-right, then the overlay disappears at the subtitle boundary.
+
+## Basic usage
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .textHighlight()
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+## How it works
+
+Text highlight reads highlight data from `report.json` automatically. Each highlight specifies a bounding box and timing, and the renderer draws an animated marker overlay at that position.
+
+The swipe-in animation reveals the highlight from left to right. The highlight end time is clamped to the subtitle boundary so overlays do not overflow into the next step.
+
+## The `highlight()` helper
+
+Capture highlight targets during test execution:
+
+```typescript
+import { highlight } from 'playwright-recast'
+
+When('the user sees the total', async ({ page }) => {
+  const total = page.locator('.total-amount')
+  await highlight(total)
+})
+```
+
+### Highlighting specific text
+
+Target a substring within an element:
+
+```typescript
+// Highlight just "Revenue" inside a heading
+await highlight(page.locator('h1'), { text: 'Revenue' })
+```
+
+The helper uses the Range API to find the exact text position, including support for text inside `input` and `textarea` elements via mirror measurement.
+
+The helper stores the element's bounding box as a Playwright annotation. These annotations are read by `.textHighlight()` during video generation.
+
+## CLI equivalent
+
+Text highlight is configured through the programmatic API and report data.
+
+## Tips
+
+- Place `.textHighlight()` after subtitle generation so highlight timing aligns with subtitle boundaries.
+- Highlight data comes from `report.json` — the file is generated automatically when using the `highlight()` step helper.
+- Only actions from the recording context are processed. Setup/background highlights are filtered out.
+
+---
+
+## Frame Interpolation
+
+
+The `.interpolate()` stage generates smooth intermediate frames from choppy browser recordings using ffmpeg's `minterpolate` filter. Browser-captured screenshots often have uneven frame timing — interpolation fills the gaps.
+
+## Basic usage
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .interpolate()
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+## Configuration options
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `fps` | `number` | `60` | Target frames per second |
+| `mode` | `string` | `'mci'` | Interpolation algorithm: `'dup'`, `'blend'`, or `'mci'` |
+| `quality` | `string` | `'balanced'` | Quality preset: `'fast'`, `'balanced'`, or `'quality'` |
+| `passes` | `number` | `1` | Number of interpolation passes |
+
+### Full example
+
+```typescript
+.interpolate({
+  fps: 60,
+  mode: 'blend',
+  quality: 'balanced',
+  passes: 2,
+})
+```
+
+## Interpolation modes
+
+| Mode | Speed | Quality | Description |
+|---|---|---|---|
+| `dup` | Instant | None | Duplicate frames to reach target FPS. No visual smoothing. |
+| `blend` | Fast | Good | Linear crossfade between adjacent frames. |
+| `mci` | Slow | Best | Motion-compensated interpolation. CPU-intensive, especially at 4K. |
+
+## Multi-pass interpolation
+
+With `passes: 2`, the FPS increase is distributed geometrically across passes. Each pass interpolates already-smoothed frames for a cleaner result.
+
+Example with `passes: 2` and `fps: 60`:
+- Pass 1: 25fps to 39fps
+- Pass 2: 39fps to 60fps
+
+```typescript
+.interpolate({
+  fps: 60,
+  mode: 'mci',
+  passes: 2,
+})
+```
+
+## Scene change detection
+
+Interpolation uses `scd=fdiff` with a threshold of 5 to detect scene transitions (page navigations, route changes). At scene boundaries, frames are duplicated instead of blended, preventing ghosting artifacts.
+
+## CLI equivalent
+
+```bash
+# Enable with defaults (60fps, mci mode)
+npx playwright-recast -i ./traces --interpolate
+
+# Custom FPS
+npx playwright-recast -i ./traces --interpolate --interpolate-fps 30
+
+# Blend mode with multi-pass
+npx playwright-recast -i ./traces --interpolate --interpolate-mode blend --interpolate-passes 2
+```
+
+## Tips
+
+- Interpolation runs after speed processing and before cursor/click/zoom overlays. It operates at source resolution for best quality.
+- `mci` mode produces the smoothest results but is CPU-intensive. Use `blend` for a faster alternative with good quality.
+- `dup` mode is essentially free — it just duplicates frames to hit the target FPS without any visual smoothing.
+- Use `720p` resolution during development to speed up interpolation, then switch to `1080p` for final output.
+- Multi-pass with `mci` produces the best results but multiplies processing time by the number of passes.
+
+---
+
+## Background Music
+
+
+The `.backgroundMusic()` stage adds a music track to your video. The music automatically ducks (lowers volume) during voiceover segments and fades out at the end.
+
+## Basic usage
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .subtitlesFromSrt('./narration.srt')
+  .voiceover(OpenAIProvider({ voice: 'nova' }))
+  .backgroundMusic({ path: './music/background.mp3' })
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+## Configuration options
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `path` | `string` | *(required)* | Path to the music audio file |
+| `volume` | `number` | `0.3` | Base volume (0.0-1.0) |
+| `ducking` | `boolean` | `true` | Lower music volume during voiceover |
+| `duckLevel` | `number` | `0.1` | Volume during voiceover (0.0-1.0) |
+| `duckFadeMs` | `number` | `500` | Fade duration for ducking transitions in ms |
+| `fadeOutMs` | `number` | `2000` | Fade-out duration at end of video in ms |
+| `loop` | `boolean` | `true` | Loop music if shorter than video |
+
+### Full example
+
+```typescript
+.backgroundMusic({
+  path: './music/ambient.mp3',
+  volume: 0.25,
+  ducking: true,
+  duckLevel: 0.08,
+  duckFadeMs: 600,
+  fadeOutMs: 3000,
+  loop: true,
+})
+```
+
+## Auto-ducking
+
+When `ducking` is enabled (the default), the music volume drops to `duckLevel` whenever voiceover audio is playing. The transition uses a smooth fade over `duckFadeMs` milliseconds. This keeps the narration clear without manually adjusting levels.
+
+To disable ducking and keep music at a fixed volume throughout:
+
+```typescript
+.backgroundMusic({
+  path: './music/background.mp3',
+  ducking: false,
+  volume: 0.15,
+})
+```
+
+## Coverage
+
+Background music covers the full output duration, including [Intro](/docs/pipeline/intro-outro) and [Outro](/docs/pipeline/intro-outro) segments. The music track is mixed as a post-processing step after intro/outro assembly.
+
+## Tips
+
+- Music is looped by default. If your track is shorter than the video, it repeats seamlessly. Set `loop: false` if your track is already the right length.
+- The fade-out starts `fadeOutMs` before the end of the video and reaches silence at the last frame.
+- Keep `volume` low (0.2-0.3) when used with voiceover. The ducking ensures narration is audible, but a lower base volume gives a more polished feel.
+- Background music works without voiceover too — set `ducking: false` for a fixed-volume music bed.
+
+---
+
+## Intro & Outro
+
+
+The `.intro()` and `.outro()` stages let you add branded opening and closing clips to your video. Both stages support smooth crossfade transitions blending into and out of the main content.
+
+## Basic usage
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .intro({ path: './assets/intro.mp4' })
+  .outro({ path: './assets/outro.mp4' })
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+## Configuration options
+
+### Intro
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `path` | `string` | *(required)* | Path to the intro video file |
+| `fadeDuration` | `number` | `1.0` | Crossfade duration in seconds |
+
+### Outro
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `path` | `string` | *(required)* | Path to the outro video file |
+| `fadeDuration` | `number` | `1.0` | Crossfade duration in seconds |
+
+### Custom fade duration
+
+```typescript
+.intro({ path: './assets/intro.mp4', fadeDuration: 1.5 })
+.outro({ path: './assets/outro.mp4', fadeDuration: 0.5 })
+```
+
+## Crossfade transitions
+
+The crossfade blends both video and audio:
+- **Video**: Uses ffmpeg `xfade` filter for a smooth visual transition
+- **Audio**: Uses `acrossfade` to blend audio tracks
+
+Original audio from the intro/outro clips is preserved through the crossfade.
+
+## Resolution normalization
+
+Intro and outro clips are automatically normalized to match the main content's resolution and FPS. You do not need to pre-process your clips — any resolution or frame rate is accepted.
+
+If the intro/outro clip has no audio track, a silent audio stream is generated automatically to enable the crossfade.
+
+## Tips
+
+- Use `.intro()` and `.outro()` independently — you do not need both. Add just an intro, just an outro, or both.
+- Keep intro/outro clips short (3-5 seconds) for product demos. Longer clips work well for presentations or tutorials.
+- [Background Music](/docs/pipeline/background-music) covers the full output including intro/outro segments.
+- The crossfade duration is subtracted from the total length — a 1-second crossfade means the last second of the intro overlaps with the first second of the main content.
+
+---
+
+## Render
+
+
+The `.render()` stage configures the final video encoding. It controls the output format, resolution, frame rate, and subtitle burn-in styling.
+
+## Basic usage
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .render({ format: 'mp4', resolution: '1080p' })
+  .toFile('demo.mp4')
+```
+
+## Configuration options
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `format` | `string` | `'mp4'` | Output format |
+| `resolution` | `string` | `'1080p'` | Output resolution: `'720p'`, `'1080p'`, `'4k'` |
+| `fps` | `number` | `30` | Output frame rate |
+| `burnSubtitles` | `boolean` | `false` | Burn subtitles into the video |
+| `subtitleStyle` | `object` | default ffmpeg | Subtitle appearance configuration |
+
+## Output with `.toFile()`
+
+After configuring the render, call `.toFile()` to execute the pipeline and write the result:
+
+```typescript
+.render({ format: 'mp4', resolution: '1080p' })
+.toFile('demo.mp4')
+```
+
+## Subtitle burn-in
+
+Set `burnSubtitles: true` to render subtitles directly into the video frames. Without `subtitleStyle`, ffmpeg's default SRT rendering is used.
+
+### Subtitle style options
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `fontFamily` | `string` | `'Arial'` | Any system font |
+| `fontSize` | `number` | `48` | Font size in pixels (relative to 1080p) |
+| `primaryColor` | `string` | `'#FFFFFF'` | Text color (hex) |
+| `backgroundColor` | `string` | `'#000000'` | Box background color (hex) |
+| `backgroundOpacity` | `number` | `0.75` | Box opacity (0.0 transparent - 1.0 opaque) |
+| `padding` | `number` | `20` | Box padding in pixels |
+| `bold` | `boolean` | `false` | Bold text |
+| `position` | `string` | `'bottom'` | `'bottom'` or `'top'` |
+| `marginVertical` | `number` | `50` | Distance from edge in pixels |
+| `marginHorizontal` | `number` | `100` | Side margins (text wraps within) |
+| `wrapStyle` | `string` | `'smart'` | `'smart'`, `'endOfLine'`, `'none'` |
+| `chunkOptions` | `object` | — | Punctuation-based text splitting |
+
+### Full subtitle styling example
+
+```typescript
+.render({
+  format: 'mp4',
+  resolution: '1080p',
+  fps: 60,
+  burnSubtitles: true,
+  subtitleStyle: {
+    fontFamily: 'Arial',
+    fontSize: 48,
+    primaryColor: '#1a1a1a',
+    backgroundColor: '#FFFFFF',
+    backgroundOpacity: 0.75,
+    padding: 20,
+    bold: true,
+    position: 'bottom',
+    marginVertical: 50,
+    marginHorizontal: 100,
+    wrapStyle: 'smart',
+    chunkOptions: {
+      maxCharsPerLine: 55,
+      minCharsPerChunk: 15,
+    },
+  },
+})
+```
+
+### Chunk options
+
+Long subtitle text is split into shorter single-line entries. Time is distributed proportionally by character count.
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `maxCharsPerLine` | `number` | `55` | Split text when it exceeds this length |
+| `minCharsPerChunk` | `number` | `15` | Merge fragments shorter than this |
+
+Splitting priority:
+1. Sentence boundaries (`. ! ?`)
+2. Clause boundaries (`, ; :`) if still too long
+
+## CLI equivalent
+
+```bash
+# Basic render
+npx playwright-recast -i ./traces -o demo.mp4
+
+# With subtitle burn-in
+npx playwright-recast -i ./traces --srt narration.srt --burn-subs -o demo.mp4
+```
+
+## Tips
+
+- Use `720p` during development for faster rendering. Switch to `1080p` or `4k` for final output.
+- Without `burnSubtitles`, subtitle files (SRT/VTT) are still generated alongside the video for use in video players that support external subtitles.
+- Subtitle font size is relative to 1080p. At other resolutions, the size scales proportionally.
+- The `smart` wrap style balances line lengths for a centered, even appearance.
+
+---
+
+## CLI Reference
+
+
+## Usage
+
+```bash
+npx playwright-recast --input <trace-dir-or-zip> [options]
+```
+
+The CLI provides a code-free way to convert Playwright traces into polished demo videos. Every feature available in the programmatic API has a corresponding CLI flag.
+
+## Input / Output
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--input` | `-i` | (required) | Trace directory or `.zip` file path |
+| `--output` | `-o` | `./recast-output.mp4` | Output file path |
+| `--format` | | `mp4` | Output format: `mp4` or `webm` |
+| `--resolution` | | `1080p` | Output resolution: `720p` or `1080p` |
+| `--help` | `-h` | | Show help message |
+
+## Speed processing
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--speed-idle` | `3.0` | Speed multiplier for idle periods |
+| `--speed-action` | `1.0` | Speed multiplier for user actions |
+| `--speed-network` | `2.0` | Speed multiplier for network waits |
+| `--no-speed` | `false` | Disable speed processing entirely |
+
+## Subtitles
+
+| Flag | Description |
+|------|-------------|
+| `--srt` | Path to an external SRT subtitle file |
+| `--burn-subs` | Burn subtitles into the video |
+
+When `--srt` is not provided, subtitles are auto-generated from trace step titles and doc strings.
+
+## Text processing
+
+| Flag | Description |
+|------|-------------|
+| `--text-processing` | Enable built-in text sanitization for TTS |
+| `--text-processing-config <path>` | Load custom text processing rules from a JSON file |
+
+Text processing cleans subtitle text before sending to TTS providers (strips smart quotes, normalizes dashes, etc.) while keeping the original text for visual subtitles. See [Text Processing](/docs/pipeline/text-processing) for details.
+
+## TTS voiceover
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--provider` | `none` | TTS provider: `openai`, `elevenlabs`, or `none` |
+| `--voice` | (provider default) | Voice ID for the TTS provider |
+| `--model` | (provider default) | Model ID for the TTS provider |
+| `--tts-speed` | `1.0` | TTS speech speed multiplier |
+
+## Click effects
+
+| Flag | Description |
+|------|-------------|
+| `--click-effect` | Enable click highlighting with default settings |
+| `--click-effect-config <path>` | Load click effect configuration from a JSON file |
+| `--click-sound <path>` | Custom click sound audio file |
+
+## Cursor overlay
+
+| Flag | Description |
+|------|-------------|
+| `--cursor-overlay` | Enable animated cursor overlay with defaults |
+| `--cursor-overlay-config <path>` | Load cursor overlay configuration from a JSON file |
+
+## Frame interpolation
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--interpolate` | `false` | Enable frame interpolation |
+| `--interpolate-fps` | `60` | Target frames per second |
+| `--interpolate-mode` | `mci` | Mode: `dup`, `blend`, or `mci` |
+| `--interpolate-quality` | `balanced` | Quality preset: `fast`, `balanced`, or `quality` |
+| `--interpolate-passes` | `1` | Number of interpolation passes |
+
+## Examples
+
+### Basic trace to video
+
+```bash
+npx playwright-recast -i ./test-results/trace.zip -o demo.mp4
+```
+
+### Speed processing with subtitle burn-in
+
+```bash
+npx playwright-recast -i ./traces --speed-idle 4.0 --speed-action 1.0 --burn-subs
+```
+
+### External SRT with OpenAI voiceover
+
+```bash
+npx playwright-recast -i ./traces --srt narration.srt --provider openai --voice nova
+```
+
+### ElevenLabs voiceover
+
+```bash
+npx playwright-recast -i ./traces --srt narration.srt --provider elevenlabs --voice onwK4e9ZLuTAKqWW03F9
+```
+
+### Click effects with custom sound
+
+```bash
+npx playwright-recast -i ./traces --click-effect --click-sound click.mp3
+```
+
+### Frame interpolation for smooth playback
+
+```bash
+npx playwright-recast -i ./traces --interpolate --interpolate-fps 30 --interpolate-mode blend
+```
+
+### Full pipeline
+
+```bash
+npx playwright-recast -i ./traces \
+  --srt narration.srt \
+  --speed-idle 4.0 \
+  --text-processing \
+  --provider openai --voice nova --tts-speed 1.2 \
+  --click-effect \
+  --cursor-overlay \
+  --interpolate \
+  --burn-subs \
+  -o demo.mp4
+```
+
+### Disable speed processing
+
+```bash
+npx playwright-recast -i ./traces --no-speed -o raw.mp4
+```
+
+---
+
+## OpenAI TTS
+
+
+## Setup
+
+The OpenAI provider uses the `openai` npm package as a peer dependency. Install it alongside playwright-recast:
+
+```bash
+npm install openai
+```
+
+Set your API key as an environment variable:
+
+```bash
+export OPENAI_API_KEY="sk-..."
+```
+
+## Usage
+
+```typescript
+import { Recast } from 'playwright-recast'
+import { OpenAIProvider } from 'playwright-recast/providers/openai'
+
+await Recast
+  .from('./traces')
+  .parse()
+  .subtitlesFromSrt('./narration.srt')
+  .voiceover(OpenAIProvider({
+    voice: 'nova',
+    speed: 1.2,
+    instructions: 'Professional product demo narration.',
+  }))
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+## Configuration options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `voice` | `string` | `'nova'` | Voice to use for synthesis |
+| `model` | `string` | `'gpt-4o-mini-tts'` | OpenAI TTS model |
+| `speed` | `number` | `1.0` | Speech speed multiplier |
+| `instructions` | `string` | `undefined` | System prompt for voice style and tone |
+| `apiKey` | `string` | `process.env.OPENAI_API_KEY` | API key (overrides env variable) |
+
+## Available voices
+
+OpenAI provides six built-in voices:
+
+| Voice | Description |
+|-------|-------------|
+| `alloy` | Neutral, balanced |
+| `echo` | Warm, conversational |
+| `fable` | Expressive, storytelling |
+| `onyx` | Deep, authoritative |
+| `nova` | Friendly, natural |
+| `shimmer` | Clear, polished |
+
+## Instructions
+
+The `instructions` parameter lets you control the voice style and tone. This maps to OpenAI's system-level instructions for TTS:
+
+```typescript
+OpenAIProvider({
+  voice: 'nova',
+  instructions: 'Calm, professional demo narration. Speak clearly with moderate pacing.',
+})
+```
+
+## CLI usage
+
+```bash
+npx playwright-recast -i ./traces --srt narration.srt --provider openai --voice nova
+npx playwright-recast -i ./traces --srt narration.srt --provider openai --voice shimmer --tts-speed 1.2
+```
+
+## Environment variable
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `OPENAI_API_KEY` | Yes (unless `apiKey` is set) | Your OpenAI API key |
+
+---
+
+## ElevenLabs
+
+
+## Setup
+
+The ElevenLabs provider uses the `@elevenlabs/elevenlabs-js` package as a peer dependency. Install it alongside playwright-recast:
+
+```bash
+npm install @elevenlabs/elevenlabs-js
+```
+
+Set your API key as an environment variable:
+
+```bash
+export ELEVENLABS_API_KEY="..."
+```
+
+## Usage
+
+```typescript
+import { Recast } from 'playwright-recast'
+import { ElevenLabsProvider } from 'playwright-recast/providers/elevenlabs'
+
+await Recast
+  .from('./traces')
+  .parse()
+  .subtitlesFromSrt('./narration.srt')
+  .voiceover(ElevenLabsProvider({
+    voiceId: 'onwK4e9ZLuTAKqWW03F9',
+    modelId: 'eleven_multilingual_v2',
+    languageCode: 'cs',
+  }))
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+## Configuration options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `voiceId` | `string` | `'onwK4e9ZLuTAKqWW03F9'` (Daniel) | ElevenLabs voice ID |
+| `modelId` | `string` | `'eleven_multilingual_v2'` | ElevenLabs model |
+| `languageCode` | `string` | `undefined` | Force language via ISO 639-1 code (e.g. `'cs'`, `'en'`, `'de'`) |
+| `apiKey` | `string` | `process.env.ELEVENLABS_API_KEY` | API key (overrides env variable) |
+
+## Voice ID
+
+Each ElevenLabs voice has a unique ID. You can find voice IDs in the [ElevenLabs Voice Library](https://elevenlabs.io/voice-library). The default voice is Daniel (`onwK4e9ZLuTAKqWW03F9`).
+
+```typescript
+ElevenLabsProvider({
+  voiceId: 'onwK4e9ZLuTAKqWW03F9', // Daniel
+})
+```
+
+## Language code
+
+The `languageCode` option forces the TTS engine to use a specific language. This is useful for multilingual content where auto-detection may produce incorrect results.
+
+Use ISO 639-1 codes:
+
+| Code | Language |
+|------|----------|
+| `en` | English |
+| `cs` | Czech |
+| `de` | German |
+| `fr` | French |
+| `es` | Spanish |
+
+```typescript
+ElevenLabsProvider({
+  voiceId: 'onwK4e9ZLuTAKqWW03F9',
+  modelId: 'eleven_multilingual_v2',
+  languageCode: 'cs',
+})
+```
+
+## CLI usage
+
+```bash
+npx playwright-recast -i ./traces --srt narration.srt --provider elevenlabs --voice onwK4e9ZLuTAKqWW03F9
+npx playwright-recast -i ./traces --srt narration.srt --provider elevenlabs --voice onwK4e9ZLuTAKqWW03F9 --model eleven_multilingual_v2
+```
+
+## Environment variable
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `ELEVENLABS_API_KEY` | Yes (unless `apiKey` is set) | Your ElevenLabs API key |
+
+---
+
+## Recast Class
+
+
+
+The `Recast` class (exported as `Pipeline` internally) is the entry point for building video pipelines. It is **immutable** — every method returns a new pipeline instance. Nothing executes until a terminal operation is called.
+
+```typescript
+import { Recast } from 'playwright-recast'
+```
+
+## Static Methods
+
+### `Recast.from(source)`
+
+Create a new pipeline from a trace directory or zip file path.
+
+```typescript
+const pipeline = Recast.from('./test-results/trace.zip')
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `source` | `string` | Path to a `.zip` trace file or directory containing trace files |
+
+**Returns:** `Pipeline`
+
+---
+
+## Chainable Methods
+
+All chainable methods return a new `Pipeline` instance. The original pipeline is not modified.
+
+### `.parse()`
+
+Parse the Playwright trace into structured data (actions, frames, network, cursor positions).
+
+```typescript
+.parse()
+```
+
+Must be called before any other processing stage. Extracts `ParsedTrace` from the trace zip.
+
+---
+
+### `.hideSteps(predicate)`
+
+Filter out steps matching the predicate. Hidden steps do not appear in the output video.
+
+```typescript
+.hideSteps(action => action.keyword === 'Given' && action.text?.includes('logged in'))
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `predicate` | `(action: TraceAction) => boolean` | Returns `true` for actions to hide |
+
+---
+
+### `.speedUp(config)`
+
+Adjust video speed based on trace activity classification.
+
+```typescript
+.speedUp({
+  duringIdle: 4.0,
+  duringUserAction: 1.0,
+  duringNetworkWait: 2.0,
+  duringNavigation: 2.0,
+  minSegmentDuration: 500,
+  maxSpeed: 8.0,
+})
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `duringIdle` | `number` | `4.0` | Speed during idle periods |
+| `duringUserAction` | `number` | `1.0` | Speed during user actions |
+| `duringNetworkWait` | `number` | `2.0` | Speed while waiting for network |
+| `duringNavigation` | `number` | `2.0` | Speed during page loads |
+| `minSegmentDuration` | `number` | `500` | Minimum segment duration (ms) before speed change |
+| `maxSpeed` | `number` | `100.0` | Maximum speed multiplier |
+| `rules` | `SpeedRule[]` | — | Custom speed rules (evaluated first) |
+| `segments` | `Array<{startMs, endMs, speed}>` | — | Pre-built speed segments (bypasses classification) |
+| `recordingPageId` | `string` | — | Filter actions to this page ID |
+| `postFastForwardSettleMs` | `number` | `0` | Extra delay after fast-forward zones |
+
+See [SpeedConfig](/docs/api-reference/types#speedconfig) for the full type definition.
+
+---
+
+### `.subtitles(textFn, options?)`
+
+Generate subtitles from trace actions using a custom text extraction function.
+
+```typescript
+.subtitles(action => action.docString ?? action.text)
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `textFn` | `(action: TraceAction) => string \| undefined` | Extracts display text from each action |
+| `options` | `SubtitleOptions` | Optional format settings |
+
+---
+
+### `.subtitlesFromSrt(srtPath)`
+
+Load subtitles from an external SRT file.
+
+```typescript
+.subtitlesFromSrt('./narration.srt')
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `srtPath` | `string` | Path to the SRT file |
+
+---
+
+### `.subtitlesFromTrace(options?)`
+
+Auto-generate subtitles from BDD step titles in the parsed trace.
+
+```typescript
+.subtitlesFromTrace()
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `options` | `SubtitleOptions` | Optional format settings |
+
+---
+
+### `.textProcessing(config)`
+
+Sanitize subtitle text before TTS synthesis. Writes to `ttsText` field — visual subtitles keep original text.
+
+```typescript
+.textProcessing({ builtins: true })
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `builtins` | `boolean` | `false` | Enable built-in sanitization rules |
+| `rules` | `TextProcessingRule[]` | — | Custom regex find/replace rules |
+| `transform` | `(text: string) => string` | — | Custom transform function |
+
+---
+
+### `.autoZoom(config?)`
+
+Auto-zoom into user actions detected from the trace.
+
+```typescript
+.autoZoom({ inputLevel: 1.4, clickLevel: 1.5 })
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `clickLevel` | `number` | `1.5` | Zoom level for click actions |
+| `inputLevel` | `number` | `1.6` | Zoom level for fill/type actions |
+| `idleLevel` | `number` | `1.0` | Zoom during idle (1.0 = none) |
+| `centerBias` | `number` | `0.2` | Blend toward center (0-1) |
+| `transitionMs` | `number` | `400` | Transition duration in ms |
+| `easing` | `EasingSpec` | `'ease-in-out'` | Easing function for transitions |
+
+---
+
+### `.enrichZoomFromReport(steps)`
+
+Apply zoom coordinates from external data (e.g., demo report with per-step zoom).
+
+```typescript
+.enrichZoomFromReport([
+  { zoom: null },
+  { zoom: { x: 0.5, y: 0.8, level: 1.4 } },
+])
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `steps` | `Array<{ zoom?: { x: number; y: number; level: number } \| null }>` | Zoom data per step |
+
+---
+
+### `.cursorOverlay(config?)`
+
+Render an animated cursor that moves between action positions.
+
+```typescript
+.cursorOverlay({ size: 24, easing: 'ease-out' })
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `image` | `string` | — | Custom cursor image path (PNG) |
+| `size` | `number` | `24` | Cursor size in px (relative to 1080p) |
+| `color` | `string` | `'#FFFFFF'` | Dot color (hex) |
+| `opacity` | `number` | `0.9` | Opacity 0.0-1.0 |
+| `easing` | `string` | `'ease-in-out'` | Movement easing |
+| `hideAfterMs` | `number` | `500` | Fade-out delay after last action |
+| `shadow` | `boolean` | `true` | Drop shadow on cursor |
+| `filter` | `(action: TraceAction) => boolean` | — | Filter which actions generate cursor positions |
+
+---
+
+### `.clickEffect(config?)`
+
+Add animated ripple effects at click positions with optional sound.
+
+```typescript
+.clickEffect({ color: '#3B82F6', sound: true })
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `color` | `string` | `'#3B82F6'` | Ripple color (hex) |
+| `opacity` | `number` | `0.5` | Ripple opacity 0.0-1.0 |
+| `radius` | `number` | `30` | Max radius in px (relative to 1080p) |
+| `duration` | `number` | `400` | Animation duration in ms |
+| `sound` | `string \| true` | — | Click sound path, or `true` for bundled default |
+| `soundVolume` | `number` | `0.8` | Sound volume 0.0-1.0 |
+| `filter` | `(action: TraceAction) => boolean` | — | Filter which clicks to highlight |
+
+---
+
+### `.textHighlight(config?)`
+
+Render animated marker overlays on text captured by the `highlight()` helper.
+
+```typescript
+.textHighlight({ color: '#FFEB3B', opacity: 0.35 })
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `color` | `string` | `'#FFEB3B'` | Highlight color (hex) |
+| `opacity` | `number` | `0.35` | Highlight opacity 0.0-1.0 |
+| `duration` | `number` | `3000` | Visibility duration in ms |
+| `fadeOut` | `number` | `500` | Fade-out duration in ms |
+| `swipeDuration` | `number` | `300` | Swipe-in animation duration in ms |
+| `padding` | `{ x?: number; y?: number }` | — | Padding around bounding box in px |
+| `filter` | `(highlight: HighlightEvent) => boolean` | — | Filter which highlights to render |
+
+---
+
+### `.intro(config)`
+
+Prepend an intro video with a crossfade transition.
+
+```typescript
+.intro({ path: './assets/intro.mp4', fadeDuration: 500 })
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `path` | `string` | *required* | Path to intro video file |
+| `fadeDuration` | `number` | `500` | Crossfade duration in ms |
+
+---
+
+### `.outro(config)`
+
+Append an outro video with a crossfade transition.
+
+```typescript
+.outro({ path: './assets/outro.mp4', fadeDuration: 500 })
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `path` | `string` | *required* | Path to outro video file |
+| `fadeDuration` | `number` | `500` | Crossfade duration in ms |
+
+---
+
+### `.interpolate(config?)`
+
+Apply frame interpolation for smoother video output using ffmpeg's minterpolate filter.
+
+```typescript
+.interpolate({ fps: 60, mode: 'blend' })
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `fps` | `number` | `60` | Target frames per second |
+| `mode` | `'dup' \| 'blend' \| 'mci'` | `'mci'` | Interpolation mode |
+| `quality` | `'fast' \| 'balanced' \| 'quality'` | `'balanced'` | Quality preset |
+| `passes` | `number` | `1` | Multi-pass count for smoother results |
+
+---
+
+### `.backgroundMusic(config)`
+
+Add background music with auto-ducking during voiceover.
+
+```typescript
+.backgroundMusic({ path: './assets/music.mp3', volume: 0.3 })
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `path` | `string` | *required* | Path to music audio file |
+| `volume` | `number` | `0.3` | Base volume 0.0-1.0 |
+| `ducking` | `boolean` | `true` | Auto-duck during voiceover |
+| `duckLevel` | `number` | `0.1` | Volume during voiceover 0.0-1.0 |
+| `duckFadeMs` | `number` | `500` | Ducking transition duration in ms |
+| `fadeOutMs` | `number` | `3000` | Fade-out at end of video in ms |
+| `loop` | `boolean` | `true` | Loop if shorter than video |
+
+---
+
+### `.voiceover(provider)`
+
+Generate TTS audio from subtitle text using a provider.
+
+```typescript
+.voiceover(OpenAIProvider({ voice: 'nova' }))
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `provider` | `TtsProvider` | A TTS provider instance (OpenAI or ElevenLabs) |
+
+---
+
+### `.render(config?)`
+
+Configure video rendering options.
+
+```typescript
+.render({ format: 'mp4', resolution: '1080p', fps: 60, burnSubtitles: true })
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `format` | `'mp4' \| 'webm'` | `'mp4'` | Output format |
+| `resolution` | `string \| { width, height }` | `'1080p'` | Output resolution |
+| `fps` | `number` | — | Output frame rate |
+| `burnSubtitles` | `boolean` | `false` | Burn subtitles into video |
+| `subtitleStyle` | `SubtitleStyle` | — | Subtitle styling options |
+| `codec` | `string` | — | Video codec override |
+| `crf` | `number` | — | Constant rate factor (quality) |
+
+---
+
+## Terminal Operations
+
+Terminal operations execute the pipeline. Nothing runs until one of these is called.
+
+### `.toFile(outputPath)`
+
+Execute the pipeline and write the result to a file.
+
+```typescript
+await pipeline.toFile('demo.mp4')
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `outputPath` | `string` | Output file path |
+
+**Returns:** `Promise<void>`
+
+---
+
+### `.toBuffer()`
+
+Execute the pipeline and return the result as a buffer.
+
+```typescript
+const buffer = await pipeline.toBuffer()
+```
+
+**Returns:** `Promise<Buffer>`
+
+---
+
+## Inspection Methods
+
+### `.getStages()`
+
+Get the list of stages (for testing/debugging).
+
+**Returns:** `readonly StageDescriptor[]`
+
+### `.getSource()`
+
+Get the trace source path.
+
+**Returns:** `string`
+
+---
+
+## Types
+
+
+
+All types are exported from the `playwright-recast` package and can be imported for type-safe configuration.
+
+```typescript
+import type { SpeedConfig, RenderConfig, SubtitleStyle } from 'playwright-recast'
+```
+
+---
+
+## Trace Types
+
+### `ParsedTrace`
+
+The complete parsed trace output from `.parse()`.
+
+```typescript
+interface ParsedTrace {
+  metadata: {
+    browserName: string
+    platform: string
+    viewport: { width: number; height: number }
+    startTime: MonotonicMs
+    endTime: MonotonicMs
+    wallTime: number
+    playwrightVersion?: string
+  }
+  frames: ScreencastFrame[]
+  actions: TraceAction[]
+  resources: TraceResource[]
+  events: TraceEvent[]
+  cursorPositions: CursorPosition[]
+  frameReader: FrameReader
+}
+```
+
+### `TraceAction`
+
+A Playwright action extracted from the trace.
+
+```typescript
+interface TraceAction {
+  callId: string
+  stepId?: string
+  title: string
+  class: string
+  method: string
+  params: Record<string, unknown>
+  startTime: MonotonicMs
+  endTime: MonotonicMs
+  parentId?: string
+  pageId?: string
+  error?: { message: string }
+  point?: CursorPosition
+  annotations?: TraceAnnotation[]
+  keyword?: string      // BDD step keyword (Given/When/Then)
+  text?: string          // BDD step text
+  docString?: string     // BDD doc string (voiceover text)
+}
+```
+
+### `TraceAnnotation`
+
+Annotation attached to a trace action.
+
+```typescript
+interface TraceAnnotation {
+  type: KnownAnnotationType | (string & {})
+  description?: string
+}
+
+type KnownAnnotationType = 'voiceover' | 'voiceover-hidden' | 'zoom' | 'demo-uid' | 'demo-persona' | 'demo-video-path'
+```
+
+### `ScreencastFrame`
+
+A screencast frame captured in the trace.
+
+```typescript
+interface ScreencastFrame {
+  sha1: string
+  timestamp: MonotonicMs
+  pageId: string
+  width: number
+  height: number
+}
+```
+
+### `CursorPosition`
+
+Cursor position from a trace input event.
+
+```typescript
+interface CursorPosition {
+  x: number
+  y: number
+  timestamp: MonotonicMs
+}
+```
+
+### `TraceResource`
+
+A network resource captured in the trace.
+
+```typescript
+interface TraceResource {
+  url: string
+  method: string
+  status: number
+  startTime: MonotonicMs
+  endTime: MonotonicMs
+  mimeType: string
+  requestSize?: number
+  responseSize?: number
+}
+```
+
+### `MonotonicMs`
+
+Branded type for monotonic timestamps in milliseconds. Prevents mixing with wall clock time.
+
+```typescript
+type MonotonicMs = number & { readonly __brand: 'MonotonicMs' }
+```
+
+---
+
+## SpeedConfig
+
+Configuration for the `.speedUp()` stage.
+
+```typescript
+interface SpeedConfig {
+  duringIdle?: number              // Default: 4.0
+  duringUserAction?: number        // Default: 1.0
+  duringNetworkWait?: number       // Default: 2.0
+  duringNavigation?: number        // Default: 2.0
+  minSegmentDuration?: number      // Default: 500
+  maxSpeed?: number                // Default: 100.0
+  rules?: SpeedRule[]
+  segments?: Array<{ startMs: number; endMs: number; speed: number }>
+  recordingPageId?: string
+  postFastForwardSettleMs?: number // Default: 0
+}
+```
+
+### `SpeedRule`
+
+Custom speed rule — first match wins.
+
+```typescript
+interface SpeedRule {
+  name: string
+  match: (context: SpeedRuleContext) => boolean
+  speed: number
+}
+```
+
+### `SpeedRuleContext`
+
+Context passed to custom speed rule match functions.
+
+```typescript
+interface SpeedRuleContext {
+  time: MonotonicMs
+  activeActions: TraceAction[]
+  activeRequests: TraceResource[]
+  timeSinceLastAction: number
+  timeUntilNextAction: number
+  activityType: ActivityType
+}
+```
+
+### `ActivityType`
+
+```typescript
+type ActivityType = 'user-action' | 'navigation' | 'network-wait' | 'idle'
+```
+
+### `SpeedSegment`
+
+A contiguous time segment with a single speed multiplier.
+
+```typescript
+interface SpeedSegment {
+  originalStart: MonotonicMs
+  originalEnd: MonotonicMs
+  speed: number
+  outputStart: number
+  outputEnd: number
+}
+```
+
+### `TimeRemapFn`
+
+Maps original trace time to output video time.
+
+```typescript
+type TimeRemapFn = (originalTime: MonotonicMs) => number
+```
+
+---
+
+## Subtitle Types
+
+### `SubtitleEntry`
+
+A single subtitle entry.
+
+```typescript
+interface SubtitleEntry {
+  index: number
+  startMs: number
+  endMs: number
+  text: string
+  ttsText?: string     // Processed text for TTS (set by textProcessing)
+  keyword?: string
+  zoom?: StepZoom
+}
+```
+
+### `StepZoom`
+
+Zoom instruction attached to a subtitle entry.
+
+```typescript
+interface StepZoom {
+  x: number            // Center X (0.0-1.0)
+  y: number            // Center Y (0.0-1.0)
+  level: number        // Zoom level (1.0 = no zoom)
+  startMs?: number     // Optional zoom window start
+  endMs?: number       // Optional zoom window end
+}
+```
+
+### `SubtitleFormat`
+
+```typescript
+type SubtitleFormat = 'srt' | 'vtt'
+```
+
+### `SubtitleOptions`
+
+```typescript
+interface SubtitleOptions {
+  format?: SubtitleFormat
+}
+```
+
+---
+
+## Render Types
+
+### `RenderConfig`
+
+Configuration for the `.render()` stage.
+
+```typescript
+interface RenderConfig {
+  format?: 'mp4' | 'webm'
+  resolution?: '720p' | '1080p' | '1440p' | '4k' | { width: number; height: number }
+  fps?: number
+  burnSubtitles?: boolean
+  subtitleStyle?: SubtitleStyle
+  cursorOverlay?: boolean
+  codec?: string
+  crf?: number
+}
+```
+
+### `SubtitleStyle`
+
+Full subtitle styling options for burnt-in subtitles.
+
+```typescript
+interface SubtitleStyle {
+  fontFamily?: string              // Default: 'Arial'
+  fontSize?: number                // Default: 52
+  primaryColor?: string            // Default: '#1a1a1a'
+  backgroundColor?: string         // Default: '#FFFFFF'
+  backgroundOpacity?: number       // Default: 0.75
+  padding?: number                 // Default: 18
+  shadow?: number                  // Default: 0
+  position?: 'bottom' | 'top'     // Default: 'bottom'
+  marginVertical?: number          // Default: 50
+  marginHorizontal?: number        // Default: 80
+  bold?: boolean                   // Default: true
+  wrapStyle?: 'smart' | 'endOfLine' | 'none'  // Default: 'smart'
+  chunkOptions?: {                 // Default: null (no chunking)
+    maxCharsPerLine?: number       // Default: 60
+    minCharsPerChunk?: number      // Default: 15
+  } | null
+}
+```
+
+### `ZoomKeyframe`
+
+Defines a zoom state at a specific time.
+
+```typescript
+interface ZoomKeyframe {
+  atMs: number           // Time in output video (ms)
+  x?: number             // Center X (0.0-1.0). Default: 0.5
+  y?: number             // Center Y (0.0-1.0). Default: 0.5
+  level?: number         // Zoom level. Default: 1.0
+  transitionMs?: number  // Transition duration. Default: 300
+}
+```
+
+---
+
+## Voiceover Types
+
+### `TtsProvider`
+
+The contract every TTS provider must implement.
+
+```typescript
+interface TtsProvider {
+  readonly name: string
+  synthesize(text: string, options?: TtsOptions): Promise<AudioSegment>
+  estimateDurationMs(text: string, options?: TtsOptions): number
+  isAvailable(): Promise<boolean>
+  dispose(): Promise<void>
+}
+```
+
+### `AudioSegment`
+
+A chunk of synthesized audio.
+
+```typescript
+interface AudioSegment {
+  data: Buffer
+  durationMs: number
+  format: {
+    sampleRate: number
+    channels: number
+    codec: string
+  }
+}
+```
+
+### `TtsOptions`
+
+```typescript
+interface TtsOptions {
+  voice?: string
+  speed?: number
+  format?: 'mp3' | 'wav' | 'opus' | 'pcm'
+  locale?: string
+}
+```
+
+---
+
+## AutoZoomConfig
+
+Configuration for the `.autoZoom()` stage.
+
+```typescript
+interface AutoZoomConfig {
+  clickLevel?: number      // Default: 1.5
+  inputLevel?: number      // Default: 1.6
+  idleLevel?: number       // Default: 1.0
+  centerBias?: number      // Default: 0.2
+  transitionMs?: number    // Default: 400
+  easing?: EasingSpec      // Default: 'ease-in-out'
+}
+```
+
+---
+
+## EasingSpec
+
+Easing specification for zoom transitions.
+
+```typescript
+type EasingPreset = 'linear' | 'ease-in' | 'ease-out' | 'ease-in-out'
+
+type EasingSpec =
+  | EasingPreset
+  | { cubicBezier: [number, number, number, number] }
+  | { fn: (t: number) => number }
+```
+
+---
+
+## ClickEffectConfig
+
+```typescript
+interface ClickEffectConfig {
+  color?: string                           // Default: '#3B82F6'
+  opacity?: number                         // Default: 0.5
+  radius?: number                          // Default: 30
+  duration?: number                        // Default: 400
+  sound?: string | true                    // Default: undefined
+  soundVolume?: number                     // Default: 0.8
+  filter?: (action: TraceAction) => boolean
+}
+```
+
+### `ClickEvent`
+
+```typescript
+interface ClickEvent {
+  x: number              // Viewport pixels
+  y: number              // Viewport pixels
+  videoTimeMs: number    // After speed remapping
+}
+```
+
+---
+
+## CursorOverlayConfig
+
+```typescript
+interface CursorOverlayConfig {
+  image?: string                            // Custom cursor image path
+  size?: number                             // Default: 24
+  color?: string                            // Default: '#FFFFFF'
+  opacity?: number                          // Default: 0.9
+  easing?: 'linear' | 'ease-in-out' | 'ease-out'  // Default: 'ease-in-out'
+  hideAfterMs?: number                      // Default: 500
+  shadow?: boolean                          // Default: true
+  filter?: (action: TraceAction) => boolean
+}
+```
+
+### `CursorKeyframe`
+
+```typescript
+interface CursorKeyframe {
+  x: number              // Viewport pixels
+  y: number              // Viewport pixels
+  videoTimeSec: number   // After speed remapping
+}
+```
+
+---
+
+## TextProcessingConfig
+
+```typescript
+interface TextProcessingConfig {
+  builtins?: boolean                // Default: false
+  rules?: TextProcessingRule[]
+  transform?: (text: string) => string
+}
+
+interface TextProcessingRule {
+  pattern: string | RegExp
+  flags?: string                    // Default: 'g'
+  replacement: string               // Supports $1, $2 capture groups
+}
+```
+
+---
+
+## TextHighlightConfig
+
+```typescript
+interface TextHighlightConfig {
+  color?: string                            // Default: '#FFEB3B'
+  opacity?: number                          // Default: 0.35
+  duration?: number                         // Default: 3000
+  fadeOut?: number                          // Default: 500
+  swipeDuration?: number                   // Default: 300
+  padding?: { x?: number; y?: number }
+  filter?: (highlight: HighlightEvent) => boolean
+}
+
+interface HighlightEvent {
+  x: number
+  y: number
+  width: number
+  height: number
+  videoTimeMs: number
+  endTimeMs: number
+  color: string
+  opacity: number
+  swipeDuration: number
+  fadeOut: number
+}
+```
+
+---
+
+## InterpolateConfig
+
+```typescript
+interface InterpolateConfig {
+  fps?: number                                      // Default: 60
+  mode?: 'dup' | 'blend' | 'mci'                   // Default: 'mci'
+  quality?: 'fast' | 'balanced' | 'quality'         // Default: 'balanced'
+  passes?: number                                   // Default: 1
+}
+```
+
+---
+
+## IntroConfig / OutroConfig
+
+```typescript
+interface IntroConfig {
+  path: string               // Path to intro video file
+  fadeDuration?: number      // Default: 500 (ms)
+}
+
+interface OutroConfig {
+  path: string               // Path to outro video file
+  fadeDuration?: number      // Default: 500 (ms)
+}
+```
+
+---
+
+## BackgroundMusicConfig
+
+```typescript
+interface BackgroundMusicConfig {
+  path: string              // Path to music audio file
+  volume?: number           // Default: 0.3
+  ducking?: boolean         // Default: true
+  duckLevel?: number        // Default: 0.1
+  duckFadeMs?: number       // Default: 500
+  fadeOutMs?: number        // Default: 3000
+  loop?: boolean            // Default: true
+}
+```
+
+---
+
+## Subtitle Utilities
+
+
+
+playwright-recast exports several subtitle utility functions for use outside the pipeline. These are useful for building custom workflows, pre-processing SRT files, or generating ASS subtitle files directly.
+
+```typescript
+import { chunkSubtitles, writeAss, hexToAss } from 'playwright-recast'
+```
+
+---
+
+## `chunkSubtitles(entries, options?)`
+
+Split long subtitle entries into shorter, single-line chunks based on punctuation. Time is distributed proportionally by character count.
+
+```typescript
+import { chunkSubtitles } from 'playwright-recast'
+import type { SubtitleEntry, ChunkOptions } from 'playwright-recast'
+
+const entries: SubtitleEntry[] = [
+  {
+    index: 1,
+    startMs: 1000,
+    endMs: 8000,
+    text: 'Welcome to the dashboard. Let\'s explore the analytics panel and see real-time metrics.',
+  },
+]
+
+const chunked = chunkSubtitles(entries, {
+  maxCharsPerLine: 55,
+  minCharsPerChunk: 15,
+})
+
+// Result:
+// [
+//   { index: 1, startMs: 1000, endMs: 4000, text: 'Welcome to the dashboard.' },
+//   { index: 2, startMs: 4000, endMs: 8000, text: "Let's explore the analytics panel and see real-time metrics." },
+// ]
+```
+
+### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `entries` | `SubtitleEntry[]` | Array of subtitle entries to chunk |
+| `options` | `ChunkOptions` | Chunking configuration |
+
+### `ChunkOptions`
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `maxCharsPerLine` | `number` | `60` | Maximum characters per line before forcing a split |
+| `minCharsPerChunk` | `number` | `15` | Minimum characters — don't create tiny fragments |
+
+### Splitting priority
+
+1. **Sentence boundaries:** `. ! ?`
+2. **Clause boundaries:** `, ; : -- --`
+3. **Word boundaries** (fallback if still too long)
+
+Fragments shorter than `minCharsPerChunk` are merged with adjacent chunks to avoid tiny subtitle flashes.
+
+---
+
+## `writeAss(entries, style?, resolution?)`
+
+Generate an ASS (Advanced SubStation Alpha) subtitle file string from subtitle entries with optional styling.
+
+```typescript
+import { writeAss } from 'playwright-recast'
+import type { SubtitleEntry, SubtitleStyle, AssResolution } from 'playwright-recast'
+
+const entries: SubtitleEntry[] = [
+  { index: 1, startMs: 1000, endMs: 5000, text: 'Hello, world!' },
+]
+
+const style: SubtitleStyle = {
+  fontFamily: 'Arial',
+  fontSize: 48,
+  primaryColor: '#1a1a1a',
+  backgroundColor: '#FFFFFF',
+  backgroundOpacity: 0.75,
+  bold: true,
+}
+
+const resolution: AssResolution = { width: 1920, height: 1080 }
+
+const assContent = writeAss(entries, style, resolution)
+// Returns a complete ASS file string with [Script Info], [V4+ Styles], and [Events]
+```
+
+### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `entries` | `SubtitleEntry[]` | Array of subtitle entries |
+| `style` | `SubtitleStyle` | Optional styling (font, color, position, etc.) |
+| `resolution` | `AssResolution` | Video resolution for coordinate space |
+
+### `AssResolution`
+
+```typescript
+interface AssResolution {
+  width: number
+  height: number
+}
+```
+
+The ASS format uses absolute coordinates. The resolution tells the writer how to position subtitles (margins, font scaling) relative to the video dimensions.
+
+---
+
+## `hexToAss(hex, opacity?)`
+
+Convert a CSS hex color string to ASS color format.
+
+```typescript
+import { hexToAss } from 'playwright-recast'
+
+hexToAss('#FF0000')       // '&H000000FF' (red, opaque)
+hexToAss('#FF0000', 0.5)  // '&H800000FF' (red, 50% opacity)
+hexToAss('#FFFFFF', 0.75) // '&H40FFFFFF' (white, 75% opacity)
+```
+
+### Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `hex` | `string` | *required* | CSS hex color `'#RRGGBB'` |
+| `opacity` | `number` | `1.0` | Opacity 0.0 (transparent) to 1.0 (opaque) |
+
+**Returns:** `string` — ASS color in `'&HAABBGGRR'` format
+
+ASS uses reversed byte order (BGR instead of RGB) and inverted alpha (00 = opaque, FF = transparent). This utility handles the conversion.
+
+---
+
+## `processText(text, config)`
+
+Apply text processing rules to a string. Useful for cleaning subtitle text outside the pipeline.
+
+```typescript
+import { processText } from 'playwright-recast'
+
+const cleaned = processText('He said: "Hello — world..."', {
+  builtins: true,
+})
+// Result: 'He said: Hello, world...'
+```
+
+### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `text` | `string` | Input text to process |
+| `config` | `TextProcessingConfig` | Processing configuration |
+
+**Returns:** `string` — Processed text
+
+See [TextProcessingConfig](/docs/api-reference/types#textprocessingconfig) for configuration options.
+
+---
+
+## Working with SRT files
+
+While `parseSrt` and `writeSrt` are used internally by the pipeline, you can work with SRT files through the pipeline API:
+
+```typescript
+// Load and re-export SRT with chunking applied
+import { Recast } from 'playwright-recast'
+
+await Recast
+  .from('./traces')
+  .parse()
+  .subtitlesFromSrt('./input.srt')
+  .render({
+    burnSubtitles: true,
+    subtitleStyle: {
+      chunkOptions: { maxCharsPerLine: 50 },
+    },
+  })
+  .toFile('output.mp4')
+```
+
+For standalone SRT manipulation, use `chunkSubtitles()` directly on `SubtitleEntry[]` arrays.
+
+---
+
+## playwright-bdd
+
+
+## Overview
+
+playwright-recast has first-class support for [playwright-bdd](https://github.com/nicolo-ribaudo/playwright-bdd). Gherkin doc strings become voiceover narration, and step titles become subtitles -- turning your BDD scenarios into polished demo videos.
+
+## Setup
+
+Install both packages:
+
+```bash
+npm install playwright-recast playwright-bdd
+```
+
+Initialize the helpers in your fixtures file:
+
+```typescript
+// steps/fixtures.ts
+import { test } from 'playwright-bdd'
+import { setupRecast, narrate, pace } from 'playwright-recast'
+
+setupRecast(test)
+export { narrate, pace }
+```
+
+`setupRecast(test)` connects the step helpers to the Playwright test context. Call it once before defining any steps.
+
+## Using narrate in step definitions
+
+Call `narrate(docString)` in every step definition. The doc string text from your Gherkin feature file becomes the voiceover narration for that step:
+
+```typescript
+// steps/dashboard.ts
+import { Given, When, Then } from './fixtures'
+import { narrate, pace } from 'playwright-recast'
+
+Given('the user opens the dashboard', async ({ page }, docString?: string) => {
+  narrate(docString)
+  await page.goto('/dashboard')
+  await pace(page, 4000)
+})
+
+When('the user clicks the revenue chart', async ({ page }, docString?: string) => {
+  narrate(docString)
+  await page.click('.revenue-chart')
+  await pace(page, 3000)
+})
+
+Then('the breakdown is visible', async ({ page }, docString?: string) => {
+  narrate(docString)
+  await page.waitForSelector('.breakdown-panel')
+  await pace(page, 3000)
+})
+```
+
+## Writing Gherkin feature files
+
+Add doc strings to each step with the narration text:
+
+```text
+Feature: Dashboard demo
+
+  Scenario: View analytics
+    Given the user opens the dashboard
+      """
+      Let's open the analytics dashboard to see real-time metrics.
+      """
+    When the user clicks the revenue chart
+      """
+      Clicking on the revenue chart reveals a detailed breakdown
+      by month and region.
+      """
+    Then the breakdown is visible
+      """
+      Here we can see the full revenue breakdown with trends
+      highlighted for the current quarter.
+      """
+```
+
+## Hiding setup steps
+
+Steps that should not appear in the demo (login, seeding data) can be hidden:
+
+```typescript
+Given('the admin is logged in', async ({ page }, docString?: string) => {
+  narrate(docString, { hidden: true })
+  await page.goto('/login')
+  await page.fill('#email', 'admin@example.com')
+  await page.fill('#password', 'password')
+  await page.click('button[type="submit"]')
+})
+```
+
+Or use the `@hidden` tag in the doc string:
+
+```text
+Given the admin is logged in
+  """
+  @hidden
+  """
+```
+
+## Using zoom and highlight
+
+Combine `zoom` and `highlight` with `narrate` for richer demos:
+
+```typescript
+When('the user fills in the search', async ({ page }, docString?: string) => {
+  narrate(docString)
+  const searchInput = page.locator('[data-testid="search"]')
+  await zoom(searchInput, 1.4)
+  await searchInput.fill('quarterly report')
+  await highlight(searchInput, { text: 'quarterly report' })
+  await pace(page, 4000)
+})
+```
+
+## Generating the video
+
+Run your Playwright BDD tests with tracing enabled, then pipe the trace through the pipeline:
+
+```typescript
+import { Recast, OpenAIProvider } from 'playwright-recast'
+
+await Recast
+  .from('./test-results/')
+  .parse()
+  .speedUp({ duringIdle: 4.0, duringUserAction: 1.0 })
+  .subtitlesFromTrace()
+  .voiceover(OpenAIProvider({ voice: 'nova' }))
+  .render({ format: 'mp4', burnSubtitles: true })
+  .toFile('demo.mp4')
+```
+
+Use `.subtitlesFromTrace()` to automatically extract narration text from the BDD step annotations recorded during the test run.
+
+---
+
+## recast-studio
+
+
+## Overview
+
+recast-studio is a CLI tool for recording browser sessions as Playwright traces. Instead of writing test scripts, you interact with the browser directly -- recast-studio captures everything as a trace file that can be fed into the playwright-recast pipeline.
+
+Combined with the `studio-workflow` Claude Code skill, you can go from a browser recording to a polished demo video without writing any code.
+
+## How it works
+
+1. Run `recast-studio <url>` -- a browser opens with the Playwright Inspector
+2. Interact with the page as you would in a demo
+3. Click "Resume" in the Inspector when done
+4. recast-studio saves `trace.zip` and `video.webm` to the output directory
+
+The recording uses `page.pause()` inside a Playwright Test, so tracing and video capture happen automatically through the test runner.
+
+## Installation
+
+recast-studio is included with playwright-recast:
+
+```bash
+npm install playwright-recast
+```
+
+## Usage
+
+```bash
+npx recast-studio <url>
+```
+
+### Options
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--output` | `-o` | `.recast-studio/` | Output directory for trace and video files |
+| `--viewport` | | `1920x1080` | Browser viewport size as `WxH` |
+| `--load-storage` | | | Pre-load authentication state from a JSON file |
+| `--ignore-https-errors` | | `false` | Ignore certificate errors |
+| `--help` | `-h` | | Show help message |
+
+## Examples
+
+### Basic recording
+
+```bash
+npx recast-studio https://myapp.example.com
+```
+
+Opens the browser at the given URL. Interact with the page, then click "Resume" in the Inspector.
+
+### Custom output directory
+
+```bash
+npx recast-studio -o ./recordings/demo-1 https://myapp.example.com
+```
+
+### With authentication
+
+If your app requires login, save auth state first using Playwright's storage state feature, then load it:
+
+```bash
+npx recast-studio --load-storage auth.json https://myapp.example.com/dashboard
+```
+
+The browser starts with the saved session, skipping the login flow.
+
+### Custom viewport
+
+```bash
+npx recast-studio --viewport 1280x720 https://myapp.example.com
+```
+
+## Output
+
+After recording, the output directory contains:
+
+| File | Description |
+|------|-------------|
+| `trace.zip` | Playwright trace with actions, screenshots, network, and cursor data |
+| `video.webm` | Raw screen recording from the browser |
+
+Previous artifacts in the output directory are automatically cleaned before each recording.
+
+## Studio workflow
+
+After recording, use the `studio-workflow` Claude Code skill to generate the final video:
+
+```
+> /studio-workflow .recast-studio/
+```
+
+The skill analyzes the recorded trace, generates a voiceover script, builds SRT subtitles, and runs the full recast pipeline -- all within the Claude Code agent. No manual scripting required.
+
+## Programmatic alternative
+
+If you prefer to process the trace manually:
+
+```typescript
+import { Recast, OpenAIProvider } from 'playwright-recast'
+
+await Recast
+  .from('.recast-studio/trace.zip')
+  .parse()
+  .speedUp({ duringIdle: 3.0, duringUserAction: 1.0 })
+  .subtitlesFromSrt('./narration.srt')
+  .voiceover(OpenAIProvider({ voice: 'nova' }))
+  .render({ format: 'mp4', burnSubtitles: true })
+  .toFile('demo.mp4')
+```
+
+---
+
+## narrate
+
+
+## What it does
+
+`narrate(text)` attaches voiceover text to the current test step as a Playwright annotation. During video generation, the pipeline reads these annotations to produce TTS audio and subtitles timed to each step.
+
+Call `narrate` from every step definition -- even when there is no doc string -- so the reporter can match annotations to steps by sequential index.
+
+## Usage
+
+```typescript
+import { narrate } from 'playwright-recast'
+
+// With narration text
+narrate('The user opens the dashboard to review analytics.')
+
+// Without narration (still call it for index tracking)
+narrate(undefined)
+```
+
+## Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `text` | `string \| undefined` | Voiceover text for this step. Pass `undefined` if no narration. |
+| `opts.hidden` | `boolean` | Mark the step as hidden (excluded from recording and SRT output). |
+
+## Hiding steps
+
+Steps that should not appear in the final video (e.g., login, setup) can be marked as hidden:
+
+```typescript
+narrate(undefined, { hidden: true })
+```
+
+You can also embed `@hidden` in the doc string text itself:
+
+```text
+Given the admin is logged in
+  """
+  @hidden
+  """
+```
+
+Hidden steps are excluded from the SRT output and are not recorded in the demo video.
+
+## Example with playwright-bdd
+
+```typescript
+import { Given, When, Then } from './fixtures'
+import { narrate, pace } from 'playwright-recast'
+
+Given('the user opens the dashboard', async ({ page }, docString?: string) => {
+  narrate(docString)
+  await page.goto('/dashboard')
+  await pace(page, 4000)
+})
+
+When('the user clicks the revenue chart', async ({ page }, docString?: string) => {
+  narrate(docString)
+  await page.click('.revenue-chart')
+})
+```
+
+```text
+Feature: Dashboard demo
+
+  Scenario: View analytics
+    Given the user opens the dashboard
+      """
+      Let's open the analytics dashboard to see real-time metrics.
+      """
+    When the user clicks the revenue chart
+      """
+      Clicking on the revenue chart reveals a detailed breakdown.
+      """
+```
+
+The doc string text becomes the voiceover narration and subtitle for each step in the generated video.
+
+---
+
+## zoom
+
+
+## What it does
+
+`zoom(locator, level)` captures an element's bounding box and stores viewport-relative coordinates as a Playwright annotation. During video generation, the renderer crops and scales the video to zoom into the recorded position during the step's time window.
+
+## Usage
+
+```typescript
+import { zoom } from 'playwright-recast'
+
+const sidebar = page.locator('.sidebar-panel')
+await zoom(sidebar, 1.3)
+```
+
+## Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `locator` | `Locator` | (required) | Playwright Locator pointing to the element to zoom into |
+| `level` | `number` | `1.5` | Zoom level: `1.0` = no zoom, `2.0` = 2x closer |
+
+## How it works
+
+1. Gets the element's bounding box via `locator.boundingBox()`
+2. Computes the center as viewport-relative fractions (0.0--1.0)
+3. Stores `{ x, y, level }` as a `zoom` annotation on the current test
+4. During rendering, `enrichZoomFromReport()` reads these annotations and applies crop-and-scale zoom with smooth easing transitions
+
+## Zoom coordinates
+
+The stored coordinates use viewport-relative fractions:
+
+| Field | Range | Description |
+|-------|-------|-------------|
+| `x` | 0.0--1.0 | Center X (0 = left edge, 1 = right edge) |
+| `y` | 0.0--1.0 | Center Y (0 = top edge, 1 = bottom edge) |
+| `level` | 1.0+ | Zoom factor (1.0 = no zoom) |
+
+## Example in a BDD step
+
+```typescript
+import { When } from './fixtures'
+import { narrate, zoom } from 'playwright-recast'
+
+When('the user opens the sidebar', async ({ page }, docString?: string) => {
+  narrate(docString)
+  const sidebar = page.locator('.sidebar-panel')
+  await zoom(sidebar, 1.3)
+  await sidebar.click()
+})
+```
+
+```text
+When the user opens the sidebar
+  """
+  Let's take a closer look at the sidebar navigation.
+  """
+```
+
+The video will zoom into the sidebar element during this step, then smoothly zoom back out when the next step begins.
+
+---
+
+## pace
+
+
+## What it does
+
+`pace(page, ms)` adds a timed wait to the current step, giving the video enough time for voiceover narration to play. Without pacing, fast test execution may cause steps to end before the narration finishes.
+
+Call `pace` at the end of a step definition to pad the step's duration.
+
+## Usage
+
+```typescript
+import { pace } from 'playwright-recast'
+
+await pace(page, 4000) // Wait 4 seconds
+```
+
+## Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `page` | `Page` | Playwright Page instance |
+| `ms` | `number` | Duration to wait in milliseconds |
+
+## When to use
+
+Use `pace` when a step's narration is longer than the action itself. For example, navigating to a page takes milliseconds, but the voiceover explaining it might take several seconds:
+
+```typescript
+Given('the user opens the dashboard', async ({ page }, docString?: string) => {
+  narrate(docString)
+  await page.goto('/dashboard')
+  await pace(page, 4000) // Hold for narration
+})
+```
+
+Without `pace`, the speed processor would compress this step to near-zero duration since nothing is happening after the navigation completes.
+
+## Tips
+
+- Place `pace` at the **end** of the step, after all interactions
+- Match the duration roughly to the expected narration length
+- The speed processor still applies -- `pace` creates idle time that can be compressed, so set durations generously
+- For steps with no narration, `pace` is usually not needed
+
+## Example with playwright-bdd
+
+```typescript
+import { Given, When } from './fixtures'
+import { narrate, pace } from 'playwright-recast'
+
+Given('the user opens the dashboard', async ({ page }, docString?: string) => {
+  narrate(docString)
+  await page.goto('/dashboard')
+  await pace(page, 4000)
+})
+
+When('the user clicks the settings icon', async ({ page }, docString?: string) => {
+  narrate(docString)
+  await page.click('[data-testid="settings"]')
+  await pace(page, 3000)
+})
+```
+
+---
+
+## highlight
+
+
+## What it does
+
+`highlight(locator)` captures an element's bounding box and stores it as a Playwright annotation. During video generation, the renderer draws an animated marker overlay that sweeps in from left to right, highlighting the element during the step's time window.
+
+You can highlight an entire element or a specific substring within it.
+
+## Usage
+
+```typescript
+import { highlight } from 'playwright-recast'
+
+// Highlight an entire element
+const heading = page.locator('h1')
+await highlight(heading)
+
+// Highlight specific text within an element
+const paragraph = page.locator('.description')
+await highlight(paragraph, { text: 'important detail' })
+```
+
+## Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `locator` | `Locator` | (required) | Playwright Locator pointing to the element |
+| `opts.text` | `string` | `undefined` | Specific text to highlight (substring match). If omitted, highlights the entire element. |
+| `opts.color` | `string` | `'#FFEB3B'` | Highlight color as hex `#RRGGBB` |
+| `opts.opacity` | `number` | `0.35` | Highlight opacity (0.0--1.0) |
+| `opts.duration` | `number` | `3000` | Visibility duration in milliseconds |
+| `opts.fadeOut` | `number` | `500` | Fade out duration in milliseconds |
+| `opts.swipeDuration` | `number` | `300` | Swipe-in animation duration in milliseconds |
+
+## Highlighting specific text
+
+When you pass the `text` option, the helper finds the exact substring within the element and measures its bounding box:
+
+- **Regular elements:** Uses the browser Range API to locate the text node and measure its position
+- **Input/textarea elements:** Creates a temporary mirror overlay to measure text position within form fields
+
+```typescript
+const input = page.locator('input[name="email"]')
+await highlight(input, { text: '@example.com' })
+```
+
+## Customizing appearance
+
+```typescript
+await highlight(heading, {
+  color: '#FF5722',      // Orange highlight
+  opacity: 0.5,          // More visible
+  duration: 5000,        // Show for 5 seconds
+  swipeDuration: 500,    // Slower reveal animation
+})
+```
+
+## Example in a BDD step
+
+```typescript
+import { Then } from './fixtures'
+import { narrate, highlight, pace } from 'playwright-recast'
+
+Then('the total is displayed', async ({ page }, docString?: string) => {
+  narrate(docString)
+  const total = page.locator('[data-testid="order-total"]')
+  await highlight(total, { text: '$42.99' })
+  await pace(page, 3000)
+})
+```
+
+```text
+Then the total is displayed
+  """
+  The order total is calculated and displayed at the bottom.
+  """
+```
+
+The video will show a yellow marker sweeping across "$42.99" during this step.
+
+---
+
+## setupRecast
+
+
+## What it does
+
+`setupRecast(test)` connects the playwright-recast step helpers (`narrate`, `zoom`, `pace`, `highlight`) to your Playwright test context. Without this call, the helpers cannot access the current test's annotation system and will throw an error.
+
+Call it once in your fixtures file before using any other helper.
+
+## Usage
+
+```typescript
+import { test } from 'playwright-bdd'
+import { setupRecast } from 'playwright-recast'
+
+setupRecast(test)
+```
+
+Or with standard Playwright:
+
+```typescript
+import { test } from '@playwright/test'
+import { setupRecast } from 'playwright-recast'
+
+setupRecast(test)
+```
+
+## How it works
+
+`setupRecast` receives the `test` object and uses `test.info()` internally to access the current test's annotations. The helpers (`narrate`, `zoom`, `highlight`) then write structured data to these annotations, which the pipeline reads during video generation.
+
+## Example with playwright-bdd
+
+```typescript
+// steps/fixtures.ts
+import { test } from 'playwright-bdd'
+import { setupRecast, narrate, pace } from 'playwright-recast'
+
+setupRecast(test)
+export { narrate, pace }
+
+// steps/dashboard.ts
+import { Given } from './fixtures'
+import { narrate, pace } from 'playwright-recast'
+
+Given('the user opens the dashboard', async ({ page }, docString?: string) => {
+  narrate(docString)
+  await page.goto('/dashboard')
+  await pace(page, 4000)
+})
+```
+
+---
+
+## Minimal Pipeline
+
+
+
+The simplest possible pipeline: parse a trace and render a video.
+
+## Trace to MP4
+
+```typescript
+import { Recast } from 'playwright-recast'
+
+// Three lines: parse, render, write
+await Recast
+  .from('./test-results/trace.zip')
+  .parse()
+  .render()
+  .toFile('output.mp4')
+```
+
+That's it. The trace is parsed into frames, rendered as an MP4 at 1080p, and written to disk.
+
+## With speed processing
+
+Compress idle time so the video isn't painfully slow:
+
+```typescript
+import { Recast } from 'playwright-recast'
+
+await Recast
+  .from('./test-results/trace.zip')
+  .parse()
+  .speedUp({ duringIdle: 4.0, duringUserAction: 1.0 })
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+## With subtitles
+
+Add burnt-in subtitles from an SRT file:
+
+```typescript
+import { Recast } from 'playwright-recast'
+
+await Recast
+  .from('./test-results/trace.zip')
+  .parse()
+  .subtitlesFromSrt('./narration.srt')
+  .render({ burnSubtitles: true })
+  .toFile('demo.mp4')
+```
+
+## With voiceover
+
+Add TTS narration from an SRT script:
+
+```typescript
+import { Recast, OpenAIProvider } from 'playwright-recast'
+
+await Recast
+  .from('./test-results/trace.zip')
+  .parse()
+  .subtitlesFromSrt('./narration.srt')
+  .voiceover(OpenAIProvider({ voice: 'nova' }))
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+## CLI equivalent
+
+```bash
+# Basic trace to video
+npx playwright-recast -i ./test-results/trace.zip -o demo.mp4
+
+# With speed processing
+npx playwright-recast -i ./test-results/trace.zip -o demo.mp4 --speed-idle 4.0
+
+# With subtitles
+npx playwright-recast -i ./test-results/trace.zip -o demo.mp4 --srt narration.srt --burn-subs
+```
+
+## To buffer
+
+If you need the video as a buffer instead of a file:
+
+```typescript
+import { Recast } from 'playwright-recast'
+
+const buffer = await Recast
+  .from('./test-results/trace.zip')
+  .parse()
+  .render()
+  .toBuffer()
+
+// Use buffer for upload, streaming, etc.
+```
+
+## Next steps
+
+- [Full Pipeline](/docs/examples/full-pipeline) — see all stages combined
+- [Branching Pipelines](/docs/examples/branching-pipelines) — fork a base pipeline into multiple outputs
+
+---
+
+## Full Pipeline
+
+
+
+A complete pipeline using every available stage. This is a reference example showing all features combined with realistic configuration values.
+
+## Complete example
+
+```typescript
+import { Recast, OpenAIProvider } from 'playwright-recast'
+
+await Recast
+  // Source: Playwright trace zip file
+  .from('./test-results/trace.zip')
+
+  // 1. Parse trace into structured data
+  .parse()
+
+  // 2. Filter out setup steps (login, navigation boilerplate)
+  .hideSteps(action =>
+    action.keyword === 'Given' && action.text?.includes('logged in')
+  )
+
+  // 3. Speed processing — compress idle, keep actions real-time
+  .speedUp({
+    duringIdle: 4.0,
+    duringUserAction: 1.0,
+    duringNetworkWait: 2.0,
+    duringNavigation: 2.0,
+    minSegmentDuration: 500,
+    maxSpeed: 8.0,
+  })
+
+  // 4. Load narration script from SRT file
+  .subtitlesFromSrt('./narration.srt')
+
+  // 5. Clean text for TTS (remove smart quotes, em dashes, etc.)
+  .textProcessing({
+    builtins: true,
+    rules: [
+      // Custom rule: expand abbreviation for TTS
+      { pattern: '\\bUI\\b', flags: 'g', replacement: 'user interface' },
+    ],
+  })
+
+  // 6. Auto-zoom to action targets
+  .autoZoom({
+    clickLevel: 1.4,
+    inputLevel: 1.6,
+    centerBias: 0.3,
+    transitionMs: 400,
+    easing: 'ease-in-out',
+  })
+
+  // 7. Animated cursor following action positions
+  .cursorOverlay({
+    size: 24,
+    color: '#FFFFFF',
+    opacity: 0.9,
+    shadow: true,
+    easing: 'ease-out',
+    hideAfterMs: 500,
+  })
+
+  // 8. Click ripple effects with sound
+  .clickEffect({
+    color: '#3B82F6',
+    opacity: 0.5,
+    radius: 30,
+    duration: 400,
+    sound: true,
+    soundVolume: 0.8,
+  })
+
+  // 9. Frame interpolation for smoother playback
+  .interpolate({
+    fps: 60,
+    mode: 'blend',
+    quality: 'balanced',
+  })
+
+  // 10. Branded intro with crossfade
+  .intro({
+    path: './assets/intro.mp4',
+    fadeDuration: 800,
+  })
+
+  // 11. Branded outro with crossfade
+  .outro({
+    path: './assets/outro.mp4',
+    fadeDuration: 800,
+  })
+
+  // 12. Background music with auto-ducking
+  .backgroundMusic({
+    path: './assets/ambient-music.mp3',
+    volume: 0.3,
+    ducking: true,
+    duckLevel: 0.1,
+    duckFadeMs: 500,
+    fadeOutMs: 3000,
+    loop: true,
+  })
+
+  // 13. TTS voiceover via OpenAI
+  .voiceover(OpenAIProvider({
+    voice: 'nova',
+    model: 'gpt-4o-mini-tts',
+    speed: 1.2,
+    instructions: 'Professional product demo narration. Clear and concise.',
+  }))
+
+  // 14. Render with styled burnt-in subtitles
+  .render({
+    format: 'mp4',
+    resolution: '1080p',
+    fps: 60,
+    burnSubtitles: true,
+    subtitleStyle: {
+      fontFamily: 'Arial',
+      fontSize: 48,
+      primaryColor: '#1a1a1a',
+      backgroundColor: '#FFFFFF',
+      backgroundOpacity: 0.75,
+      padding: 20,
+      bold: true,
+      position: 'bottom',
+      marginVertical: 50,
+      marginHorizontal: 100,
+      wrapStyle: 'smart',
+      chunkOptions: {
+        maxCharsPerLine: 55,
+        minCharsPerChunk: 15,
+      },
+    },
+  })
+
+  // 15. Write output
+  .toFile('demo.mp4')
+```
+
+## Stage order
+
+The pipeline stages above follow the recommended order:
+
+1. **parse** — always first
+2. **hideSteps** — filter before processing
+3. **speedUp** — time remapping before subtitles
+4. **subtitles** — load or generate subtitle text
+5. **textProcessing** — clean text before TTS
+6. **autoZoom** — visual effects
+7. **cursorOverlay** — visual effects
+8. **clickEffect** — visual effects
+9. **interpolate** — frame smoothing
+10. **intro/outro** — bookend clips
+11. **backgroundMusic** — audio layer
+12. **voiceover** — TTS audio generation
+13. **render** — final encoding with subtitle burn-in
+14. **toFile** — terminal operation
+
+Not every stage depends on strict ordering, but this sequence ensures each stage has the data it needs. For example, `textProcessing` must come after `subtitles` (it needs subtitle text) and before `voiceover` (it cleans text for TTS).
+
+## Adapting this example
+
+You don't need all of these stages. Remove any that aren't relevant:
+
+- No narration? Remove `subtitlesFromSrt`, `textProcessing`, `voiceover`, and `burnSubtitles`
+- No branding? Remove `intro` and `outro`
+- No music? Remove `backgroundMusic`
+- Simple video? Keep just `parse`, `speedUp`, `render`, `toFile`
+
+See [Minimal Pipeline](/docs/examples/minimal-pipeline) for stripped-down versions.
+
+## Next steps
+
+- [Branching Pipelines](/docs/examples/branching-pipelines) — fork this pipeline into multiple outputs
+- [Recast Class API](/docs/api-reference/recast-class) — reference for every method used here
+
+---
+
+## Branching Pipelines
+
+
+
+The `Recast` pipeline is **immutable** — every method returns a new pipeline instance without modifying the original. This means you can build a shared base and fork it into multiple outputs.
+
+## Basic branching
+
+```typescript
+import { Recast, OpenAIProvider } from 'playwright-recast'
+
+// Shared base: parse + speed processing
+const base = Recast
+  .from('./test-results/trace.zip')
+  .parse()
+  .speedUp({ duringIdle: 3.0, duringUserAction: 1.0 })
+
+// Branch A: English voiceover
+await base
+  .subtitlesFromSrt('./en.srt')
+  .voiceover(OpenAIProvider({ voice: 'nova' }))
+  .render({ format: 'mp4' })
+  .toFile('demo-en.mp4')
+
+// Branch B: Czech subtitles only (no voiceover)
+await base
+  .subtitlesFromSrt('./cs.srt')
+  .render({ burnSubtitles: true })
+  .toFile('demo-cs.mp4')
+```
+
+Both branches share the same trace parsing and speed configuration. The base pipeline is not modified — each branch creates its own chain.
+
+## Multi-language voiceover
+
+Generate localized versions from the same trace:
+
+```typescript
+import { Recast, OpenAIProvider, ElevenLabsProvider } from 'playwright-recast'
+
+const base = Recast
+  .from('./test-results/trace.zip')
+  .parse()
+  .speedUp({ duringIdle: 3.0 })
+  .autoZoom({ inputLevel: 1.4 })
+  .clickEffect({ sound: true })
+
+// English — OpenAI
+await base
+  .subtitlesFromSrt('./srt/en.srt')
+  .voiceover(OpenAIProvider({ voice: 'nova', speed: 1.1 }))
+  .render({ format: 'mp4', burnSubtitles: true })
+  .toFile('demo-en.mp4')
+
+// German — ElevenLabs
+await base
+  .subtitlesFromSrt('./srt/de.srt')
+  .voiceover(ElevenLabsProvider({
+    voiceId: 'onwK4e9ZLuTAKqWW03F9',
+    languageCode: 'de',
+  }))
+  .render({ format: 'mp4', burnSubtitles: true })
+  .toFile('demo-de.mp4')
+
+// Japanese — subtitles only, no voiceover
+await base
+  .subtitlesFromSrt('./srt/ja.srt')
+  .render({ burnSubtitles: true })
+  .toFile('demo-ja.mp4')
+```
+
+## Resolution variants
+
+Generate multiple resolution outputs from one pipeline:
+
+```typescript
+const base = Recast
+  .from('./test-results/trace.zip')
+  .parse()
+  .speedUp({ duringIdle: 3.0 })
+  .subtitlesFromSrt('./narration.srt')
+  .voiceover(OpenAIProvider({ voice: 'nova' }))
+
+// 1080p — standard
+await base
+  .render({ format: 'mp4', resolution: '1080p', burnSubtitles: true })
+  .toFile('demo-1080p.mp4')
+
+// 720p — lighter weight
+await base
+  .render({ format: 'mp4', resolution: '720p', burnSubtitles: true })
+  .toFile('demo-720p.mp4')
+
+// 4K — high quality
+await base
+  .render({ format: 'mp4', resolution: '4k', burnSubtitles: true })
+  .toFile('demo-4k.mp4')
+```
+
+## With and without branding
+
+Generate branded and clean versions:
+
+```typescript
+const base = Recast
+  .from('./test-results/trace.zip')
+  .parse()
+  .speedUp({ duringIdle: 3.0 })
+  .subtitlesFromSrt('./narration.srt')
+  .voiceover(OpenAIProvider({ voice: 'nova' }))
+
+// Branded version — intro, outro, background music
+await base
+  .intro({ path: './assets/intro.mp4', fadeDuration: 800 })
+  .outro({ path: './assets/outro.mp4', fadeDuration: 800 })
+  .backgroundMusic({ path: './assets/music.mp3', volume: 0.25 })
+  .render({ format: 'mp4', burnSubtitles: true })
+  .toFile('demo-branded.mp4')
+
+// Clean version — no branding, no music
+await base
+  .render({ format: 'mp4', burnSubtitles: true })
+  .toFile('demo-clean.mp4')
+```
+
+## Parallel execution
+
+Since each branch is independent, you can run them in parallel:
+
+```typescript
+const base = Recast
+  .from('./test-results/trace.zip')
+  .parse()
+  .speedUp({ duringIdle: 3.0 })
+
+await Promise.all([
+  base
+    .subtitlesFromSrt('./en.srt')
+    .voiceover(OpenAIProvider({ voice: 'nova' }))
+    .render({ format: 'mp4' })
+    .toFile('demo-en.mp4'),
+
+  base
+    .subtitlesFromSrt('./cs.srt')
+    .render({ burnSubtitles: true })
+    .toFile('demo-cs.mp4'),
+])
+```
+
+Note that each branch re-executes the full pipeline from source. The base object is a pipeline *description*, not cached intermediate results. For large traces, consider whether parallel execution is worth the CPU cost.
+
+## Next steps
+
+- [Minimal Pipeline](/docs/examples/minimal-pipeline) — start simple before branching
+- [Full Pipeline](/docs/examples/full-pipeline) — see all stages in one pipeline
+- [Recast Class API](/docs/api-reference/recast-class) — immutability and method reference
+
+---
+
+## Adding Voiceover
+
+
+
+This guide walks you through adding professional text-to-speech narration to your playwright-recast videos. By the end, you will have a polished demo with timed voiceover audio.
+
+## Prerequisites
+
+- A Playwright trace file (`trace.zip`)
+- An API key for [OpenAI TTS](/docs/providers/openai) or [ElevenLabs](/docs/providers/elevenlabs)
+- An SRT subtitle file with your narration script
+
+## Step 1: Write your narration script
+
+Create an SRT file with the text you want narrated. Each subtitle entry maps to one TTS audio segment.
+
+```text
+1
+00:00:01,000 --> 00:00:05,000
+Welcome to the dashboard. Let's explore the key features.
+
+2
+00:00:06,000 --> 00:00:10,000
+First, notice the real-time analytics panel on the left.
+
+3
+00:00:11,000 --> 00:00:16,000
+Clicking on any metric reveals a detailed breakdown chart.
+```
+
+Save this as `narration.srt` next to your trace file.
+
+**Tip:** Don't worry about exact timing in the SRT. The voiceover stage will adjust subtitle timing to match the actual TTS audio duration. Focus on writing natural narration text.
+
+## Step 2: Choose a TTS provider
+
+playwright-recast ships with two built-in providers. Pick whichever suits your needs.
+
+### OpenAI TTS
+
+Set the `OPENAI_API_KEY` environment variable, then:
+
+```typescript
+import { Recast, OpenAIProvider } from 'playwright-recast'
+
+const provider = OpenAIProvider({
+  voice: 'nova',           // alloy, echo, fable, onyx, nova, shimmer
+  model: 'gpt-4o-mini-tts',
+  speed: 1.2,              // 1.0 = normal, up to 4.0
+  instructions: 'Professional product demo narration.',
+})
+```
+
+### ElevenLabs
+
+Set the `ELEVENLABS_API_KEY` environment variable, then:
+
+```typescript
+import { ElevenLabsProvider } from 'playwright-recast/providers/elevenlabs'
+
+const provider = ElevenLabsProvider({
+  voiceId: 'onwK4e9ZLuTAKqWW03F9',  // Daniel
+  modelId: 'eleven_multilingual_v2',
+  languageCode: 'en',
+})
+```
+
+See [TTS Providers](/docs/providers) for the full list of options.
+
+## Step 3: Build the pipeline
+
+Combine the SRT file and TTS provider into a pipeline:
+
+```typescript
+import { Recast, OpenAIProvider } from 'playwright-recast'
+
+await Recast
+  .from('./test-results/trace.zip')
+  .parse()
+  .subtitlesFromSrt('./narration.srt')
+  .voiceover(OpenAIProvider({ voice: 'nova', speed: 1.2 }))
+  .render({ format: 'mp4', resolution: '1080p' })
+  .toFile('demo.mp4')
+```
+
+The pipeline will:
+1. Parse the trace into frames and actions
+2. Load your SRT subtitle timings
+3. Synthesize each subtitle entry into speech audio
+4. Adjust subtitle timing to match actual TTS duration
+5. Render the final video with the voiceover audio track
+
+## Step 4: Clean up text for TTS (optional)
+
+If your subtitle text contains typographic characters (smart quotes, em dashes, ellipsis), TTS engines may produce artifacts. Add `.textProcessing()` before `.voiceover()` to sanitize:
+
+```typescript
+await Recast
+  .from('./test-results/trace.zip')
+  .parse()
+  .subtitlesFromSrt('./narration.srt')
+  .textProcessing({ builtins: true })
+  .voiceover(OpenAIProvider({ voice: 'nova' }))
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+Text processing writes to a separate `ttsText` field -- your burnt-in subtitles still show the original text with proper typography. See [Text Processing](/docs/pipeline/text-processing) for custom rules.
+
+## Step 5: Burn subtitles into the video (optional)
+
+To display the narration text as styled subtitles on-screen:
+
+```typescript
+.render({
+  format: 'mp4',
+  burnSubtitles: true,
+  subtitleStyle: {
+    fontSize: 48,
+    primaryColor: '#1a1a1a',
+    backgroundColor: '#FFFFFF',
+    backgroundOpacity: 0.75,
+    bold: true,
+  },
+})
+```
+
+See [Customizing Subtitles](/docs/guides/customizing-subtitles) for the full styling guide.
+
+## Troubleshooting timing
+
+**Audio overlaps the next scene:** Your narration text may be too long for the available time. Either shorten the text or add `.speedUp()` before subtitles to compress idle time and give more room.
+
+**Long pauses between narration segments:** The subtitle entries in your SRT may have gaps. The voiceover stage inserts silence for gaps between subtitle entries. Tighten the SRT timings or use `.speedUp()` to compress idle periods.
+
+**TTS sounds robotic at high speed:** OpenAI's `speed` option above 1.5x can sound unnatural. Consider using ElevenLabs for more natural-sounding high-speed speech, or keep the speed at 1.0-1.2x and let `.speedUp()` handle video pacing instead.
+
+## CLI alternative
+
+If you prefer the command line:
+
+```bash
+# OpenAI
+npx playwright-recast -i ./traces --srt narration.srt --provider openai --voice nova
+
+# ElevenLabs
+npx playwright-recast -i ./traces --srt narration.srt --provider elevenlabs --voice onwK4e9ZLuTAKqWW03F9
+```
+
+## Next steps
+
+- [Customizing Subtitles](/docs/guides/customizing-subtitles) -- style and position burnt-in text
+- [Speed Control](/docs/guides/speed-control) -- compress idle time to match narration pacing
+- [Background Music](/docs/guides/background-music) -- add music that auto-ducks during voiceover
+
+---
+
+## Customizing Subtitles
+
+
+
+This guide covers everything you can do with subtitle styling in playwright-recast -- from basic font and color changes to advanced punctuation-based chunking and text processing.
+
+## Enabling burnt-in subtitles
+
+By default, subtitles are not rendered into the video. To burn them in, set `burnSubtitles: true` in the render config:
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .subtitlesFromSrt('./narration.srt')
+  .render({ burnSubtitles: true })
+  .toFile('demo.mp4')
+```
+
+Without a `subtitleStyle`, this uses ffmpeg's default SRT rendering. To customize the look, add a `subtitleStyle` object.
+
+## Font and size
+
+```typescript
+.render({
+  burnSubtitles: true,
+  subtitleStyle: {
+    fontFamily: 'Arial',   // Any system font installed on the machine
+    fontSize: 48,          // Size in pixels, relative to 1080p
+    bold: true,            // Bold text (default: true)
+  },
+})
+```
+
+The `fontSize` is relative to 1080p resolution. If you render at 720p or 4K, the font scales proportionally.
+
+## Color and background
+
+```typescript
+.render({
+  burnSubtitles: true,
+  subtitleStyle: {
+    primaryColor: '#1a1a1a',       // Text color (hex)
+    backgroundColor: '#FFFFFF',    // Box background color (hex)
+    backgroundOpacity: 0.75,       // 0.0 = transparent, 1.0 = opaque
+    padding: 20,                   // Background box padding in px
+    shadow: 0,                     // Drop shadow distance (0 = none)
+  },
+})
+```
+
+**Tip:** A semi-transparent white background (`#FFFFFF` at 0.75 opacity) with dark text works well on most video content. For dark UIs, try a dark background with light text.
+
+## Position and margins
+
+```typescript
+.render({
+  burnSubtitles: true,
+  subtitleStyle: {
+    position: 'bottom',       // 'bottom' or 'top'
+    marginVertical: 50,       // Distance from the edge in px
+    marginHorizontal: 100,    // Side margins (text wraps within)
+    wrapStyle: 'smart',       // 'smart' (even lines), 'endOfLine', 'none'
+  },
+})
+```
+
+- `position: 'bottom'` places subtitles near the bottom of the frame (default)
+- `position: 'top'` places them near the top -- useful when bottom content is important
+- `marginHorizontal` controls how far from the edges the text can extend
+
+## Punctuation-based chunking
+
+Long subtitle text can overflow a single line. The `chunkOptions` setting splits entries into shorter, single-line chunks based on punctuation:
+
+```typescript
+.render({
+  burnSubtitles: true,
+  subtitleStyle: {
+    chunkOptions: {
+      maxCharsPerLine: 55,    // Split when text exceeds this length
+      minCharsPerChunk: 15,   // Don't create tiny fragments
+    },
+  },
+})
+```
+
+**How chunking works:**
+
+1. If the subtitle text is shorter than `maxCharsPerLine`, it stays as-is
+2. Otherwise, split at sentence boundaries first (`. ! ?`)
+3. If chunks are still too long, split at clause boundaries (`, ; : -- --`)
+4. As a fallback, split at word boundaries
+5. Fragments shorter than `minCharsPerChunk` are merged with adjacent chunks
+6. Time is distributed proportionally by character count
+
+**Before chunking (one long subtitle):**
+```
+00:00:01,000 --> 00:00:08,000
+Welcome to the dashboard. Let's explore the analytics panel and see real-time metrics in action.
+```
+
+**After chunking (two shorter subtitles):**
+```
+00:00:01,000 --> 00:00:04,000
+Welcome to the dashboard.
+
+00:00:04,000 --> 00:00:08,000
+Let's explore the analytics panel and see real-time metrics in action.
+```
+
+Set `chunkOptions: null` to disable chunking entirely.
+
+## Subtitle sources
+
+There are three ways to provide subtitle text:
+
+### External SRT file
+
+Load pre-written subtitles from an SRT file:
+
+```typescript
+.subtitlesFromSrt('./narration.srt')
+```
+
+### From trace (BDD steps)
+
+Auto-generate subtitles from playwright-bdd step titles in the trace:
+
+```typescript
+.subtitlesFromTrace()
+```
+
+This extracts step text from parsed trace actions. Works best with playwright-bdd integration where steps have descriptive titles.
+
+### Custom text function
+
+Generate subtitles with a custom function that extracts text from each trace action:
+
+```typescript
+.subtitles(action => action.docString ?? action.text)
+```
+
+## Text processing for TTS
+
+When using voiceover, typographic characters can cause artifacts in TTS synthesis. The `.textProcessing()` stage cleans subtitle text before sending it to the provider:
+
+```typescript
+.subtitlesFromSrt('./narration.srt')
+.textProcessing({ builtins: true })
+.voiceover(provider)
+```
+
+The built-in rules handle:
+- Smart quotes (`"` `"` `'` `'`) -- removed
+- Guillemets (`<<` `>>`) -- removed
+- Em/en dashes (`--` `--`) -- replaced with commas
+- Ellipsis (`...`) -- replaced with `...`
+- Non-breaking spaces -- normalized
+
+The key insight: text processing writes to a separate `ttsText` field. Burnt-in subtitles still display the original text with proper typography, while the TTS engine receives clean text.
+
+For custom rules, see [Text Processing](/docs/pipeline/text-processing).
+
+## Complete example
+
+Here is a fully styled subtitle configuration:
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .subtitlesFromSrt('./narration.srt')
+  .textProcessing({ builtins: true })
+  .voiceover(OpenAIProvider({ voice: 'nova' }))
+  .render({
+    format: 'mp4',
+    resolution: '1080p',
+    burnSubtitles: true,
+    subtitleStyle: {
+      fontFamily: 'Arial',
+      fontSize: 48,
+      primaryColor: '#1a1a1a',
+      backgroundColor: '#FFFFFF',
+      backgroundOpacity: 0.75,
+      padding: 20,
+      bold: true,
+      position: 'bottom',
+      marginVertical: 50,
+      marginHorizontal: 100,
+      wrapStyle: 'smart',
+      chunkOptions: { maxCharsPerLine: 55 },
+    },
+  })
+  .toFile('demo.mp4')
+```
+
+## Next steps
+
+- [Adding Voiceover](/docs/guides/adding-voiceover) -- pair subtitles with TTS narration
+- [Speed Control](/docs/guides/speed-control) -- compress idle time for better subtitle pacing
+- [Subtitle Utilities](/docs/api-reference/subtitle-utilities) -- programmatic SRT/ASS manipulation
+
+---
+
+## Zoom and Focus
+
+
+
+Zoom draws the viewer's attention to the exact UI element being interacted with. This guide covers all zoom approaches -- from fully automatic to manually specified coordinates.
+
+## Auto-zoom from trace
+
+The simplest approach: let playwright-recast detect user actions from the trace and zoom into them automatically.
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .subtitlesFromSrt('./narration.srt')
+  .autoZoom()
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+With default settings, `autoZoom()` will:
+- Zoom to 1.5x on click actions
+- Zoom to 1.6x on fill/type (input) actions
+- Stay at 1.0x (no zoom) during idle periods
+- Use ease-in-out transitions over 400ms
+
+### Configuring auto-zoom levels
+
+Control how much the camera zooms for each action type:
+
+```typescript
+.autoZoom({
+  clickLevel: 1.4,     // Zoom level for click actions (default: 1.5)
+  inputLevel: 1.6,     // Zoom level for fill/type actions (default: 1.6)
+  idleLevel: 1.0,      // Zoom during idle (1.0 = no zoom, default)
+  centerBias: 0.3,     // Blend coordinates toward center (0-1)
+})
+```
+
+**`centerBias`** blends the zoom target toward the viewport center. At `0.0`, zoom goes exactly where the action happened. At `1.0`, zoom always targets the center. A value around `0.2-0.3` keeps the target visible while avoiding extreme edge positioning.
+
+## Manual zoom with report data
+
+For precise control, provide zoom coordinates per step using `enrichZoomFromReport()`:
+
+```typescript
+const steps = [
+  { zoom: null },                               // Step 1: no zoom
+  { zoom: { x: 0.5, y: 0.8, level: 1.4 } },    // Step 2: zoom to input area
+  { zoom: null },                               // Step 3: no zoom
+  { zoom: { x: 0.78, y: 0.45, level: 1.3 } },  // Step 4: zoom to sidebar
+]
+
+await Recast
+  .from('./traces')
+  .parse()
+  .subtitlesFromSrt('./narration.srt')
+  .enrichZoomFromReport(steps)
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+Each step in the array maps to a subtitle entry by index. Coordinates use viewport-relative fractions:
+
+| Field | Description | Range |
+|-------|-------------|-------|
+| `x` | Center X position | 0.0 (left) to 1.0 (right) |
+| `y` | Center Y position | 0.0 (top) to 1.0 (bottom) |
+| `level` | Zoom magnification | 1.0 (no zoom) to 2.0+ |
+
+The renderer crops the video to `(width/level x height/level)` centered at `(x, y)`, then scales back to the output resolution.
+
+## Zoom from step helpers
+
+Capture zoom targets during Playwright test execution using the `zoom()` helper:
+
+```typescript
+import { zoom } from 'playwright-recast'
+
+When('the user opens the sidebar', async ({ page }) => {
+  const sidebar = page.locator('.sidebar-panel')
+  await zoom(sidebar, 1.3)   // Record this element as zoom target
+  await sidebar.click()
+})
+```
+
+The helper captures the element's bounding box as a Playwright annotation. During video generation, use `enrichZoomFromReport()` to apply these coordinates.
+
+## Easing presets
+
+Zoom transitions use easing functions for smooth movement. Set the `easing` option on `autoZoom()`:
+
+### Built-in presets
+
+```typescript
+.autoZoom({ easing: 'linear' })        // Constant speed
+.autoZoom({ easing: 'ease-in' })       // Start slow, end fast
+.autoZoom({ easing: 'ease-out' })      // Start fast, end slow
+.autoZoom({ easing: 'ease-in-out' })   // Smooth start and end (default)
+```
+
+### Cubic bezier
+
+For fine-grained control, pass a cubic-bezier curve:
+
+```typescript
+.autoZoom({
+  easing: { cubicBezier: [0.42, 0, 0.58, 1] },
+})
+```
+
+The four values are the two control points `(x1, y1, x2, y2)` of a cubic bezier curve, matching the CSS `cubic-bezier()` function.
+
+### Custom function
+
+For complete control, provide a JavaScript function:
+
+```typescript
+.autoZoom({
+  easing: { fn: t => t * t },   // Quadratic ease-in
+})
+```
+
+The function receives `t` (0 to 1) and should return the eased value (0 to 1). Custom functions are pre-sampled and converted to piecewise-linear expressions for ffmpeg.
+
+## Transition duration
+
+Control how long zoom transitions take:
+
+```typescript
+.autoZoom({
+  transitionMs: 400,   // Default: 400ms
+})
+```
+
+Shorter durations (200-300ms) feel snappy. Longer durations (500-800ms) feel cinematic. The transition applies to both zoom-in and zoom-out movements.
+
+## Zoom-to-zoom panning
+
+When two zoom targets are close together in time, the camera pans smoothly between them instead of zooming out to 1.0x and back in. This creates a natural "following" effect as the user moves through a form or related UI elements.
+
+This behavior is automatic -- no configuration needed. The renderer detects adjacent zoom segments and interpolates position between them.
+
+## Combining zoom approaches
+
+You can combine `autoZoom()` with `enrichZoomFromReport()`. The report data takes precedence for steps where it is defined, and auto-zoom fills in the rest:
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .subtitlesFromSrt('./narration.srt')
+  .autoZoom({ inputLevel: 1.4 })
+  .enrichZoomFromReport([
+    { zoom: null },                                // Step 1: use auto-zoom
+    { zoom: { x: 0.2, y: 0.3, level: 1.5 } },    // Step 2: override with specific coords
+    { zoom: null },                                // Step 3: use auto-zoom
+  ])
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+## Next steps
+
+- [Click Effects and Cursor](/docs/guides/click-effects-and-cursor) -- visual click highlighting with cursor animation
+- [Speed Control](/docs/guides/speed-control) -- compress idle time between zoom targets
+- [Auto Zoom reference](/docs/pipeline/auto-zoom) -- full pipeline stage documentation
+
+---
+
+## Click Effects and Cursor
+
+
+
+This guide shows how to highlight user interactions with animated click ripples, click sounds, and a visible cursor that moves between action positions.
+
+## Click effects
+
+The `.clickEffect()` stage detects click and selectOption actions from the Playwright trace and renders an animated ripple at each click position.
+
+### Basic usage
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .clickEffect()
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+With defaults, this adds a blue ripple that expands to 30px radius over 400ms at each click position.
+
+### Customizing the ripple
+
+```typescript
+.clickEffect({
+  color: '#3B82F6',    // Ripple color (hex). Default: '#3B82F6' (blue)
+  opacity: 0.5,        // Ripple opacity 0.0-1.0. Default: 0.5
+  radius: 30,          // Max radius in px (relative to 1080p). Default: 30
+  duration: 400,       // Animation duration in ms. Default: 400
+})
+```
+
+The ripple appears as an expanding circle that fades out over the animation duration. The radius is relative to 1080p -- it scales proportionally at other resolutions.
+
+### Adding click sounds
+
+Enable the bundled click sound or provide your own:
+
+```typescript
+// Bundled default click sound
+.clickEffect({ sound: true })
+
+// Custom click sound file
+.clickEffect({ sound: './assets/click.mp3', soundVolume: 0.8 })
+```
+
+The `soundVolume` option controls the click sound level from 0.0 (silent) to 1.0 (full volume). Default is 0.8.
+
+Click sound timing is automatically remapped through speed processing, so sounds play at the correct video time even when idle periods are compressed.
+
+### Filtering clicks
+
+By default, all click and selectOption actions with cursor coordinates are highlighted. To filter:
+
+```typescript
+// Only highlight click actions, not selectOption
+.clickEffect({
+  filter: (action) => action.method === 'click',
+})
+
+// Skip clicks on the navigation bar
+.clickEffect({
+  filter: (action) => !action.title.includes('navigation'),
+})
+```
+
+## Cursor overlay
+
+The `.cursorOverlay()` stage renders an animated cursor that appears before each action, moves to the action position with easing, then disappears after a timeout.
+
+### Basic usage
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .cursorOverlay()
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+### Customizing the cursor
+
+```typescript
+.cursorOverlay({
+  size: 24,             // Cursor size in px (relative to 1080p). Default: 24
+  color: '#FFFFFF',     // Dot color (hex). Default: '#FFFFFF'
+  opacity: 0.9,         // Opacity 0.0-1.0. Default: 0.9
+  shadow: true,         // Drop shadow. Default: true
+  easing: 'ease-out',   // Movement easing. Default: 'ease-in-out'
+  hideAfterMs: 500,     // Fade out delay after last action. Default: 500
+})
+```
+
+### Custom cursor image
+
+Replace the default dot with a custom cursor image:
+
+```typescript
+.cursorOverlay({
+  image: './assets/cursor-arrow.png',   // PNG with transparency
+})
+```
+
+The image should be a PNG with an alpha channel. It will be rendered at the `size` dimension.
+
+### Filtering actions
+
+Control which trace actions generate cursor positions:
+
+```typescript
+.cursorOverlay({
+  filter: (action) => action.method === 'click' || action.method === 'fill',
+})
+```
+
+## Combining click effects and cursor
+
+Both stages work together. Add the cursor for movement visualization and click effects for interaction highlighting:
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .cursorOverlay({
+    color: '#FFFFFF',
+    opacity: 0.9,
+    easing: 'ease-out',
+  })
+  .clickEffect({
+    color: '#3B82F6',
+    opacity: 0.5,
+    sound: true,
+  })
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+The cursor animates to the click position, then the ripple effect plays at that position. This creates a natural "point and click" visual pattern.
+
+## With speed processing
+
+Click effects and cursor overlays automatically remap their timestamps through speed processing. Add `.speedUp()` before them and timing stays correct:
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .speedUp({ duringIdle: 4.0, duringUserAction: 1.0 })
+  .cursorOverlay()
+  .clickEffect({ sound: true })
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+## CLI usage
+
+```bash
+# Click effects with defaults
+npx playwright-recast -i ./traces --click-effect
+
+# Click effects with custom sound
+npx playwright-recast -i ./traces --click-effect --click-sound click.mp3
+
+# Click effects from JSON config
+npx playwright-recast -i ./traces --click-effect-config config.json
+
+# Cursor overlay
+npx playwright-recast -i ./traces --cursor-overlay
+
+# Cursor overlay from JSON config
+npx playwright-recast -i ./traces --cursor-overlay-config config.json
+```
+
+## Next steps
+
+- [Zoom and Focus](/docs/guides/zoom-and-focus) -- zoom into action targets for emphasis
+- [Speed Control](/docs/guides/speed-control) -- compress idle periods between interactions
+- [Click Effect reference](/docs/pipeline/click-effect) -- full pipeline stage documentation
+- [Cursor Overlay reference](/docs/pipeline/cursor-overlay) -- full pipeline stage documentation
+
+---
+
+## Speed Control
+
+
+
+The speed processor analyzes your Playwright trace and classifies every moment into activity types, then applies different speed multipliers to each. Idle time flies by, user actions play at normal speed.
+
+## How it works
+
+The speed processor scans the trace for four types of activity:
+
+| Activity | What it means | Default speed |
+|----------|---------------|---------------|
+| **User Action** | Clicks, fills, keyboard input | 1.0x (real-time) |
+| **Navigation** | Page loads, redirects | 2.0x |
+| **Network Wait** | API calls in flight | 2.0x |
+| **Idle** | Nothing happening | 4.0x |
+
+At any given moment, the highest-priority activity wins: user action > navigation > network wait > idle.
+
+## Basic usage
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .speedUp({ duringIdle: 4.0, duringUserAction: 1.0 })
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+This compresses a 2-minute trace recording into a much shorter video where idle time is 4x faster while real user interactions play at normal speed.
+
+## Tuning speed values
+
+### Conservative (gentle compression)
+
+Good for demos where viewers need time to read content:
+
+```typescript
+.speedUp({
+  duringIdle: 2.0,
+  duringUserAction: 1.0,
+  duringNetworkWait: 1.5,
+  duringNavigation: 1.5,
+})
+```
+
+### Aggressive (maximum compression)
+
+Good for fast-paced overviews or long workflows:
+
+```typescript
+.speedUp({
+  duringIdle: 8.0,
+  duringUserAction: 1.0,
+  duringNetworkWait: 4.0,
+  duringNavigation: 3.0,
+})
+```
+
+### With voiceover
+
+When combining speed with voiceover, the pipeline adjusts segment timing to match TTS audio duration. The speed values act as a baseline that gets overridden where narration needs more or less time:
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .speedUp({ duringIdle: 3.0, duringUserAction: 1.0 })
+  .subtitlesFromSrt('./narration.srt')
+  .voiceover(OpenAIProvider({ voice: 'nova' }))
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+## Minimum segment duration
+
+Rapid activity changes can cause jarring speed shifts. The `minSegmentDuration` option merges short segments together:
+
+```typescript
+.speedUp({
+  duringIdle: 4.0,
+  duringUserAction: 1.0,
+  minSegmentDuration: 500,   // Don't change speed for segments under 500ms
+})
+```
+
+With `minSegmentDuration: 500`, a 200ms idle gap between two clicks won't trigger a speed change -- it stays at the user action speed. This prevents the "strobing" effect where speed changes too rapidly.
+
+**Recommended values:**
+- `500` (default) -- good for most demos
+- `300` -- tighter timing, more speed changes
+- `1000` -- very smooth, fewer speed transitions
+
+## Maximum speed cap
+
+The `maxSpeed` option prevents any segment from exceeding a given speed, regardless of the activity-type setting:
+
+```typescript
+.speedUp({
+  duringIdle: 10.0,
+  maxSpeed: 8.0,     // Idle capped at 8x, not 10x
+})
+```
+
+This is useful as a safety valve when you want aggressive idle speeds but need to cap the maximum. Default is `100.0`.
+
+## Custom speed rules
+
+For advanced scenarios, define custom rules that are evaluated before the built-in activity classification. The first matching rule wins:
+
+```typescript
+.speedUp({
+  duringIdle: 4.0,
+  duringUserAction: 1.0,
+  rules: [
+    {
+      name: 'slow-api',
+      match: (ctx) => ctx.activeRequests.some(r => r.url.includes('/api/export')),
+      speed: 1.5,   // Slow down during export API calls
+    },
+    {
+      name: 'skip-loading',
+      match: (ctx) => ctx.timeSinceLastAction > 5000,
+      speed: 8.0,   // Fast-forward long waits
+    },
+  ],
+})
+```
+
+The rule context provides:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `time` | `MonotonicMs` | Current trace timestamp |
+| `activeActions` | `TraceAction[]` | Currently running actions |
+| `activeRequests` | `TraceResource[]` | In-flight network requests |
+| `timeSinceLastAction` | `number` | Ms since the last user action ended |
+| `timeUntilNextAction` | `number` | Ms until the next user action starts |
+| `activityType` | `ActivityType` | Built-in classification for this moment |
+
+## Pre-built segments
+
+For voiceover-driven timing where narration length determines playback speed, you can provide pre-computed segments directly, bypassing trace-based classification entirely:
+
+```typescript
+.speedUp({
+  segments: [
+    { startMs: 0, endMs: 5000, speed: 1.0 },
+    { startMs: 5000, endMs: 8000, speed: 3.0 },
+    { startMs: 8000, endMs: 15000, speed: 1.0 },
+  ],
+})
+```
+
+## CLI usage
+
+```bash
+# Default speed processing
+npx playwright-recast -i ./traces --speed-idle 4.0 --speed-action 1.0
+```
+
+## Next steps
+
+- [Adding Voiceover](/docs/guides/adding-voiceover) -- combine speed with TTS narration
+- [Speed Processing reference](/docs/pipeline/speed-up) -- full pipeline stage documentation
+- [Full Pipeline example](/docs/examples/full-pipeline) -- see speed in a complete configuration
+
+---
+
+## Intro, Outro, and Branding
+
+
+
+Add branded intro and outro clips to your demo videos. Both stages support smooth crossfade transitions and automatically normalize resolution and FPS to match the main content.
+
+## Preparing your clips
+
+Intro and outro clips can be any video format supported by ffmpeg (`.mp4`, `.mov`, `.webm`). A few recommendations:
+
+- **Resolution:** Match your output resolution (e.g., 1920x1080 for 1080p). If they differ, playwright-recast will scale and pad automatically, but matching avoids quality loss.
+- **Duration:** Keep intros short (3-5 seconds). Outros can be longer if they include a call-to-action.
+- **Audio:** Original audio from the clips is preserved through the crossfade. Use this for branding jingles or sound effects.
+
+## Adding an intro
+
+Prepend a video clip with a crossfade transition into the main content:
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .intro({ path: './assets/intro.mp4' })
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+The intro plays first, then crossfades into the beginning of the demo video.
+
+### Crossfade duration
+
+Control how long the crossfade transition takes:
+
+```typescript
+.intro({
+  path: './assets/intro.mp4',
+  fadeDuration: 1000,   // 1 second crossfade (default: 500ms)
+})
+```
+
+The crossfade blends both video and audio simultaneously using ffmpeg's `xfade` (video) and `acrossfade` (audio) filters.
+
+## Adding an outro
+
+Append a video clip with a crossfade transition from the main content:
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .outro({ path: './assets/outro.mp4' })
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+### Combining intro and outro
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .speedUp({ duringIdle: 3.0 })
+  .subtitlesFromSrt('./narration.srt')
+  .voiceover(OpenAIProvider({ voice: 'nova' }))
+  .intro({ path: './assets/intro.mp4', fadeDuration: 800 })
+  .outro({ path: './assets/outro.mp4', fadeDuration: 800 })
+  .render({ format: 'mp4', resolution: '1080p' })
+  .toFile('demo.mp4')
+```
+
+## Resolution matching
+
+If your intro/outro clips have a different resolution than the main content, playwright-recast automatically:
+
+1. Probes the source resolution
+2. Scales and pads the clip to match the output resolution
+3. Generates a silent audio track if the clip has no audio
+
+This means you can use the same intro clip across 720p, 1080p, and 4K renders without re-exporting.
+
+## Background music across intro/outro
+
+When you add [background music](/docs/guides/background-music), it covers the full output duration including intro and outro segments. The music starts from the beginning of the intro and fades out at the end of the outro:
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .intro({ path: './assets/intro.mp4' })
+  .outro({ path: './assets/outro.mp4' })
+  .backgroundMusic({ path: './assets/music.mp3', volume: 0.3 })
+  .voiceover(provider)
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+## Tips for effective branding
+
+- **Consistent transitions:** Use the same `fadeDuration` for intro and outro to create visual consistency
+- **Logo placement:** Center your logo in the intro clip with a clean background for a professional look
+- **Call to action:** Use the outro for "Learn more" or "Try it free" messaging
+- **Keep it brief:** Viewers are here for the demo -- 3-5 second intros work best
+
+## Next steps
+
+- [Background Music](/docs/guides/background-music) -- add music that spans intro through outro
+- [Full Pipeline example](/docs/examples/full-pipeline) -- see intro/outro in a complete pipeline
+- [Intro/Outro reference](/docs/pipeline/intro-outro) -- full pipeline stage documentation
+
+---
+
+## Background Music
+
+
+
+Add background music to your demo videos. The music auto-ducks during voiceover segments, loops if shorter than the video, and fades out at the end.
+
+## Basic usage
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .subtitlesFromSrt('./narration.srt')
+  .voiceover(OpenAIProvider({ voice: 'nova' }))
+  .backgroundMusic({ path: './assets/music.mp3' })
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+The music plays at 30% volume by default, automatically ducking to 10% during voiceover segments.
+
+## Configuring volume
+
+```typescript
+.backgroundMusic({
+  path: './assets/music.mp3',
+  volume: 0.3,       // Base volume level 0.0-1.0 (default: 0.3)
+})
+```
+
+Start with `0.2-0.3` for background ambiance. Go up to `0.4-0.5` if the music is a key part of the demo experience.
+
+## Auto-ducking
+
+Ducking automatically lowers the music volume during voiceover segments so the narration is clearly audible:
+
+```typescript
+.backgroundMusic({
+  path: './assets/music.mp3',
+  volume: 0.3,
+  ducking: true,       // Enable auto-ducking (default: true)
+  duckLevel: 0.1,      // Volume during voiceover 0.0-1.0 (default: 0.1)
+  duckFadeMs: 500,     // Fade duration for ducking transitions (default: 500ms)
+})
+```
+
+**How ducking works:**
+1. Before a voiceover segment starts, music fades down to `duckLevel` over `duckFadeMs`
+2. During voiceover, music stays at `duckLevel`
+3. After voiceover ends, music fades back up to `volume` over `duckFadeMs`
+
+To disable ducking and keep a constant volume:
+
+```typescript
+.backgroundMusic({
+  path: './assets/music.mp3',
+  volume: 0.2,
+  ducking: false,     // Fixed volume, no ducking
+})
+```
+
+## Looping
+
+If the music file is shorter than the video, it loops automatically by default:
+
+```typescript
+.backgroundMusic({
+  path: './assets/music.mp3',
+  loop: true,          // Loop if shorter than video (default: true)
+})
+```
+
+Set `loop: false` if you want the music to play once and then stop. The remaining video plays without music.
+
+## Fade-out
+
+The music fades out at the end of the video:
+
+```typescript
+.backgroundMusic({
+  path: './assets/music.mp3',
+  fadeOutMs: 3000,     // Fade-out duration at end of video (default: 3000ms)
+})
+```
+
+Set `fadeOutMs: 0` for an abrupt end (not recommended).
+
+## With intro and outro
+
+Background music covers the full output duration, including [intro and outro](/docs/guides/intro-outro-branding) segments. The music starts from the very beginning of the intro and fades out at the end of the outro:
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .intro({ path: './assets/intro.mp4' })
+  .outro({ path: './assets/outro.mp4' })
+  .subtitlesFromSrt('./narration.srt')
+  .voiceover(provider)
+  .backgroundMusic({
+    path: './assets/ambient.mp3',
+    volume: 0.25,
+    duckLevel: 0.08,
+    fadeOutMs: 4000,
+  })
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+## Complete example
+
+A full configuration with all music options:
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .speedUp({ duringIdle: 3.0 })
+  .subtitlesFromSrt('./narration.srt')
+  .voiceover(OpenAIProvider({ voice: 'nova' }))
+  .backgroundMusic({
+    path: './assets/corporate-ambient.mp3',
+    volume: 0.3,           // 30% base volume
+    ducking: true,          // Lower during narration
+    duckLevel: 0.1,         // 10% during voiceover
+    duckFadeMs: 500,        // 500ms transition
+    fadeOutMs: 3000,         // 3 second fade at end
+    loop: true,             // Loop if track is short
+  })
+  .render({ format: 'mp4', resolution: '1080p' })
+  .toFile('demo.mp4')
+```
+
+## Tips for choosing music
+
+- **Instrumental only:** Vocals compete with voiceover narration
+- **Consistent energy:** Avoid tracks with dramatic dynamics that might clash with ducking transitions
+- **Loopable:** Choose tracks that loop cleanly if your video is longer than the music
+- **License:** Use royalty-free music for commercial demos
+
+## Next steps
+
+- [Adding Voiceover](/docs/guides/adding-voiceover) -- add TTS narration that triggers ducking
+- [Intro, Outro, and Branding](/docs/guides/intro-outro-branding) -- extend music across branded segments
+- [Full Pipeline example](/docs/examples/full-pipeline) -- see background music in a complete pipeline
+
+---
+
