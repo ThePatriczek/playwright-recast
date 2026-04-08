@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { parseArgs } from 'node:util'
 import { record } from './recorder.js'
@@ -42,8 +43,8 @@ const [vw, vh] = (args.viewport ?? '1920x1080').split('x').map(Number)
 const outputDir = path.resolve(args.output ?? '.recast-studio')
 
 async function main() {
-  console.log(`\n🎬  Opening browser at ${url}`)
-  console.log('    Navigate and interact. Close the browser when done.\n')
+  console.log(`\n🎬  Recording session at ${url}`)
+  console.log('    Interact with the page. Click "Resume" in the Inspector when done.\n')
 
   const result = await record(url, outputDir, {
     viewport: { width: vw ?? 1920, height: vh ?? 1080 },
@@ -51,12 +52,12 @@ async function main() {
     ignoreHttpsErrors: args['ignore-https-errors'] ?? false,
   })
 
-  if (result.actionCount === 0) {
-    console.error('❌  No interactions recorded. Try again and click around before closing.')
+  if (!result.tracePath || !fs.existsSync(result.tracePath)) {
+    console.error('❌  No trace captured. Check the console output above for errors.')
     process.exit(1)
   }
 
-  console.log(`✅  Trace saved to ${result.outputDir}/ (${(result.durationMs / 1000).toFixed(0)}s, ${result.actionCount} actions)`)
+  console.log(`\n✅  Trace saved to ${result.outputDir}/ (${(result.durationMs / 1000).toFixed(0)}s, ${result.actionCount} actions)`)
   console.log(`\n    Next: use the studio-workflow skill to generate the video:`)
   console.log(`    > /studio-workflow ${result.outputDir}/\n`)
 }

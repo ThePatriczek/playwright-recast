@@ -1,6 +1,6 @@
 {
   "name": "playwright-recast",
-  "version": "0.11.2",
+  "version": "0.12.0",
   "type": "module",
   "description": "Fluent pipeline library for processing Playwright traces into polished demo videos — TTS voiceover, subtitles, speed control, and zoom.",
   "license": "MIT",
