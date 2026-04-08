@@ -19,7 +19,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning className={inter.className}>
       <body className="overflow-x-hidden">
-        <RootProvider>{children}</RootProvider>
+        <RootProvider search={{ options: { type: 'static' } }}>
+          {children}
+        </RootProvider>
       </body>
     </html>
   )
