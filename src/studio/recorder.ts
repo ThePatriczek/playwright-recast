@@ -1,6 +1,6 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
-import { execFileSync, execFile } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import type { RecordOptions, RecordingResult } from './types.js'
 
 /**
@@ -49,136 +49,81 @@ function runCodegen(url: string, outputDir: string, options: RecordOptions): str
 }
 
 /**
- * Phase 2: Replay the generated script with tracing + video recording.
- * Produces trace.zip and .webm in outputDir.
+ * Phase 2: Replay the generated script using Playwright Test runner
+ * with tracing + video recording enabled.
+ *
+ * This replaces the previous manual parse-and-replay approach, which
+ * broke on getByRole/getByTestId locators and didn't handle navigation
+ * auto-waiting. Running through the test runner means ALL codegen
+ * output is replayed natively.
  */
-async function replay(scriptPath: string, outputDir: string, options: RecordOptions): Promise<void> {
-  const { chromium } = await import('playwright')
+function replay(scriptPath: string, outputDir: string, options: RecordOptions): void {
+  const storageState = options.loadStorage
+    ? JSON.stringify(path.resolve(options.loadStorage))
+    : 'undefined'
 
-  const browser = await chromium.launch({ headless: false })
-
-  const context = await browser.newContext({
-    viewport: options.viewport,
-    recordVideo: {
-      dir: outputDir,
-      size: options.viewport,
+  const configContent = `import { defineConfig } from '@playwright/test'
+export default defineConfig({
+  testDir: '.',
+  outputDir: './test-results',
+  reporter: 'list',
+  timeout: 120_000,
+  use: {
+    trace: 'on',
+    video: {
+      mode: 'on',
+      size: { width: ${options.viewport.width}, height: ${options.viewport.height} },
     },
-    ignoreHTTPSErrors: options.ignoreHttpsErrors,
-  })
+    launchOptions: { headless: false },
+    storageState: ${storageState},
+  },
+})
+`
+  const configPath = path.join(outputDir, 'replay-config.ts')
+  fs.writeFileSync(configPath, configContent)
 
-  await context.tracing.start({ screenshots: true, snapshots: true })
-  const page = await context.newPage()
+  try {
+    // Run the test — allow non-zero exit so we still capture partial traces
+    const result = spawnSync('npx', [
+      'playwright', 'test',
+      path.basename(scriptPath),
+      '--config', path.basename(configPath),
+    ], {
+      stdio: 'inherit',
+      cwd: outputDir,
+    })
 
-  // Parse the generated script and execute the actions
-  const script = fs.readFileSync(scriptPath, 'utf-8')
-  const actions = parseCodegenScript(script)
-
-  for (const action of actions) {
-    try {
-      switch (action.method) {
-        case 'goto':
-          await page.goto(action.args[0]!)
-          break
-        case 'click':
-          await page.locator(action.args[0]!).click()
-          break
-        case 'fill':
-          await page.locator(action.args[0]!).fill(action.args[1]!)
-          break
-        case 'press':
-          await page.locator(action.args[0]!).press(action.args[1]!)
-          break
-        case 'selectOption':
-          await page.locator(action.args[0]!).selectOption(action.args[1]!)
-          break
-        case 'check':
-          await page.locator(action.args[0]!).check()
-          break
-        case 'uncheck':
-          await page.locator(action.args[0]!).uncheck()
-          break
-        case 'dblclick':
-          await page.locator(action.args[0]!).dblclick()
-          break
-        case 'hover':
-          await page.locator(action.args[0]!).hover()
-          break
-        default:
-          console.log(`  Skipping unknown action: ${action.method}`)
-      }
-    } catch (err) {
-      console.log(`  Warning: action ${action.method}(${action.args[0]}) failed: ${(err as Error).message}`)
+    // Collect trace + video from Playwright's test-results/ directory
+    const testResultsDir = path.join(outputDir, 'test-results')
+    if (fs.existsSync(testResultsDir)) {
+      collectArtifacts(testResultsDir, outputDir)
+      fs.rmSync(testResultsDir, { recursive: true, force: true })
     }
+
+    if (result.status !== 0 && !fs.existsSync(path.join(outputDir, 'trace.zip'))) {
+      throw new Error('Replay failed and no trace was captured. Check the console output above.')
+    }
+  } finally {
+    if (fs.existsSync(configPath)) fs.unlinkSync(configPath)
   }
-
-  // Small pause so the last frame renders
-  await page.waitForTimeout(1000)
-
-  const tracePath = path.join(outputDir, 'trace.zip')
-  await context.tracing.stop({ path: tracePath })
-  await browser.close()
-}
-
-/** Parsed action from codegen output */
-interface CodegenAction {
-  method: string
-  args: string[]
 }
 
 /**
- * Parse a playwright codegen-generated script into a list of actions.
- * Extracts page.goto(), locator.click(), locator.fill(), etc.
+ * Walk test-results subdirectories and copy trace.zip + .webm to outputDir.
  */
-function parseCodegenScript(script: string): CodegenAction[] {
-  const actions: CodegenAction[] = []
-
-  // Match page.goto('...')
-  for (const match of script.matchAll(/page\.goto\('([^']+)'\)/g)) {
-    actions.push({ method: 'goto', args: [match[1]!] })
-  }
-
-  // Match page.locator('...').method('...')  or  page.locator('...').method()
-  // Also handles getByRole, getByText, getByLabel, getByPlaceholder etc.
-  const locatorPattern = /page\.(locator|getByRole|getByText|getByLabel|getByPlaceholder|getByTestId)\(([^)]+)\)\.(click|fill|press|selectOption|check|uncheck|dblclick|hover)\(([^)]*)\)/g
-
-  for (const match of script.matchAll(locatorPattern)) {
-    const selectorRaw = match[2]!
-    const method = match[3]!
-    const argsRaw = match[4]!
-
-    // Build the selector string for page.locator()
-    const locatorMethod = match[1]!
-    let selector: string
-
-    if (locatorMethod === 'locator') {
-      // locator('selector') → extract the string
-      selector = extractString(selectorRaw)
-    } else {
-      // getByRole('button', { name: 'Submit' }) → reconstruct as role=button[name="Submit"]
-      selector = `${locatorMethod}(${selectorRaw})`
+function collectArtifacts(testResultsDir: string, outputDir: string): void {
+  for (const entry of fs.readdirSync(testResultsDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue
+    const subdir = path.join(testResultsDir, entry.name)
+    for (const file of fs.readdirSync(subdir)) {
+      const src = path.join(subdir, file)
+      if (file === 'trace.zip') {
+        fs.copyFileSync(src, path.join(outputDir, 'trace.zip'))
+      } else if (file.endsWith('.webm')) {
+        fs.copyFileSync(src, path.join(outputDir, file))
+      }
     }
-
-    const args = [selector]
-    if (argsRaw.trim()) {
-      args.push(extractString(argsRaw))
-    }
-
-    actions.push({ method, args })
   }
-
-  // Sort by order of appearance in the script
-  // (matchAll already returns in order)
-
-  return actions
-}
-
-/** Extract a string value from a JS expression like 'hello' or "hello" */
-function extractString(raw: string): string {
-  const trimmed = raw.trim()
-  // Single or double quoted string
-  const strMatch = trimmed.match(/^['"](.+?)['"]/)
-  if (strMatch) return strMatch[1]!
-  return trimmed
 }
 
 /**
@@ -195,12 +140,13 @@ export async function record(
   console.log('📝  Phase 1: Recording interactions via Playwright Codegen...\n')
   const scriptPath = runCodegen(url, outputDir, options)
   const script = fs.readFileSync(scriptPath, 'utf-8')
-  const actionCount = parseCodegenScript(script).length
+  const actionCount = (script.match(/await page\./g) ?? []).length
   console.log(`\n✅  Script generated: ${actionCount} actions captured`)
 
-  // Phase 2: Replay with tracing
-  console.log('\n🔄  Phase 2: Replaying with tracing enabled...\n')
-  await replay(scriptPath, outputDir, options)
+  // Phase 2: Replay with tracing via Playwright Test runner
+  console.log('\n🔄  Phase 2: Replaying with tracing enabled...')
+  console.log('    The browser will open again to record the trace. This is expected.\n')
+  replay(scriptPath, outputDir, options)
 
   const tracePath = path.join(outputDir, 'trace.zip')
 

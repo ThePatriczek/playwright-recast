@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.11.2 (2026-04-08)
+
+### Bug fixes
+
+- **Recorder replay broken for getBy\* locators** — Replay phase parsed codegen output and passed `getByRole`/`getByTestId` strings to `page.locator()`, which expects CSS selectors. Every `getBy*` action failed silently. Replaced manual parse-and-replay with Playwright Test runner — all locator methods now work natively.
+- **Recorder missed actions after redirects** — After clicks that trigger navigation (e.g., login → redirect), the next action fired immediately without waiting for the new page. Playwright Test runner's built-in auto-waiting handles this correctly.
+- **Recorder "ghost browser"** — Browser briefly flashed open during replay due to all actions failing immediately. Now replays properly with clear Phase 2 messaging.
+
 ## 0.11.1 (2026-04-07)
 
 ### Bug fixes
