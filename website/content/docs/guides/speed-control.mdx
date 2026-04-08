@@ -1,0 +1,169 @@
+---
+title: Speed Control
+description: Guide to activity-based speed processing, tuning speeds, and segment configuration
+---
+
+
+The speed processor analyzes your Playwright trace and classifies every moment into activity types, then applies different speed multipliers to each. Idle time flies by, user actions play at normal speed.
+
+## How it works
+
+The speed processor scans the trace for four types of activity:
+
+| Activity | What it means | Default speed |
+|----------|---------------|---------------|
+| **User Action** | Clicks, fills, keyboard input | 1.0x (real-time) |
+| **Navigation** | Page loads, redirects | 2.0x |
+| **Network Wait** | API calls in flight | 2.0x |
+| **Idle** | Nothing happening | 4.0x |
+
+At any given moment, the highest-priority activity wins: user action > navigation > network wait > idle.
+
+## Basic usage
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .speedUp({ duringIdle: 4.0, duringUserAction: 1.0 })
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+This compresses a 2-minute trace recording into a much shorter video where idle time is 4x faster while real user interactions play at normal speed.
+
+## Tuning speed values
+
+### Conservative (gentle compression)
+
+Good for demos where viewers need time to read content:
+
+```typescript
+.speedUp({
+  duringIdle: 2.0,
+  duringUserAction: 1.0,
+  duringNetworkWait: 1.5,
+  duringNavigation: 1.5,
+})
+```
+
+### Aggressive (maximum compression)
+
+Good for fast-paced overviews or long workflows:
+
+```typescript
+.speedUp({
+  duringIdle: 8.0,
+  duringUserAction: 1.0,
+  duringNetworkWait: 4.0,
+  duringNavigation: 3.0,
+})
+```
+
+### With voiceover
+
+When combining speed with voiceover, the pipeline adjusts segment timing to match TTS audio duration. The speed values act as a baseline that gets overridden where narration needs more or less time:
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .speedUp({ duringIdle: 3.0, duringUserAction: 1.0 })
+  .subtitlesFromSrt('./narration.srt')
+  .voiceover(OpenAIProvider({ voice: 'nova' }))
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+## Minimum segment duration
+
+Rapid activity changes can cause jarring speed shifts. The `minSegmentDuration` option merges short segments together:
+
+```typescript
+.speedUp({
+  duringIdle: 4.0,
+  duringUserAction: 1.0,
+  minSegmentDuration: 500,   // Don't change speed for segments under 500ms
+})
+```
+
+With `minSegmentDuration: 500`, a 200ms idle gap between two clicks won't trigger a speed change -- it stays at the user action speed. This prevents the "strobing" effect where speed changes too rapidly.
+
+**Recommended values:**
+- `500` (default) -- good for most demos
+- `300` -- tighter timing, more speed changes
+- `1000` -- very smooth, fewer speed transitions
+
+## Maximum speed cap
+
+The `maxSpeed` option prevents any segment from exceeding a given speed, regardless of the activity-type setting:
+
+```typescript
+.speedUp({
+  duringIdle: 10.0,
+  maxSpeed: 8.0,     // Idle capped at 8x, not 10x
+})
+```
+
+This is useful as a safety valve when you want aggressive idle speeds but need to cap the maximum. Default is `100.0`.
+
+## Custom speed rules
+
+For advanced scenarios, define custom rules that are evaluated before the built-in activity classification. The first matching rule wins:
+
+```typescript
+.speedUp({
+  duringIdle: 4.0,
+  duringUserAction: 1.0,
+  rules: [
+    {
+      name: 'slow-api',
+      match: (ctx) => ctx.activeRequests.some(r => r.url.includes('/api/export')),
+      speed: 1.5,   // Slow down during export API calls
+    },
+    {
+      name: 'skip-loading',
+      match: (ctx) => ctx.timeSinceLastAction > 5000,
+      speed: 8.0,   // Fast-forward long waits
+    },
+  ],
+})
+```
+
+The rule context provides:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `time` | `MonotonicMs` | Current trace timestamp |
+| `activeActions` | `TraceAction[]` | Currently running actions |
+| `activeRequests` | `TraceResource[]` | In-flight network requests |
+| `timeSinceLastAction` | `number` | Ms since the last user action ended |
+| `timeUntilNextAction` | `number` | Ms until the next user action starts |
+| `activityType` | `ActivityType` | Built-in classification for this moment |
+
+## Pre-built segments
+
+For voiceover-driven timing where narration length determines playback speed, you can provide pre-computed segments directly, bypassing trace-based classification entirely:
+
+```typescript
+.speedUp({
+  segments: [
+    { startMs: 0, endMs: 5000, speed: 1.0 },
+    { startMs: 5000, endMs: 8000, speed: 3.0 },
+    { startMs: 8000, endMs: 15000, speed: 1.0 },
+  ],
+})
+```
+
+## CLI usage
+
+```bash
+# Default speed processing
+npx playwright-recast -i ./traces --speed-idle 4.0 --speed-action 1.0
+```
+
+## Next steps
+
+- [Adding Voiceover](/docs/guides/adding-voiceover) -- combine speed with TTS narration
+- [Speed Processing reference](/docs/pipeline/speed-up) -- full pipeline stage documentation
+- [Full Pipeline example](/docs/examples/full-pipeline) -- see speed in a complete configuration

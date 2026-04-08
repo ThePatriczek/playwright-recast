@@ -1,0 +1,86 @@
+---
+title: Frame Interpolation
+description: Smooth out choppy browser recordings with generated intermediate frames.
+---
+
+The `.interpolate()` stage generates smooth intermediate frames from choppy browser recordings using ffmpeg's `minterpolate` filter. Browser-captured screenshots often have uneven frame timing — interpolation fills the gaps.
+
+## Basic usage
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .interpolate()
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+## Configuration options
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `fps` | `number` | `60` | Target frames per second |
+| `mode` | `string` | `'mci'` | Interpolation algorithm: `'dup'`, `'blend'`, or `'mci'` |
+| `quality` | `string` | `'balanced'` | Quality preset: `'fast'`, `'balanced'`, or `'quality'` |
+| `passes` | `number` | `1` | Number of interpolation passes |
+
+### Full example
+
+```typescript
+.interpolate({
+  fps: 60,
+  mode: 'blend',
+  quality: 'balanced',
+  passes: 2,
+})
+```
+
+## Interpolation modes
+
+| Mode | Speed | Quality | Description |
+|---|---|---|---|
+| `dup` | Instant | None | Duplicate frames to reach target FPS. No visual smoothing. |
+| `blend` | Fast | Good | Linear crossfade between adjacent frames. |
+| `mci` | Slow | Best | Motion-compensated interpolation. CPU-intensive, especially at 4K. |
+
+## Multi-pass interpolation
+
+With `passes: 2`, the FPS increase is distributed geometrically across passes. Each pass interpolates already-smoothed frames for a cleaner result.
+
+Example with `passes: 2` and `fps: 60`:
+- Pass 1: 25fps to 39fps
+- Pass 2: 39fps to 60fps
+
+```typescript
+.interpolate({
+  fps: 60,
+  mode: 'mci',
+  passes: 2,
+})
+```
+
+## Scene change detection
+
+Interpolation uses `scd=fdiff` with a threshold of 5 to detect scene transitions (page navigations, route changes). At scene boundaries, frames are duplicated instead of blended, preventing ghosting artifacts.
+
+## CLI equivalent
+
+```bash
+# Enable with defaults (60fps, mci mode)
+npx playwright-recast -i ./traces --interpolate
+
+# Custom FPS
+npx playwright-recast -i ./traces --interpolate --interpolate-fps 30
+
+# Blend mode with multi-pass
+npx playwright-recast -i ./traces --interpolate --interpolate-mode blend --interpolate-passes 2
+```
+
+## Tips
+
+- Interpolation runs after speed processing and before cursor/click/zoom overlays. It operates at source resolution for best quality.
+- `mci` mode produces the smoothest results but is CPU-intensive. Use `blend` for a faster alternative with good quality.
+- `dup` mode is essentially free — it just duplicates frames to hit the target FPS without any visual smoothing.
+- Use `720p` resolution during development to speed up interpolation, then switch to `1080p` for final output.
+- Multi-pass with `mci` produces the best results but multiplies processing time by the number of passes.

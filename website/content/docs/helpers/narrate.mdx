@@ -1,0 +1,82 @@
+---
+title: narrate
+description: Attach voiceover narration text to a Playwright test step.
+---
+
+## What it does
+
+`narrate(text)` attaches voiceover text to the current test step as a Playwright annotation. During video generation, the pipeline reads these annotations to produce TTS audio and subtitles timed to each step.
+
+Call `narrate` from every step definition -- even when there is no doc string -- so the reporter can match annotations to steps by sequential index.
+
+## Usage
+
+```typescript
+import { narrate } from 'playwright-recast'
+
+// With narration text
+narrate('The user opens the dashboard to review analytics.')
+
+// Without narration (still call it for index tracking)
+narrate(undefined)
+```
+
+## Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `text` | `string \| undefined` | Voiceover text for this step. Pass `undefined` if no narration. |
+| `opts.hidden` | `boolean` | Mark the step as hidden (excluded from recording and SRT output). |
+
+## Hiding steps
+
+Steps that should not appear in the final video (e.g., login, setup) can be marked as hidden:
+
+```typescript
+narrate(undefined, { hidden: true })
+```
+
+You can also embed `@hidden` in the doc string text itself:
+
+```text
+Given the admin is logged in
+  """
+  @hidden
+  """
+```
+
+Hidden steps are excluded from the SRT output and are not recorded in the demo video.
+
+## Example with playwright-bdd
+
+```typescript
+import { Given, When, Then } from './fixtures'
+import { narrate, pace } from 'playwright-recast'
+
+Given('the user opens the dashboard', async ({ page }, docString?: string) => {
+  narrate(docString)
+  await page.goto('/dashboard')
+  await pace(page, 4000)
+})
+
+When('the user clicks the revenue chart', async ({ page }, docString?: string) => {
+  narrate(docString)
+  await page.click('.revenue-chart')
+})
+```
+
+```text
+Feature: Dashboard demo
+
+  Scenario: View analytics
+    Given the user opens the dashboard
+      """
+      Let's open the analytics dashboard to see real-time metrics.
+      """
+    When the user clicks the revenue chart
+      """
+      Clicking on the revenue chart reveals a detailed breakdown.
+      """
+```
+
+The doc string text becomes the voiceover narration and subtitle for each step in the generated video.

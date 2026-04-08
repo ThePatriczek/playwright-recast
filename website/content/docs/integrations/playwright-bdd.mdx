@@ -1,0 +1,138 @@
+---
+title: playwright-bdd
+description: Integrate playwright-recast with playwright-bdd for BDD-driven demo videos.
+---
+
+## Overview
+
+playwright-recast has first-class support for [playwright-bdd](https://github.com/nicolo-ribaudo/playwright-bdd). Gherkin doc strings become voiceover narration, and step titles become subtitles -- turning your BDD scenarios into polished demo videos.
+
+## Setup
+
+Install both packages:
+
+```bash
+npm install playwright-recast playwright-bdd
+```
+
+Initialize the helpers in your fixtures file:
+
+```typescript
+// steps/fixtures.ts
+import { test } from 'playwright-bdd'
+import { setupRecast, narrate, pace } from 'playwright-recast'
+
+setupRecast(test)
+export { narrate, pace }
+```
+
+`setupRecast(test)` connects the step helpers to the Playwright test context. Call it once before defining any steps.
+
+## Using narrate in step definitions
+
+Call `narrate(docString)` in every step definition. The doc string text from your Gherkin feature file becomes the voiceover narration for that step:
+
+```typescript
+// steps/dashboard.ts
+import { Given, When, Then } from './fixtures'
+import { narrate, pace } from 'playwright-recast'
+
+Given('the user opens the dashboard', async ({ page }, docString?: string) => {
+  narrate(docString)
+  await page.goto('/dashboard')
+  await pace(page, 4000)
+})
+
+When('the user clicks the revenue chart', async ({ page }, docString?: string) => {
+  narrate(docString)
+  await page.click('.revenue-chart')
+  await pace(page, 3000)
+})
+
+Then('the breakdown is visible', async ({ page }, docString?: string) => {
+  narrate(docString)
+  await page.waitForSelector('.breakdown-panel')
+  await pace(page, 3000)
+})
+```
+
+## Writing Gherkin feature files
+
+Add doc strings to each step with the narration text:
+
+```text
+Feature: Dashboard demo
+
+  Scenario: View analytics
+    Given the user opens the dashboard
+      """
+      Let's open the analytics dashboard to see real-time metrics.
+      """
+    When the user clicks the revenue chart
+      """
+      Clicking on the revenue chart reveals a detailed breakdown
+      by month and region.
+      """
+    Then the breakdown is visible
+      """
+      Here we can see the full revenue breakdown with trends
+      highlighted for the current quarter.
+      """
+```
+
+## Hiding setup steps
+
+Steps that should not appear in the demo (login, seeding data) can be hidden:
+
+```typescript
+Given('the admin is logged in', async ({ page }, docString?: string) => {
+  narrate(docString, { hidden: true })
+  await page.goto('/login')
+  await page.fill('#email', 'admin@example.com')
+  await page.fill('#password', 'password')
+  await page.click('button[type="submit"]')
+})
+```
+
+Or use the `@hidden` tag in the doc string:
+
+```text
+Given the admin is logged in
+  """
+  @hidden
+  """
+```
+
+## Using zoom and highlight
+
+Combine `zoom` and `highlight` with `narrate` for richer demos:
+
+```typescript
+When('the user fills in the search', async ({ page }, docString?: string) => {
+  narrate(docString)
+  const searchInput = page.locator('[data-testid="search"]')
+  await zoom(searchInput, 1.4)
+  await searchInput.fill('quarterly report')
+  await highlight(searchInput, { text: 'quarterly report' })
+  await pace(page, 4000)
+})
+```
+
+## Generating the video
+
+Run your Playwright BDD tests with tracing enabled, then pipe the trace through the pipeline:
+
+```typescript
+import { Recast, OpenAIProvider } from 'playwright-recast'
+
+await Recast
+  .from('./test-results/')
+  .parse()
+  .speedUp({ duringIdle: 4.0, duringUserAction: 1.0 })
+  .subtitlesFromTrace()
+  .voiceover(OpenAIProvider({ voice: 'nova' }))
+  .render({ format: 'mp4', burnSubtitles: true })
+  .toFile('demo.mp4')
+```
+
+Use `.subtitlesFromTrace()` to automatically extract narration text from the BDD step annotations recorded during the test run.

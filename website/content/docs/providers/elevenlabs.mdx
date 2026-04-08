@@ -1,0 +1,91 @@
+---
+title: ElevenLabs
+description: Generate voiceover narration using the ElevenLabs text-to-speech API.
+---
+
+## Setup
+
+The ElevenLabs provider uses the `@elevenlabs/elevenlabs-js` package as a peer dependency. Install it alongside playwright-recast:
+
+```bash
+npm install @elevenlabs/elevenlabs-js
+```
+
+Set your API key as an environment variable:
+
+```bash
+export ELEVENLABS_API_KEY="..."
+```
+
+## Usage
+
+```typescript
+import { Recast } from 'playwright-recast'
+import { ElevenLabsProvider } from 'playwright-recast/providers/elevenlabs'
+
+await Recast
+  .from('./traces')
+  .parse()
+  .subtitlesFromSrt('./narration.srt')
+  .voiceover(ElevenLabsProvider({
+    voiceId: 'onwK4e9ZLuTAKqWW03F9',
+    modelId: 'eleven_multilingual_v2',
+    languageCode: 'cs',
+  }))
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+## Configuration options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `voiceId` | `string` | `'onwK4e9ZLuTAKqWW03F9'` (Daniel) | ElevenLabs voice ID |
+| `modelId` | `string` | `'eleven_multilingual_v2'` | ElevenLabs model |
+| `languageCode` | `string` | `undefined` | Force language via ISO 639-1 code (e.g. `'cs'`, `'en'`, `'de'`) |
+| `apiKey` | `string` | `process.env.ELEVENLABS_API_KEY` | API key (overrides env variable) |
+
+## Voice ID
+
+Each ElevenLabs voice has a unique ID. You can find voice IDs in the [ElevenLabs Voice Library](https://elevenlabs.io/voice-library). The default voice is Daniel (`onwK4e9ZLuTAKqWW03F9`).
+
+```typescript
+ElevenLabsProvider({
+  voiceId: 'onwK4e9ZLuTAKqWW03F9', // Daniel
+})
+```
+
+## Language code
+
+The `languageCode` option forces the TTS engine to use a specific language. This is useful for multilingual content where auto-detection may produce incorrect results.
+
+Use ISO 639-1 codes:
+
+| Code | Language |
+|------|----------|
+| `en` | English |
+| `cs` | Czech |
+| `de` | German |
+| `fr` | French |
+| `es` | Spanish |
+
+```typescript
+ElevenLabsProvider({
+  voiceId: 'onwK4e9ZLuTAKqWW03F9',
+  modelId: 'eleven_multilingual_v2',
+  languageCode: 'cs',
+})
+```
+
+## CLI usage
+
+```bash
+npx playwright-recast -i ./traces --srt narration.srt --provider elevenlabs --voice onwK4e9ZLuTAKqWW03F9
+npx playwright-recast -i ./traces --srt narration.srt --provider elevenlabs --voice onwK4e9ZLuTAKqWW03F9 --model eleven_multilingual_v2
+```
+
+## Environment variable
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `ELEVENLABS_API_KEY` | Yes (unless `apiKey` is set) | Your ElevenLabs API key |

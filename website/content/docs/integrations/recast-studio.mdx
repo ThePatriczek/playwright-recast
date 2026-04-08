@@ -1,0 +1,113 @@
+---
+title: recast-studio
+description: Record browser sessions interactively and generate demo videos without writing code.
+---
+
+## Overview
+
+recast-studio is a CLI tool for recording browser sessions as Playwright traces. Instead of writing test scripts, you interact with the browser directly -- recast-studio captures everything as a trace file that can be fed into the playwright-recast pipeline.
+
+Combined with the `studio-workflow` Claude Code skill, you can go from a browser recording to a polished demo video without writing any code.
+
+## How it works
+
+1. Run `recast-studio <url>` -- a browser opens with the Playwright Inspector
+2. Interact with the page as you would in a demo
+3. Click "Resume" in the Inspector when done
+4. recast-studio saves `trace.zip` and `video.webm` to the output directory
+
+The recording uses `page.pause()` inside a Playwright Test, so tracing and video capture happen automatically through the test runner.
+
+## Installation
+
+recast-studio is included with playwright-recast:
+
+```bash
+npm install playwright-recast
+```
+
+## Usage
+
+```bash
+npx recast-studio <url>
+```
+
+### Options
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--output` | `-o` | `.recast-studio/` | Output directory for trace and video files |
+| `--viewport` | | `1920x1080` | Browser viewport size as `WxH` |
+| `--load-storage` | | | Pre-load authentication state from a JSON file |
+| `--ignore-https-errors` | | `false` | Ignore certificate errors |
+| `--help` | `-h` | | Show help message |
+
+## Examples
+
+### Basic recording
+
+```bash
+npx recast-studio https://myapp.example.com
+```
+
+Opens the browser at the given URL. Interact with the page, then click "Resume" in the Inspector.
+
+### Custom output directory
+
+```bash
+npx recast-studio -o ./recordings/demo-1 https://myapp.example.com
+```
+
+### With authentication
+
+If your app requires login, save auth state first using Playwright's storage state feature, then load it:
+
+```bash
+npx recast-studio --load-storage auth.json https://myapp.example.com/dashboard
+```
+
+The browser starts with the saved session, skipping the login flow.
+
+### Custom viewport
+
+```bash
+npx recast-studio --viewport 1280x720 https://myapp.example.com
+```
+
+## Output
+
+After recording, the output directory contains:
+
+| File | Description |
+|------|-------------|
+| `trace.zip` | Playwright trace with actions, screenshots, network, and cursor data |
+| `video.webm` | Raw screen recording from the browser |
+
+Previous artifacts in the output directory are automatically cleaned before each recording.
+
+## Studio workflow
+
+After recording, use the `studio-workflow` Claude Code skill to generate the final video:
+
+```
+> /studio-workflow .recast-studio/
+```
+
+The skill analyzes the recorded trace, generates a voiceover script, builds SRT subtitles, and runs the full recast pipeline -- all within the Claude Code agent. No manual scripting required.
+
+## Programmatic alternative
+
+If you prefer to process the trace manually:
+
+```typescript
+import { Recast, OpenAIProvider } from 'playwright-recast'
+
+await Recast
+  .from('.recast-studio/trace.zip')
+  .parse()
+  .speedUp({ duringIdle: 3.0, duringUserAction: 1.0 })
+  .subtitlesFromSrt('./narration.srt')
+  .voiceover(OpenAIProvider({ voice: 'nova' }))
+  .render({ format: 'mp4', burnSubtitles: true })
+  .toFile('demo.mp4')
+```

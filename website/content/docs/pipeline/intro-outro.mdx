@@ -1,0 +1,62 @@
+---
+title: Intro & Outro
+description: Prepend and append branded video clips with smooth crossfade transitions.
+---
+
+The `.intro()` and `.outro()` stages let you add branded opening and closing clips to your video. Both stages support smooth crossfade transitions blending into and out of the main content.
+
+## Basic usage
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .intro({ path: './assets/intro.mp4' })
+  .outro({ path: './assets/outro.mp4' })
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+## Configuration options
+
+### Intro
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `path` | `string` | *(required)* | Path to the intro video file |
+| `fadeDuration` | `number` | `1.0` | Crossfade duration in seconds |
+
+### Outro
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `path` | `string` | *(required)* | Path to the outro video file |
+| `fadeDuration` | `number` | `1.0` | Crossfade duration in seconds |
+
+### Custom fade duration
+
+```typescript
+.intro({ path: './assets/intro.mp4', fadeDuration: 1.5 })
+.outro({ path: './assets/outro.mp4', fadeDuration: 0.5 })
+```
+
+## Crossfade transitions
+
+The crossfade blends both video and audio:
+- **Video**: Uses ffmpeg `xfade` filter for a smooth visual transition
+- **Audio**: Uses `acrossfade` to blend audio tracks
+
+Original audio from the intro/outro clips is preserved through the crossfade.
+
+## Resolution normalization
+
+Intro and outro clips are automatically normalized to match the main content's resolution and FPS. You do not need to pre-process your clips — any resolution or frame rate is accepted.
+
+If the intro/outro clip has no audio track, a silent audio stream is generated automatically to enable the crossfade.
+
+## Tips
+
+- Use `.intro()` and `.outro()` independently — you do not need both. Add just an intro, just an outro, or both.
+- Keep intro/outro clips short (3-5 seconds) for product demos. Longer clips work well for presentations or tutorials.
+- [Background Music](/docs/pipeline/background-music) covers the full output including intro/outro segments.
+- The crossfade duration is subtracted from the total length — a 1-second crossfade means the last second of the intro overlaps with the first second of the main content.

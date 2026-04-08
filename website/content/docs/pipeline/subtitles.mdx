@@ -1,0 +1,110 @@
+---
+title: Subtitles
+description: Generate, import, and style subtitles for your demo videos.
+---
+
+playwright-recast supports three ways to add subtitles to your pipeline. You can also combine subtitles with [voiceover](/docs/pipeline/voiceover) for narrated videos.
+
+## Import from SRT
+
+Load subtitles from an external SRT file:
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .subtitlesFromSrt('./narration.srt')
+  .render({ burnSubtitles: true })
+  .toFile('demo.mp4')
+```
+
+Standard SRT format:
+
+```text
+1
+00:00:01,000 --> 00:00:04,000
+First, we log in to the application.
+
+2
+00:00:05,000 --> 00:00:08,000
+Navigate to the analytics dashboard.
+```
+
+## Generate from trace
+
+Auto-generate subtitles from BDD step titles found in the trace:
+
+```typescript
+.subtitlesFromTrace()
+```
+
+This reads the step names from your Playwright BDD test and uses them as subtitle text. Works with [playwright-bdd](https://github.com/nickkuprin/playwright-bdd) Gherkin steps.
+
+## Generate from actions
+
+Create subtitles from trace actions with a custom text function:
+
+```typescript
+.subtitles(action => `${action.method}: ${action.selector}`)
+```
+
+## Subtitle output formats
+
+Subtitles are generated as SRT by default. The pipeline also supports WebVTT and ASS output formats for use outside of burnt-in rendering.
+
+## Subtitle styling
+
+When burning subtitles into the video, you have full control over appearance. See the [Render](/docs/pipeline/render) page for all `subtitleStyle` options.
+
+```typescript
+.render({
+  burnSubtitles: true,
+  subtitleStyle: {
+    fontFamily: 'Arial',
+    fontSize: 48,
+    primaryColor: '#1a1a1a',
+    backgroundColor: '#FFFFFF',
+    backgroundOpacity: 0.75,
+    padding: 20,
+    bold: true,
+    position: 'bottom',
+    marginVertical: 50,
+  },
+})
+```
+
+## Punctuation-based chunking
+
+Long subtitle text is automatically split into shorter single-line entries. Time is distributed proportionally by character count.
+
+Splitting priority:
+1. Sentence boundaries (`. ! ?`) first
+2. Clause boundaries (`, ; :`) if still too long
+
+Configure chunking via `subtitleStyle.chunkOptions`:
+
+```typescript
+subtitleStyle: {
+  chunkOptions: {
+    maxCharsPerLine: 55,   // Split when text exceeds this length
+    minCharsPerChunk: 15,  // Merge tiny fragments
+  },
+}
+```
+
+## CLI equivalent
+
+```bash
+# With external SRT
+npx playwright-recast -i ./traces --srt narration.srt --burn-subs
+
+# Auto-generate from trace
+npx playwright-recast -i ./traces --burn-subs
+```
+
+## Tips
+
+- Use `.subtitlesFromSrt()` when you have a pre-written narration script with precise timing.
+- Use `.subtitlesFromTrace()` for quick drafts — BDD step titles are already descriptive.
+- Subtitles work independently of voiceover. You can burn subtitles without generating audio, or generate audio without burning subtitles.
+- For TTS-friendly text, add [Text Processing](/docs/pipeline/text-processing) before the voiceover stage.

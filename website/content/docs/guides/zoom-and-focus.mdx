@@ -1,0 +1,169 @@
+---
+title: Zoom and Focus
+description: Guide to auto-zoom, manual zoom coordinates, easing presets, and zoom-to-zoom panning
+---
+
+
+Zoom draws the viewer's attention to the exact UI element being interacted with. This guide covers all zoom approaches -- from fully automatic to manually specified coordinates.
+
+## Auto-zoom from trace
+
+The simplest approach: let playwright-recast detect user actions from the trace and zoom into them automatically.
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .subtitlesFromSrt('./narration.srt')
+  .autoZoom()
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+With default settings, `autoZoom()` will:
+- Zoom to 1.5x on click actions
+- Zoom to 1.6x on fill/type (input) actions
+- Stay at 1.0x (no zoom) during idle periods
+- Use ease-in-out transitions over 400ms
+
+### Configuring auto-zoom levels
+
+Control how much the camera zooms for each action type:
+
+```typescript
+.autoZoom({
+  clickLevel: 1.4,     // Zoom level for click actions (default: 1.5)
+  inputLevel: 1.6,     // Zoom level for fill/type actions (default: 1.6)
+  idleLevel: 1.0,      // Zoom during idle (1.0 = no zoom, default)
+  centerBias: 0.3,     // Blend coordinates toward center (0-1)
+})
+```
+
+**`centerBias`** blends the zoom target toward the viewport center. At `0.0`, zoom goes exactly where the action happened. At `1.0`, zoom always targets the center. A value around `0.2-0.3` keeps the target visible while avoiding extreme edge positioning.
+
+## Manual zoom with report data
+
+For precise control, provide zoom coordinates per step using `enrichZoomFromReport()`:
+
+```typescript
+const steps = [
+  { zoom: null },                               // Step 1: no zoom
+  { zoom: { x: 0.5, y: 0.8, level: 1.4 } },    // Step 2: zoom to input area
+  { zoom: null },                               // Step 3: no zoom
+  { zoom: { x: 0.78, y: 0.45, level: 1.3 } },  // Step 4: zoom to sidebar
+]
+
+await Recast
+  .from('./traces')
+  .parse()
+  .subtitlesFromSrt('./narration.srt')
+  .enrichZoomFromReport(steps)
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+Each step in the array maps to a subtitle entry by index. Coordinates use viewport-relative fractions:
+
+| Field | Description | Range |
+|-------|-------------|-------|
+| `x` | Center X position | 0.0 (left) to 1.0 (right) |
+| `y` | Center Y position | 0.0 (top) to 1.0 (bottom) |
+| `level` | Zoom magnification | 1.0 (no zoom) to 2.0+ |
+
+The renderer crops the video to `(width/level x height/level)` centered at `(x, y)`, then scales back to the output resolution.
+
+## Zoom from step helpers
+
+Capture zoom targets during Playwright test execution using the `zoom()` helper:
+
+```typescript
+import { zoom } from 'playwright-recast'
+
+When('the user opens the sidebar', async ({ page }) => {
+  const sidebar = page.locator('.sidebar-panel')
+  await zoom(sidebar, 1.3)   // Record this element as zoom target
+  await sidebar.click()
+})
+```
+
+The helper captures the element's bounding box as a Playwright annotation. During video generation, use `enrichZoomFromReport()` to apply these coordinates.
+
+## Easing presets
+
+Zoom transitions use easing functions for smooth movement. Set the `easing` option on `autoZoom()`:
+
+### Built-in presets
+
+```typescript
+.autoZoom({ easing: 'linear' })        // Constant speed
+.autoZoom({ easing: 'ease-in' })       // Start slow, end fast
+.autoZoom({ easing: 'ease-out' })      // Start fast, end slow
+.autoZoom({ easing: 'ease-in-out' })   // Smooth start and end (default)
+```
+
+### Cubic bezier
+
+For fine-grained control, pass a cubic-bezier curve:
+
+```typescript
+.autoZoom({
+  easing: { cubicBezier: [0.42, 0, 0.58, 1] },
+})
+```
+
+The four values are the two control points `(x1, y1, x2, y2)` of a cubic bezier curve, matching the CSS `cubic-bezier()` function.
+
+### Custom function
+
+For complete control, provide a JavaScript function:
+
+```typescript
+.autoZoom({
+  easing: { fn: t => t * t },   // Quadratic ease-in
+})
+```
+
+The function receives `t` (0 to 1) and should return the eased value (0 to 1). Custom functions are pre-sampled and converted to piecewise-linear expressions for ffmpeg.
+
+## Transition duration
+
+Control how long zoom transitions take:
+
+```typescript
+.autoZoom({
+  transitionMs: 400,   // Default: 400ms
+})
+```
+
+Shorter durations (200-300ms) feel snappy. Longer durations (500-800ms) feel cinematic. The transition applies to both zoom-in and zoom-out movements.
+
+## Zoom-to-zoom panning
+
+When two zoom targets are close together in time, the camera pans smoothly between them instead of zooming out to 1.0x and back in. This creates a natural "following" effect as the user moves through a form or related UI elements.
+
+This behavior is automatic -- no configuration needed. The renderer detects adjacent zoom segments and interpolates position between them.
+
+## Combining zoom approaches
+
+You can combine `autoZoom()` with `enrichZoomFromReport()`. The report data takes precedence for steps where it is defined, and auto-zoom fills in the rest:
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .subtitlesFromSrt('./narration.srt')
+  .autoZoom({ inputLevel: 1.4 })
+  .enrichZoomFromReport([
+    { zoom: null },                                // Step 1: use auto-zoom
+    { zoom: { x: 0.2, y: 0.3, level: 1.5 } },    // Step 2: override with specific coords
+    { zoom: null },                                // Step 3: use auto-zoom
+  ])
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+## Next steps
+
+- [Click Effects and Cursor](/docs/guides/click-effects-and-cursor) -- visual click highlighting with cursor animation
+- [Speed Control](/docs/guides/speed-control) -- compress idle time between zoom targets
+- [Auto Zoom reference](/docs/pipeline/auto-zoom) -- full pipeline stage documentation

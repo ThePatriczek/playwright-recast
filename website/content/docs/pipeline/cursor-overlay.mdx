@@ -1,0 +1,62 @@
+---
+title: Cursor Overlay
+description: Add an animated cursor that moves to click positions in the video.
+---
+
+The `.cursorOverlay()` stage renders an animated cursor that appears before each click, moves to the click position with an ease-out animation, then disappears. It gives viewers a clear visual indicator of where interactions happen.
+
+## Basic usage
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .cursorOverlay()
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+## Configuration options
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `image` | `string` | bundled arrow cursor | Path to a custom cursor image (PNG) |
+| `size` | `number` | `30` | Cursor width in pixels (relative to 1080p) |
+
+### Custom cursor image
+
+```typescript
+.cursorOverlay({
+  image: './assets/custom-cursor.png',
+  size: 40,
+})
+```
+
+The bundled default is a 30x44 arrow cursor PNG. Provide your own image for branded or stylized cursors.
+
+## How it works
+
+For each click action detected in the trace:
+
+1. The cursor appears near the click target
+2. It moves to the exact click position with an ease-out animation
+3. It disappears after the click
+
+The animation uses ffmpeg `movie` + `overlay` filters with per-click `enable` expressions and ease-out movement calculated via `st()/ld()` temp variables.
+
+## CLI equivalent
+
+```bash
+# Enable with defaults
+npx playwright-recast -i ./traces --cursor-overlay
+
+# With custom config
+npx playwright-recast -i ./traces --cursor-overlay-config cursor.json
+```
+
+## Tips
+
+- Cursor overlay works well combined with [Click Effect](/docs/pipeline/click-effect) — the cursor moves into position, then the ripple appears on click.
+- Cursor positions are remapped through speed processing, so the animation timing stays accurate after speed changes.
+- Only actions from the recording context are processed — setup/background actions are filtered out automatically.
+- The overlay is applied before zoom cropping, so cursor positions stay accurate during zoomed segments.

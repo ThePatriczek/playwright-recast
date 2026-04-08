@@ -1,0 +1,82 @@
+---
+title: Pipeline Overview
+description: How the playwright-recast pipeline works — stages, lazy evaluation, and immutable branching.
+---
+
+playwright-recast uses a fluent pipeline API where every processing step is a chainable method. Stages are optional and composable — use just the ones you need.
+
+## Pipeline architecture
+
+```
+Trace.zip → parse() → hideSteps() → speedUp() → subtitles() → textProcessing() → voiceover() → render() → MP4
+```
+
+Each stage transforms the pipeline state and passes it to the next. The full processing flow:
+
+| Stage | Method | Description |
+|---|---|---|
+| **Parse** | `.parse()` | Extract actions, frames, network events, and cursor positions from trace.zip |
+| **Filter** | `.hideSteps(predicate)` | Remove setup/login steps from the output |
+| **Speed** | `.speedUp(config)` | Adjust playback speed based on activity type |
+| **Subtitles** | `.subtitles()` / `.subtitlesFromSrt()` / `.subtitlesFromTrace()` | Generate or import subtitle text |
+| **Text Processing** | `.textProcessing(config)` | Sanitize subtitle text for TTS synthesis |
+| **Auto Zoom** | `.autoZoom(config)` | Zoom into user actions with easing transitions |
+| **Cursor Overlay** | `.cursorOverlay(config)` | Animated cursor at click positions |
+| **Click Effect** | `.clickEffect(config)` | Ripple animation and sound at click positions |
+| **Text Highlight** | `.textHighlight(config)` | Animated marker overlay on text elements |
+| **Frame Interpolation** | `.interpolate(config)` | Smooth out choppy recordings |
+| **Voiceover** | `.voiceover(provider)` | Generate TTS audio from subtitle text |
+| **Background Music** | `.backgroundMusic(config)` | Add background music with auto-ducking |
+| **Intro/Outro** | `.intro(config)` / `.outro(config)` | Prepend/append video clips |
+| **Render** | `.render(config)` | Encode the final video with subtitle burn-in |
+| **Output** | `.toFile(path)` | Execute the pipeline and write the result |
+
+## Lazy evaluation
+
+Calling pipeline methods does not execute anything immediately. Each method builds up a pipeline description. Processing only starts when you call `.toFile()` or `.toBuffer()`:
+
+```typescript
+// Nothing happens here — just building the pipeline
+const pipeline = Recast
+  .from('./traces')
+  .parse()
+  .speedUp({ duringIdle: 4.0 })
+  .render({ format: 'mp4' })
+
+// Execution starts here
+await pipeline.toFile('output.mp4')
+```
+
+## Immutable branching
+
+Every pipeline method returns a new pipeline instance. The original is never modified. This lets you branch from a shared base:
+
+```typescript
+const base = Recast.from('./traces').parse().speedUp({ duringIdle: 3.0 })
+
+// Branch A: English voiceover
+await base
+  .subtitlesFromSrt('./en.srt')
+  .voiceover(openaiProvider)
+  .render()
+  .toFile('demo-en.mp4')
+
+// Branch B: Czech subtitles only
+await base
+  .subtitlesFromSrt('./cs.srt')
+  .render({ burnSubtitles: true })
+  .toFile('demo-cs.mp4')
+```
+
+Both branches share the same parse and speed processing. Each produces a different output without re-running earlier stages.
+
+## Zero lock-in
+
+Every stage is optional. You can use playwright-recast for just one piece of the workflow:
+
+- Parse a trace without rendering
+- Generate subtitles without voiceover
+- Speed-process and render without any overlays
+- Use the full pipeline end-to-end
+
+Start simple and add stages as you need them.

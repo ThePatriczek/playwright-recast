@@ -1,0 +1,68 @@
+---
+title: Speed Processing
+description: Automatically adjust video speed based on activity classification.
+---
+
+The `.speedUp()` stage classifies every moment of the trace into activity types and applies different playback speeds to each. Idle time flies by while user actions play at normal speed.
+
+## Basic usage
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .speedUp({
+    duringIdle: 4.0,
+    duringUserAction: 1.0,
+  })
+  .render()
+  .toFile('demo.mp4')
+```
+
+## Activity classification
+
+The speed processor analyzes the trace and classifies each segment:
+
+| Activity | Default Speed | Description |
+|---|---|---|
+| **User Action** | 1.0x | Clicks, fills, keyboard input — plays at real-time |
+| **Navigation** | 2.0x | Page loads, redirects — slightly faster |
+| **Network Wait** | 2.0x | API calls in flight — compresses wait time |
+| **Idle** | 4.0x | Nothing happening — skips quickly |
+
+## Configuration options
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `duringIdle` | `number` | `4.0` | Speed multiplier for idle segments |
+| `duringUserAction` | `number` | `1.0` | Speed multiplier for user interactions |
+| `duringNetworkWait` | `number` | `2.0` | Speed multiplier for network activity |
+| `duringNavigation` | `number` | `2.0` | Speed multiplier for page navigations |
+| `minSegmentDuration` | `number` | `500` | Minimum segment length in ms (avoids jarring speed changes) |
+| `maxSpeed` | `number` | `8.0` | Safety cap on speed multiplier |
+
+### Full example
+
+```typescript
+.speedUp({
+  duringIdle: 4.0,
+  duringUserAction: 1.0,
+  duringNetworkWait: 2.0,
+  duringNavigation: 2.0,
+  minSegmentDuration: 500,
+  maxSpeed: 8.0,
+})
+```
+
+## CLI equivalent
+
+```bash
+npx playwright-recast -i ./traces --speed-idle 4.0 --speed-action 1.0
+```
+
+## Tips
+
+- Speed processing respects segment boundaries. Setting `minSegmentDuration` prevents rapid speed switching that can look jarring in the output.
+- When voiceover is active, segments where TTS audio is significantly shorter than the original timing trigger fast-forward automatically.
+- Click effect and cursor overlay timestamps are automatically remapped through speed processing, so visual effects appear at the correct video time.
+- Start with the defaults and adjust per-activity speeds based on your content. A product demo might use `duringIdle: 6.0` to aggressively compress waits, while a tutorial might keep everything closer to 1.0x.

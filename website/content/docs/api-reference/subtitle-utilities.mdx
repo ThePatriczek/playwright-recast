@@ -1,0 +1,188 @@
+---
+title: Subtitle Utilities
+description: Exported utilities for SRT/ASS subtitle manipulation — chunking, ASS writing, and color conversion
+---
+
+
+playwright-recast exports several subtitle utility functions for use outside the pipeline. These are useful for building custom workflows, pre-processing SRT files, or generating ASS subtitle files directly.
+
+```typescript
+import { chunkSubtitles, writeAss, hexToAss } from 'playwright-recast'
+```
+
+---
+
+## `chunkSubtitles(entries, options?)`
+
+Split long subtitle entries into shorter, single-line chunks based on punctuation. Time is distributed proportionally by character count.
+
+```typescript
+import { chunkSubtitles } from 'playwright-recast'
+import type { SubtitleEntry, ChunkOptions } from 'playwright-recast'
+
+const entries: SubtitleEntry[] = [
+  {
+    index: 1,
+    startMs: 1000,
+    endMs: 8000,
+    text: 'Welcome to the dashboard. Let\'s explore the analytics panel and see real-time metrics.',
+  },
+]
+
+const chunked = chunkSubtitles(entries, {
+  maxCharsPerLine: 55,
+  minCharsPerChunk: 15,
+})
+
+// Result:
+// [
+//   { index: 1, startMs: 1000, endMs: 4000, text: 'Welcome to the dashboard.' },
+//   { index: 2, startMs: 4000, endMs: 8000, text: "Let's explore the analytics panel and see real-time metrics." },
+// ]
+```
+
+### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `entries` | `SubtitleEntry[]` | Array of subtitle entries to chunk |
+| `options` | `ChunkOptions` | Chunking configuration |
+
+### `ChunkOptions`
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `maxCharsPerLine` | `number` | `60` | Maximum characters per line before forcing a split |
+| `minCharsPerChunk` | `number` | `15` | Minimum characters — don't create tiny fragments |
+
+### Splitting priority
+
+1. **Sentence boundaries:** `. ! ?`
+2. **Clause boundaries:** `, ; : -- --`
+3. **Word boundaries** (fallback if still too long)
+
+Fragments shorter than `minCharsPerChunk` are merged with adjacent chunks to avoid tiny subtitle flashes.
+
+---
+
+## `writeAss(entries, style?, resolution?)`
+
+Generate an ASS (Advanced SubStation Alpha) subtitle file string from subtitle entries with optional styling.
+
+```typescript
+import { writeAss } from 'playwright-recast'
+import type { SubtitleEntry, SubtitleStyle, AssResolution } from 'playwright-recast'
+
+const entries: SubtitleEntry[] = [
+  { index: 1, startMs: 1000, endMs: 5000, text: 'Hello, world!' },
+]
+
+const style: SubtitleStyle = {
+  fontFamily: 'Arial',
+  fontSize: 48,
+  primaryColor: '#1a1a1a',
+  backgroundColor: '#FFFFFF',
+  backgroundOpacity: 0.75,
+  bold: true,
+}
+
+const resolution: AssResolution = { width: 1920, height: 1080 }
+
+const assContent = writeAss(entries, style, resolution)
+// Returns a complete ASS file string with [Script Info], [V4+ Styles], and [Events]
+```
+
+### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `entries` | `SubtitleEntry[]` | Array of subtitle entries |
+| `style` | `SubtitleStyle` | Optional styling (font, color, position, etc.) |
+| `resolution` | `AssResolution` | Video resolution for coordinate space |
+
+### `AssResolution`
+
+```typescript
+interface AssResolution {
+  width: number
+  height: number
+}
+```
+
+The ASS format uses absolute coordinates. The resolution tells the writer how to position subtitles (margins, font scaling) relative to the video dimensions.
+
+---
+
+## `hexToAss(hex, opacity?)`
+
+Convert a CSS hex color string to ASS color format.
+
+```typescript
+import { hexToAss } from 'playwright-recast'
+
+hexToAss('#FF0000')       // '&H000000FF' (red, opaque)
+hexToAss('#FF0000', 0.5)  // '&H800000FF' (red, 50% opacity)
+hexToAss('#FFFFFF', 0.75) // '&H40FFFFFF' (white, 75% opacity)
+```
+
+### Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `hex` | `string` | *required* | CSS hex color `'#RRGGBB'` |
+| `opacity` | `number` | `1.0` | Opacity 0.0 (transparent) to 1.0 (opaque) |
+
+**Returns:** `string` — ASS color in `'&HAABBGGRR'` format
+
+ASS uses reversed byte order (BGR instead of RGB) and inverted alpha (00 = opaque, FF = transparent). This utility handles the conversion.
+
+---
+
+## `processText(text, config)`
+
+Apply text processing rules to a string. Useful for cleaning subtitle text outside the pipeline.
+
+```typescript
+import { processText } from 'playwright-recast'
+
+const cleaned = processText('He said: "Hello — world..."', {
+  builtins: true,
+})
+// Result: 'He said: Hello, world...'
+```
+
+### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `text` | `string` | Input text to process |
+| `config` | `TextProcessingConfig` | Processing configuration |
+
+**Returns:** `string` — Processed text
+
+See [TextProcessingConfig](/docs/api-reference/types#textprocessingconfig) for configuration options.
+
+---
+
+## Working with SRT files
+
+While `parseSrt` and `writeSrt` are used internally by the pipeline, you can work with SRT files through the pipeline API:
+
+```typescript
+// Load and re-export SRT with chunking applied
+import { Recast } from 'playwright-recast'
+
+await Recast
+  .from('./traces')
+  .parse()
+  .subtitlesFromSrt('./input.srt')
+  .render({
+    burnSubtitles: true,
+    subtitleStyle: {
+      chunkOptions: { maxCharsPerLine: 50 },
+    },
+  })
+  .toFile('output.mp4')
+```
+
+For standalone SRT manipulation, use `chunkSubtitles()` directly on `SubtitleEntry[]` arrays.

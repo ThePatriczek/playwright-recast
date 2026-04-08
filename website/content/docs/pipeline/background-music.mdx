@@ -1,0 +1,70 @@
+---
+title: Background Music
+description: Add background music with auto-ducking, looping, and fade-out.
+---
+
+The `.backgroundMusic()` stage adds a music track to your video. The music automatically ducks (lowers volume) during voiceover segments and fades out at the end.
+
+## Basic usage
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .subtitlesFromSrt('./narration.srt')
+  .voiceover(OpenAIProvider({ voice: 'nova' }))
+  .backgroundMusic({ path: './music/background.mp3' })
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+## Configuration options
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `path` | `string` | *(required)* | Path to the music audio file |
+| `volume` | `number` | `0.3` | Base volume (0.0-1.0) |
+| `ducking` | `boolean` | `true` | Lower music volume during voiceover |
+| `duckLevel` | `number` | `0.1` | Volume during voiceover (0.0-1.0) |
+| `duckFadeMs` | `number` | `500` | Fade duration for ducking transitions in ms |
+| `fadeOutMs` | `number` | `2000` | Fade-out duration at end of video in ms |
+| `loop` | `boolean` | `true` | Loop music if shorter than video |
+
+### Full example
+
+```typescript
+.backgroundMusic({
+  path: './music/ambient.mp3',
+  volume: 0.25,
+  ducking: true,
+  duckLevel: 0.08,
+  duckFadeMs: 600,
+  fadeOutMs: 3000,
+  loop: true,
+})
+```
+
+## Auto-ducking
+
+When `ducking` is enabled (the default), the music volume drops to `duckLevel` whenever voiceover audio is playing. The transition uses a smooth fade over `duckFadeMs` milliseconds. This keeps the narration clear without manually adjusting levels.
+
+To disable ducking and keep music at a fixed volume throughout:
+
+```typescript
+.backgroundMusic({
+  path: './music/background.mp3',
+  ducking: false,
+  volume: 0.15,
+})
+```
+
+## Coverage
+
+Background music covers the full output duration, including [Intro](/docs/pipeline/intro-outro) and [Outro](/docs/pipeline/intro-outro) segments. The music track is mixed as a post-processing step after intro/outro assembly.
+
+## Tips
+
+- Music is looped by default. If your track is shorter than the video, it repeats seamlessly. Set `loop: false` if your track is already the right length.
+- The fade-out starts `fadeOutMs` before the end of the video and reaches silence at the last frame.
+- Keep `volume` low (0.2-0.3) when used with voiceover. The ducking ensures narration is audible, but a lower base volume gives a more polished feel.
+- Background music works without voiceover too — set `ducking: false` for a fixed-volume music bed.

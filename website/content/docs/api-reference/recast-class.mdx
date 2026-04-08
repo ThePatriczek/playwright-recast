@@ -1,0 +1,394 @@
+---
+title: Recast Class
+description: Complete API reference for the Recast pipeline class — static methods, chainable stages, and terminal operations
+---
+
+
+The `Recast` class (exported as `Pipeline` internally) is the entry point for building video pipelines. It is **immutable** — every method returns a new pipeline instance. Nothing executes until a terminal operation is called.
+
+```typescript
+import { Recast } from 'playwright-recast'
+```
+
+## Static Methods
+
+### `Recast.from(source)`
+
+Create a new pipeline from a trace directory or zip file path.
+
+```typescript
+const pipeline = Recast.from('./test-results/trace.zip')
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `source` | `string` | Path to a `.zip` trace file or directory containing trace files |
+
+**Returns:** `Pipeline`
+
+---
+
+## Chainable Methods
+
+All chainable methods return a new `Pipeline` instance. The original pipeline is not modified.
+
+### `.parse()`
+
+Parse the Playwright trace into structured data (actions, frames, network, cursor positions).
+
+```typescript
+.parse()
+```
+
+Must be called before any other processing stage. Extracts `ParsedTrace` from the trace zip.
+
+---
+
+### `.hideSteps(predicate)`
+
+Filter out steps matching the predicate. Hidden steps do not appear in the output video.
+
+```typescript
+.hideSteps(action => action.keyword === 'Given' && action.text?.includes('logged in'))
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `predicate` | `(action: TraceAction) => boolean` | Returns `true` for actions to hide |
+
+---
+
+### `.speedUp(config)`
+
+Adjust video speed based on trace activity classification.
+
+```typescript
+.speedUp({
+  duringIdle: 4.0,
+  duringUserAction: 1.0,
+  duringNetworkWait: 2.0,
+  duringNavigation: 2.0,
+  minSegmentDuration: 500,
+  maxSpeed: 8.0,
+})
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `duringIdle` | `number` | `4.0` | Speed during idle periods |
+| `duringUserAction` | `number` | `1.0` | Speed during user actions |
+| `duringNetworkWait` | `number` | `2.0` | Speed while waiting for network |
+| `duringNavigation` | `number` | `2.0` | Speed during page loads |
+| `minSegmentDuration` | `number` | `500` | Minimum segment duration (ms) before speed change |
+| `maxSpeed` | `number` | `100.0` | Maximum speed multiplier |
+| `rules` | `SpeedRule[]` | — | Custom speed rules (evaluated first) |
+| `segments` | `Array<{startMs, endMs, speed}>` | — | Pre-built speed segments (bypasses classification) |
+| `recordingPageId` | `string` | — | Filter actions to this page ID |
+| `postFastForwardSettleMs` | `number` | `0` | Extra delay after fast-forward zones |
+
+See [SpeedConfig](/docs/api-reference/types#speedconfig) for the full type definition.
+
+---
+
+### `.subtitles(textFn, options?)`
+
+Generate subtitles from trace actions using a custom text extraction function.
+
+```typescript
+.subtitles(action => action.docString ?? action.text)
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `textFn` | `(action: TraceAction) => string \| undefined` | Extracts display text from each action |
+| `options` | `SubtitleOptions` | Optional format settings |
+
+---
+
+### `.subtitlesFromSrt(srtPath)`
+
+Load subtitles from an external SRT file.
+
+```typescript
+.subtitlesFromSrt('./narration.srt')
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `srtPath` | `string` | Path to the SRT file |
+
+---
+
+### `.subtitlesFromTrace(options?)`
+
+Auto-generate subtitles from BDD step titles in the parsed trace.
+
+```typescript
+.subtitlesFromTrace()
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `options` | `SubtitleOptions` | Optional format settings |
+
+---
+
+### `.textProcessing(config)`
+
+Sanitize subtitle text before TTS synthesis. Writes to `ttsText` field — visual subtitles keep original text.
+
+```typescript
+.textProcessing({ builtins: true })
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `builtins` | `boolean` | `false` | Enable built-in sanitization rules |
+| `rules` | `TextProcessingRule[]` | — | Custom regex find/replace rules |
+| `transform` | `(text: string) => string` | — | Custom transform function |
+
+---
+
+### `.autoZoom(config?)`
+
+Auto-zoom into user actions detected from the trace.
+
+```typescript
+.autoZoom({ inputLevel: 1.4, clickLevel: 1.5 })
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `clickLevel` | `number` | `1.5` | Zoom level for click actions |
+| `inputLevel` | `number` | `1.6` | Zoom level for fill/type actions |
+| `idleLevel` | `number` | `1.0` | Zoom during idle (1.0 = none) |
+| `centerBias` | `number` | `0.2` | Blend toward center (0-1) |
+| `transitionMs` | `number` | `400` | Transition duration in ms |
+| `easing` | `EasingSpec` | `'ease-in-out'` | Easing function for transitions |
+
+---
+
+### `.enrichZoomFromReport(steps)`
+
+Apply zoom coordinates from external data (e.g., demo report with per-step zoom).
+
+```typescript
+.enrichZoomFromReport([
+  { zoom: null },
+  { zoom: { x: 0.5, y: 0.8, level: 1.4 } },
+])
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `steps` | `Array<{ zoom?: { x: number; y: number; level: number } \| null }>` | Zoom data per step |
+
+---
+
+### `.cursorOverlay(config?)`
+
+Render an animated cursor that moves between action positions.
+
+```typescript
+.cursorOverlay({ size: 24, easing: 'ease-out' })
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `image` | `string` | — | Custom cursor image path (PNG) |
+| `size` | `number` | `24` | Cursor size in px (relative to 1080p) |
+| `color` | `string` | `'#FFFFFF'` | Dot color (hex) |
+| `opacity` | `number` | `0.9` | Opacity 0.0-1.0 |
+| `easing` | `string` | `'ease-in-out'` | Movement easing |
+| `hideAfterMs` | `number` | `500` | Fade-out delay after last action |
+| `shadow` | `boolean` | `true` | Drop shadow on cursor |
+| `filter` | `(action: TraceAction) => boolean` | — | Filter which actions generate cursor positions |
+
+---
+
+### `.clickEffect(config?)`
+
+Add animated ripple effects at click positions with optional sound.
+
+```typescript
+.clickEffect({ color: '#3B82F6', sound: true })
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `color` | `string` | `'#3B82F6'` | Ripple color (hex) |
+| `opacity` | `number` | `0.5` | Ripple opacity 0.0-1.0 |
+| `radius` | `number` | `30` | Max radius in px (relative to 1080p) |
+| `duration` | `number` | `400` | Animation duration in ms |
+| `sound` | `string \| true` | — | Click sound path, or `true` for bundled default |
+| `soundVolume` | `number` | `0.8` | Sound volume 0.0-1.0 |
+| `filter` | `(action: TraceAction) => boolean` | — | Filter which clicks to highlight |
+
+---
+
+### `.textHighlight(config?)`
+
+Render animated marker overlays on text captured by the `highlight()` helper.
+
+```typescript
+.textHighlight({ color: '#FFEB3B', opacity: 0.35 })
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `color` | `string` | `'#FFEB3B'` | Highlight color (hex) |
+| `opacity` | `number` | `0.35` | Highlight opacity 0.0-1.0 |
+| `duration` | `number` | `3000` | Visibility duration in ms |
+| `fadeOut` | `number` | `500` | Fade-out duration in ms |
+| `swipeDuration` | `number` | `300` | Swipe-in animation duration in ms |
+| `padding` | `{ x?: number; y?: number }` | — | Padding around bounding box in px |
+| `filter` | `(highlight: HighlightEvent) => boolean` | — | Filter which highlights to render |
+
+---
+
+### `.intro(config)`
+
+Prepend an intro video with a crossfade transition.
+
+```typescript
+.intro({ path: './assets/intro.mp4', fadeDuration: 500 })
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `path` | `string` | *required* | Path to intro video file |
+| `fadeDuration` | `number` | `500` | Crossfade duration in ms |
+
+---
+
+### `.outro(config)`
+
+Append an outro video with a crossfade transition.
+
+```typescript
+.outro({ path: './assets/outro.mp4', fadeDuration: 500 })
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `path` | `string` | *required* | Path to outro video file |
+| `fadeDuration` | `number` | `500` | Crossfade duration in ms |
+
+---
+
+### `.interpolate(config?)`
+
+Apply frame interpolation for smoother video output using ffmpeg's minterpolate filter.
+
+```typescript
+.interpolate({ fps: 60, mode: 'blend' })
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `fps` | `number` | `60` | Target frames per second |
+| `mode` | `'dup' \| 'blend' \| 'mci'` | `'mci'` | Interpolation mode |
+| `quality` | `'fast' \| 'balanced' \| 'quality'` | `'balanced'` | Quality preset |
+| `passes` | `number` | `1` | Multi-pass count for smoother results |
+
+---
+
+### `.backgroundMusic(config)`
+
+Add background music with auto-ducking during voiceover.
+
+```typescript
+.backgroundMusic({ path: './assets/music.mp3', volume: 0.3 })
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `path` | `string` | *required* | Path to music audio file |
+| `volume` | `number` | `0.3` | Base volume 0.0-1.0 |
+| `ducking` | `boolean` | `true` | Auto-duck during voiceover |
+| `duckLevel` | `number` | `0.1` | Volume during voiceover 0.0-1.0 |
+| `duckFadeMs` | `number` | `500` | Ducking transition duration in ms |
+| `fadeOutMs` | `number` | `3000` | Fade-out at end of video in ms |
+| `loop` | `boolean` | `true` | Loop if shorter than video |
+
+---
+
+### `.voiceover(provider)`
+
+Generate TTS audio from subtitle text using a provider.
+
+```typescript
+.voiceover(OpenAIProvider({ voice: 'nova' }))
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `provider` | `TtsProvider` | A TTS provider instance (OpenAI or ElevenLabs) |
+
+---
+
+### `.render(config?)`
+
+Configure video rendering options.
+
+```typescript
+.render({ format: 'mp4', resolution: '1080p', fps: 60, burnSubtitles: true })
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `format` | `'mp4' \| 'webm'` | `'mp4'` | Output format |
+| `resolution` | `string \| { width, height }` | `'1080p'` | Output resolution |
+| `fps` | `number` | — | Output frame rate |
+| `burnSubtitles` | `boolean` | `false` | Burn subtitles into video |
+| `subtitleStyle` | `SubtitleStyle` | — | Subtitle styling options |
+| `codec` | `string` | — | Video codec override |
+| `crf` | `number` | — | Constant rate factor (quality) |
+
+---
+
+## Terminal Operations
+
+Terminal operations execute the pipeline. Nothing runs until one of these is called.
+
+### `.toFile(outputPath)`
+
+Execute the pipeline and write the result to a file.
+
+```typescript
+await pipeline.toFile('demo.mp4')
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `outputPath` | `string` | Output file path |
+
+**Returns:** `Promise<void>`
+
+---
+
+### `.toBuffer()`
+
+Execute the pipeline and return the result as a buffer.
+
+```typescript
+const buffer = await pipeline.toBuffer()
+```
+
+**Returns:** `Promise<Buffer>`
+
+---
+
+## Inspection Methods
+
+### `.getStages()`
+
+Get the list of stages (for testing/debugging).
+
+**Returns:** `readonly StageDescriptor[]`
+
+### `.getSource()`
+
+Get the trace source path.
+
+**Returns:** `string`

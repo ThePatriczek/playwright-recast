@@ -1,0 +1,56 @@
+---
+title: System Requirements
+description: Required software and supported platforms for playwright-recast.
+---
+
+## Runtime requirements
+
+| Dependency | Minimum version | Purpose |
+|---|---|---|
+| **Node.js** | 18.0+ | Runtime environment |
+| **ffmpeg** | 5.0+ | Video encoding, filtering, audio mixing |
+| **ffprobe** | 5.0+ (bundled with ffmpeg) | Media file inspection |
+
+Both `ffmpeg` and `ffprobe` must be available on your system `PATH`. The library invokes them as child processes.
+
+## Supported platforms
+
+| Platform | Status |
+|---|---|
+| macOS (Apple Silicon) | Fully supported |
+| macOS (Intel) | Fully supported |
+| Linux (x64) | Fully supported |
+| Windows (x64) | Supported |
+
+## Optional dependencies
+
+| Dependency | Required for |
+|---|---|
+| **OpenAI API key** | `.voiceover()` with `OpenAIProvider` |
+| **ElevenLabs API key** | `.voiceover()` with `ElevenLabsProvider` |
+| **Playwright** | Generating trace files (not needed if you already have `trace.zip`) |
+
+## Performance considerations
+
+- **Frame interpolation** (`mci` mode) is CPU-intensive, especially at 4K resolution. Expect longer processing times on lower-end hardware.
+- **Multi-pass interpolation** multiplies processing time by the number of passes.
+- **TTS voiceover** requires network access to the provider API. Processing time depends on subtitle count and audio length.
+- Video resolution directly impacts rendering time. Use `720p` for faster iteration during development, then switch to `1080p` or `4k` for final output.
+
+## Verifying your setup
+
+Run these commands to confirm everything is installed:
+
+```bash
+# Check Node.js
+node --version
+
+# Check ffmpeg
+ffmpeg -version
+
+# Check ffprobe
+ffprobe -version
+
+# Check playwright-recast
+npx playwright-recast --help
+```

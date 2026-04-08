@@ -1,0 +1,88 @@
+---
+title: Voiceover
+description: Generate TTS narration from subtitle text.
+---
+
+The `.voiceover()` stage sends subtitle text to a TTS provider and generates audio narration timed to match the video. The resulting audio is mixed into the final output.
+
+## Basic usage
+
+```typescript
+import { Recast, OpenAIProvider } from 'playwright-recast'
+
+await Recast
+  .from('./traces')
+  .parse()
+  .subtitlesFromSrt('./narration.srt')
+  .voiceover(OpenAIProvider({ voice: 'nova' }))
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+## Provider concept
+
+Voiceover requires a TTS provider. playwright-recast ships with two built-in providers:
+
+### OpenAI TTS
+
+```typescript
+import { OpenAIProvider } from 'playwright-recast/providers/openai'
+
+.voiceover(OpenAIProvider({
+  voice: 'nova',             // alloy, echo, fable, onyx, nova, shimmer
+  model: 'gpt-4o-mini-tts',
+  speed: 1.2,
+  instructions: 'Calm, professional demo narration.',
+}))
+```
+
+Requires `OPENAI_API_KEY` environment variable or `apiKey` option.
+
+### ElevenLabs
+
+```typescript
+import { ElevenLabsProvider } from 'playwright-recast/providers/elevenlabs'
+
+.voiceover(ElevenLabsProvider({
+  voiceId: 'onwK4e9ZLuTAKqWW03F9',   // Daniel
+  modelId: 'eleven_multilingual_v2',
+  languageCode: 'cs',                  // Force language (ISO 639-1)
+}))
+```
+
+Requires `ELEVENLABS_API_KEY` environment variable or `apiKey` option.
+
+See the [Providers](/docs/providers) section for full provider documentation.
+
+## Timing
+
+Each subtitle entry generates a separate TTS audio clip. Clips are placed at the subtitle's start time with silence padding between them. When TTS audio is shorter than the subtitle duration, the remaining time is silence. When TTS audio would run longer, the speed processor can fast-forward to accommodate.
+
+## Text processing
+
+For best TTS results, add [Text Processing](/docs/pipeline/text-processing) before voiceover:
+
+```typescript
+.subtitlesFromSrt('./narration.srt')
+.textProcessing({ builtins: true })
+.voiceover(OpenAIProvider({ voice: 'nova' }))
+```
+
+Text processing cleans smart quotes, em dashes, and other typographic characters that cause artifacts in TTS output, without affecting the displayed subtitle text.
+
+## CLI equivalent
+
+```bash
+# OpenAI
+npx playwright-recast -i ./traces --srt narration.srt --provider openai --voice nova
+
+# ElevenLabs
+npx playwright-recast -i ./traces --srt narration.srt --provider elevenlabs --voice onwK4e9ZLuTAKqWW03F9
+```
+
+## Tips
+
+- Voiceover requires subtitles. Add a subtitle stage (`.subtitlesFromSrt()`, `.subtitlesFromTrace()`, or `.subtitles()`) before `.voiceover()`.
+- If using text processing, place it between subtitles and voiceover in the pipeline.
+- TTS providers require network access. API calls are made for each subtitle entry.
+- Combine with [Background Music](/docs/pipeline/background-music) for a professional result — music auto-ducks during voiceover.

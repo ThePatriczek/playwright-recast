@@ -1,0 +1,158 @@
+---
+title: Branching Pipelines
+description: Fork an immutable base pipeline into multiple output variants
+---
+
+
+The `Recast` pipeline is **immutable** — every method returns a new pipeline instance without modifying the original. This means you can build a shared base and fork it into multiple outputs.
+
+## Basic branching
+
+```typescript
+import { Recast, OpenAIProvider } from 'playwright-recast'
+
+// Shared base: parse + speed processing
+const base = Recast
+  .from('./test-results/trace.zip')
+  .parse()
+  .speedUp({ duringIdle: 3.0, duringUserAction: 1.0 })
+
+// Branch A: English voiceover
+await base
+  .subtitlesFromSrt('./en.srt')
+  .voiceover(OpenAIProvider({ voice: 'nova' }))
+  .render({ format: 'mp4' })
+  .toFile('demo-en.mp4')
+
+// Branch B: Czech subtitles only (no voiceover)
+await base
+  .subtitlesFromSrt('./cs.srt')
+  .render({ burnSubtitles: true })
+  .toFile('demo-cs.mp4')
+```
+
+Both branches share the same trace parsing and speed configuration. The base pipeline is not modified — each branch creates its own chain.
+
+## Multi-language voiceover
+
+Generate localized versions from the same trace:
+
+```typescript
+import { Recast, OpenAIProvider, ElevenLabsProvider } from 'playwright-recast'
+
+const base = Recast
+  .from('./test-results/trace.zip')
+  .parse()
+  .speedUp({ duringIdle: 3.0 })
+  .autoZoom({ inputLevel: 1.4 })
+  .clickEffect({ sound: true })
+
+// English — OpenAI
+await base
+  .subtitlesFromSrt('./srt/en.srt')
+  .voiceover(OpenAIProvider({ voice: 'nova', speed: 1.1 }))
+  .render({ format: 'mp4', burnSubtitles: true })
+  .toFile('demo-en.mp4')
+
+// German — ElevenLabs
+await base
+  .subtitlesFromSrt('./srt/de.srt')
+  .voiceover(ElevenLabsProvider({
+    voiceId: 'onwK4e9ZLuTAKqWW03F9',
+    languageCode: 'de',
+  }))
+  .render({ format: 'mp4', burnSubtitles: true })
+  .toFile('demo-de.mp4')
+
+// Japanese — subtitles only, no voiceover
+await base
+  .subtitlesFromSrt('./srt/ja.srt')
+  .render({ burnSubtitles: true })
+  .toFile('demo-ja.mp4')
+```
+
+## Resolution variants
+
+Generate multiple resolution outputs from one pipeline:
+
+```typescript
+const base = Recast
+  .from('./test-results/trace.zip')
+  .parse()
+  .speedUp({ duringIdle: 3.0 })
+  .subtitlesFromSrt('./narration.srt')
+  .voiceover(OpenAIProvider({ voice: 'nova' }))
+
+// 1080p — standard
+await base
+  .render({ format: 'mp4', resolution: '1080p', burnSubtitles: true })
+  .toFile('demo-1080p.mp4')
+
+// 720p — lighter weight
+await base
+  .render({ format: 'mp4', resolution: '720p', burnSubtitles: true })
+  .toFile('demo-720p.mp4')
+
+// 4K — high quality
+await base
+  .render({ format: 'mp4', resolution: '4k', burnSubtitles: true })
+  .toFile('demo-4k.mp4')
+```
+
+## With and without branding
+
+Generate branded and clean versions:
+
+```typescript
+const base = Recast
+  .from('./test-results/trace.zip')
+  .parse()
+  .speedUp({ duringIdle: 3.0 })
+  .subtitlesFromSrt('./narration.srt')
+  .voiceover(OpenAIProvider({ voice: 'nova' }))
+
+// Branded version — intro, outro, background music
+await base
+  .intro({ path: './assets/intro.mp4', fadeDuration: 800 })
+  .outro({ path: './assets/outro.mp4', fadeDuration: 800 })
+  .backgroundMusic({ path: './assets/music.mp3', volume: 0.25 })
+  .render({ format: 'mp4', burnSubtitles: true })
+  .toFile('demo-branded.mp4')
+
+// Clean version — no branding, no music
+await base
+  .render({ format: 'mp4', burnSubtitles: true })
+  .toFile('demo-clean.mp4')
+```
+
+## Parallel execution
+
+Since each branch is independent, you can run them in parallel:
+
+```typescript
+const base = Recast
+  .from('./test-results/trace.zip')
+  .parse()
+  .speedUp({ duringIdle: 3.0 })
+
+await Promise.all([
+  base
+    .subtitlesFromSrt('./en.srt')
+    .voiceover(OpenAIProvider({ voice: 'nova' }))
+    .render({ format: 'mp4' })
+    .toFile('demo-en.mp4'),
+
+  base
+    .subtitlesFromSrt('./cs.srt')
+    .render({ burnSubtitles: true })
+    .toFile('demo-cs.mp4'),
+])
+```
+
+Note that each branch re-executes the full pipeline from source. The base object is a pipeline *description*, not cached intermediate results. For large traces, consider whether parallel execution is worth the CPU cost.
+
+## Next steps
+
+- [Minimal Pipeline](/docs/examples/minimal-pipeline) — start simple before branching
+- [Full Pipeline](/docs/examples/full-pipeline) — see all stages in one pipeline
+- [Recast Class API](/docs/api-reference/recast-class) — immutability and method reference

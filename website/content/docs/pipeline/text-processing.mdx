@@ -1,0 +1,92 @@
+---
+title: Text Processing
+description: Sanitize subtitle text before TTS synthesis.
+---
+
+The `.textProcessing()` stage cleans subtitle text before sending it to a TTS provider. It removes typographic characters that cause artifacts in voice synthesis while preserving the original text for visual subtitles.
+
+## Basic usage
+
+```typescript
+// Built-in sanitization
+.textProcessing({ builtins: true })
+```
+
+## How it works
+
+Text processing writes to a separate `ttsText` field on each subtitle entry. The voiceover stage reads `ttsText` for speech synthesis, while burnt-in subtitles and SRT/VTT output use the original `text`.
+
+This means your displayed subtitles keep smart quotes and em dashes, but the TTS provider receives clean, artifact-free text.
+
+## Built-in rules
+
+When `builtins: true`, the following transformations are applied:
+
+| Input | Output | Description |
+|---|---|---|
+| `"` `"` `"` `„` `«` `»` `"` | *(removed)* | Double quotes |
+| `'` `'` `‚` `‛` `‹` `›` | *(removed)* | Single quotes |
+| `—` `–` | `, ` | Dashes to comma |
+| `…` | `...` | Ellipsis |
+| NBSP | space | Non-breaking space |
+| Multiple spaces | single space | Whitespace normalization |
+
+## Custom regex rules
+
+Add project-specific replacements:
+
+```typescript
+.textProcessing({
+  builtins: true,
+  rules: [
+    { pattern: '\\bNSS\\b', flags: 'g', replacement: 'Nejvyšší správní soud' },
+    { pattern: '\\bAPI\\b', flags: 'g', replacement: 'A P I' },
+  ],
+})
+```
+
+Rules are applied in order after the built-in rules.
+
+## Programmatic transform
+
+For complex transformations, use a `transform` function:
+
+```typescript
+.textProcessing({
+  transform: (text) => text.replace(/\[.*?\]/g, ''),
+})
+```
+
+## Combining all three
+
+Built-in rules, custom rules, and transform can be combined. They are applied in this order:
+
+1. Built-in rules (if `builtins: true`)
+2. Custom regex rules (in array order)
+3. Transform function
+
+```typescript
+.textProcessing({
+  builtins: true,
+  rules: [
+    { pattern: '\\bNSS\\b', flags: 'g', replacement: 'Nejvyšší správní soud' },
+  ],
+  transform: (text) => text.replace(/\[.*?\]/g, ''),
+})
+```
+
+## CLI equivalent
+
+```bash
+# Built-in sanitization
+npx playwright-recast -i ./traces --text-processing --provider openai
+
+# Custom rules from JSON file
+npx playwright-recast -i ./traces --text-processing-config ./rules.json --provider elevenlabs
+```
+
+## Tips
+
+- Always use text processing when generating voiceover. Smart quotes and em dashes cause audible artifacts in most TTS models.
+- Place `.textProcessing()` after subtitle generation and before `.voiceover()` in the pipeline.
+- The standalone `processText()` export lets you use the processing engine outside the pipeline.

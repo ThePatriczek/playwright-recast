@@ -1,0 +1,31 @@
+{
+  "name": "playwright-recast-website",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "npx serve out",
+    "postinstall": "fumadocs-mdx"
+  },
+  "dependencies": {
+    "clsx": "^2.1.1",
+    "framer-motion": "^12.38.0",
+    "fumadocs-core": "^16.7.11",
+    "fumadocs-mdx": "^14.2.11",
+    "fumadocs-ui": "^16.7.11",
+    "lucide-react": "^1.7.0",
+    "next": "^16.2.2",
+    "react": "^19",
+    "react-dom": "^19"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/mdx": "^2",
+    "@types/node": "^22",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "postcss": "^8",
+    "tailwindcss": "^4",
+    "typescript": "^5.9"
+  }
+}

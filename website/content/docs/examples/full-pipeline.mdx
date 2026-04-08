@@ -1,0 +1,179 @@
+---
+title: Full Pipeline
+description: Kitchen-sink example using all pipeline stages with real configuration values
+---
+
+
+A complete pipeline using every available stage. This is a reference example showing all features combined with realistic configuration values.
+
+## Complete example
+
+```typescript
+import { Recast, OpenAIProvider } from 'playwright-recast'
+
+await Recast
+  // Source: Playwright trace zip file
+  .from('./test-results/trace.zip')
+
+  // 1. Parse trace into structured data
+  .parse()
+
+  // 2. Filter out setup steps (login, navigation boilerplate)
+  .hideSteps(action =>
+    action.keyword === 'Given' && action.text?.includes('logged in')
+  )
+
+  // 3. Speed processing — compress idle, keep actions real-time
+  .speedUp({
+    duringIdle: 4.0,
+    duringUserAction: 1.0,
+    duringNetworkWait: 2.0,
+    duringNavigation: 2.0,
+    minSegmentDuration: 500,
+    maxSpeed: 8.0,
+  })
+
+  // 4. Load narration script from SRT file
+  .subtitlesFromSrt('./narration.srt')
+
+  // 5. Clean text for TTS (remove smart quotes, em dashes, etc.)
+  .textProcessing({
+    builtins: true,
+    rules: [
+      // Custom rule: expand abbreviation for TTS
+      { pattern: '\\bUI\\b', flags: 'g', replacement: 'user interface' },
+    ],
+  })
+
+  // 6. Auto-zoom to action targets
+  .autoZoom({
+    clickLevel: 1.4,
+    inputLevel: 1.6,
+    centerBias: 0.3,
+    transitionMs: 400,
+    easing: 'ease-in-out',
+  })
+
+  // 7. Animated cursor following action positions
+  .cursorOverlay({
+    size: 24,
+    color: '#FFFFFF',
+    opacity: 0.9,
+    shadow: true,
+    easing: 'ease-out',
+    hideAfterMs: 500,
+  })
+
+  // 8. Click ripple effects with sound
+  .clickEffect({
+    color: '#3B82F6',
+    opacity: 0.5,
+    radius: 30,
+    duration: 400,
+    sound: true,
+    soundVolume: 0.8,
+  })
+
+  // 9. Frame interpolation for smoother playback
+  .interpolate({
+    fps: 60,
+    mode: 'blend',
+    quality: 'balanced',
+  })
+
+  // 10. Branded intro with crossfade
+  .intro({
+    path: './assets/intro.mp4',
+    fadeDuration: 800,
+  })
+
+  // 11. Branded outro with crossfade
+  .outro({
+    path: './assets/outro.mp4',
+    fadeDuration: 800,
+  })
+
+  // 12. Background music with auto-ducking
+  .backgroundMusic({
+    path: './assets/ambient-music.mp3',
+    volume: 0.3,
+    ducking: true,
+    duckLevel: 0.1,
+    duckFadeMs: 500,
+    fadeOutMs: 3000,
+    loop: true,
+  })
+
+  // 13. TTS voiceover via OpenAI
+  .voiceover(OpenAIProvider({
+    voice: 'nova',
+    model: 'gpt-4o-mini-tts',
+    speed: 1.2,
+    instructions: 'Professional product demo narration. Clear and concise.',
+  }))
+
+  // 14. Render with styled burnt-in subtitles
+  .render({
+    format: 'mp4',
+    resolution: '1080p',
+    fps: 60,
+    burnSubtitles: true,
+    subtitleStyle: {
+      fontFamily: 'Arial',
+      fontSize: 48,
+      primaryColor: '#1a1a1a',
+      backgroundColor: '#FFFFFF',
+      backgroundOpacity: 0.75,
+      padding: 20,
+      bold: true,
+      position: 'bottom',
+      marginVertical: 50,
+      marginHorizontal: 100,
+      wrapStyle: 'smart',
+      chunkOptions: {
+        maxCharsPerLine: 55,
+        minCharsPerChunk: 15,
+      },
+    },
+  })
+
+  // 15. Write output
+  .toFile('demo.mp4')
+```
+
+## Stage order
+
+The pipeline stages above follow the recommended order:
+
+1. **parse** — always first
+2. **hideSteps** — filter before processing
+3. **speedUp** — time remapping before subtitles
+4. **subtitles** — load or generate subtitle text
+5. **textProcessing** — clean text before TTS
+6. **autoZoom** — visual effects
+7. **cursorOverlay** — visual effects
+8. **clickEffect** — visual effects
+9. **interpolate** — frame smoothing
+10. **intro/outro** — bookend clips
+11. **backgroundMusic** — audio layer
+12. **voiceover** — TTS audio generation
+13. **render** — final encoding with subtitle burn-in
+14. **toFile** — terminal operation
+
+Not every stage depends on strict ordering, but this sequence ensures each stage has the data it needs. For example, `textProcessing` must come after `subtitles` (it needs subtitle text) and before `voiceover` (it cleans text for TTS).
+
+## Adapting this example
+
+You don't need all of these stages. Remove any that aren't relevant:
+
+- No narration? Remove `subtitlesFromSrt`, `textProcessing`, `voiceover`, and `burnSubtitles`
+- No branding? Remove `intro` and `outro`
+- No music? Remove `backgroundMusic`
+- Simple video? Keep just `parse`, `speedUp`, `render`, `toFile`
+
+See [Minimal Pipeline](/docs/examples/minimal-pipeline) for stripped-down versions.
+
+## Next steps
+
+- [Branching Pipelines](/docs/examples/branching-pipelines) — fork this pipeline into multiple outputs
+- [Recast Class API](/docs/api-reference/recast-class) — reference for every method used here

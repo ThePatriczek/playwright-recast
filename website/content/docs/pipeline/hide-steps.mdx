@@ -1,0 +1,53 @@
+---
+title: Hide Steps
+description: Filter out setup and login steps from the output video.
+---
+
+The `.hideSteps()` stage removes unwanted steps from the pipeline. Use it to cut login flows, test setup, or any other actions that should not appear in the final video.
+
+## Basic usage
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .hideSteps(step => step.keyword === 'Given' && step.text?.includes('logged in'))
+  .render()
+  .toFile('demo.mp4')
+```
+
+The predicate function receives each step and returns `true` to hide it.
+
+## Common patterns
+
+### Hide all "Given" steps
+
+```typescript
+.hideSteps(step => step.keyword === 'Given')
+```
+
+### Hide by step text
+
+```typescript
+.hideSteps(step => step.text?.includes('setup') || step.text?.includes('login'))
+```
+
+### Hide multiple conditions
+
+```typescript
+.hideSteps(step =>
+  step.keyword === 'Given' ||
+  step.text?.includes('navigate to login') ||
+  step.text?.includes('accept cookies')
+)
+```
+
+## CLI equivalent
+
+Step filtering is available through the programmatic API. Use the API for complex filtering logic.
+
+## Tips
+
+- Place `.hideSteps()` early in the pipeline, right after `.parse()`. Downstream stages like speed processing and subtitles will only see the remaining steps.
+- The predicate receives the parsed step object, which includes `keyword`, `text`, and timing information from the trace.
+- Hidden steps are removed entirely — their frames, actions, and timing are excluded from the output.

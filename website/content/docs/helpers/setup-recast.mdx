@@ -1,0 +1,53 @@
+---
+title: setupRecast
+description: Initialize playwright-recast helpers with your Playwright test instance.
+---
+
+## What it does
+
+`setupRecast(test)` connects the playwright-recast step helpers (`narrate`, `zoom`, `pace`, `highlight`) to your Playwright test context. Without this call, the helpers cannot access the current test's annotation system and will throw an error.
+
+Call it once in your fixtures file before using any other helper.
+
+## Usage
+
+```typescript
+import { test } from 'playwright-bdd'
+import { setupRecast } from 'playwright-recast'
+
+setupRecast(test)
+```
+
+Or with standard Playwright:
+
+```typescript
+import { test } from '@playwright/test'
+import { setupRecast } from 'playwright-recast'
+
+setupRecast(test)
+```
+
+## How it works
+
+`setupRecast` receives the `test` object and uses `test.info()` internally to access the current test's annotations. The helpers (`narrate`, `zoom`, `highlight`) then write structured data to these annotations, which the pipeline reads during video generation.
+
+## Example with playwright-bdd
+
+```typescript
+// steps/fixtures.ts
+import { test } from 'playwright-bdd'
+import { setupRecast, narrate, pace } from 'playwright-recast'
+
+setupRecast(test)
+export { narrate, pace }
+
+// steps/dashboard.ts
+import { Given } from './fixtures'
+import { narrate, pace } from 'playwright-recast'
+
+Given('the user opens the dashboard', async ({ page }, docString?: string) => {
+  narrate(docString)
+  await page.goto('/dashboard')
+  await pace(page, 4000)
+})
+```

@@ -1,0 +1,142 @@
+---
+title: CLI Reference
+description: Complete reference for the playwright-recast command-line interface.
+---
+
+## Usage
+
+```bash
+npx playwright-recast --input <trace-dir-or-zip> [options]
+```
+
+The CLI provides a code-free way to convert Playwright traces into polished demo videos. Every feature available in the programmatic API has a corresponding CLI flag.
+
+## Input / Output
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--input` | `-i` | (required) | Trace directory or `.zip` file path |
+| `--output` | `-o` | `./recast-output.mp4` | Output file path |
+| `--format` | | `mp4` | Output format: `mp4` or `webm` |
+| `--resolution` | | `1080p` | Output resolution: `720p` or `1080p` |
+| `--help` | `-h` | | Show help message |
+
+## Speed processing
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--speed-idle` | `3.0` | Speed multiplier for idle periods |
+| `--speed-action` | `1.0` | Speed multiplier for user actions |
+| `--speed-network` | `2.0` | Speed multiplier for network waits |
+| `--no-speed` | `false` | Disable speed processing entirely |
+
+## Subtitles
+
+| Flag | Description |
+|------|-------------|
+| `--srt` | Path to an external SRT subtitle file |
+| `--burn-subs` | Burn subtitles into the video |
+
+When `--srt` is not provided, subtitles are auto-generated from trace step titles and doc strings.
+
+## Text processing
+
+| Flag | Description |
+|------|-------------|
+| `--text-processing` | Enable built-in text sanitization for TTS |
+| `--text-processing-config <path>` | Load custom text processing rules from a JSON file |
+
+Text processing cleans subtitle text before sending to TTS providers (strips smart quotes, normalizes dashes, etc.) while keeping the original text for visual subtitles. See [Text Processing](/docs/pipeline/text-processing) for details.
+
+## TTS voiceover
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--provider` | `none` | TTS provider: `openai`, `elevenlabs`, or `none` |
+| `--voice` | (provider default) | Voice ID for the TTS provider |
+| `--model` | (provider default) | Model ID for the TTS provider |
+| `--tts-speed` | `1.0` | TTS speech speed multiplier |
+
+## Click effects
+
+| Flag | Description |
+|------|-------------|
+| `--click-effect` | Enable click highlighting with default settings |
+| `--click-effect-config <path>` | Load click effect configuration from a JSON file |
+| `--click-sound <path>` | Custom click sound audio file |
+
+## Cursor overlay
+
+| Flag | Description |
+|------|-------------|
+| `--cursor-overlay` | Enable animated cursor overlay with defaults |
+| `--cursor-overlay-config <path>` | Load cursor overlay configuration from a JSON file |
+
+## Frame interpolation
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--interpolate` | `false` | Enable frame interpolation |
+| `--interpolate-fps` | `60` | Target frames per second |
+| `--interpolate-mode` | `mci` | Mode: `dup`, `blend`, or `mci` |
+| `--interpolate-quality` | `balanced` | Quality preset: `fast`, `balanced`, or `quality` |
+| `--interpolate-passes` | `1` | Number of interpolation passes |
+
+## Examples
+
+### Basic trace to video
+
+```bash
+npx playwright-recast -i ./test-results/trace.zip -o demo.mp4
+```
+
+### Speed processing with subtitle burn-in
+
+```bash
+npx playwright-recast -i ./traces --speed-idle 4.0 --speed-action 1.0 --burn-subs
+```
+
+### External SRT with OpenAI voiceover
+
+```bash
+npx playwright-recast -i ./traces --srt narration.srt --provider openai --voice nova
+```
+
+### ElevenLabs voiceover
+
+```bash
+npx playwright-recast -i ./traces --srt narration.srt --provider elevenlabs --voice onwK4e9ZLuTAKqWW03F9
+```
+
+### Click effects with custom sound
+
+```bash
+npx playwright-recast -i ./traces --click-effect --click-sound click.mp3
+```
+
+### Frame interpolation for smooth playback
+
+```bash
+npx playwright-recast -i ./traces --interpolate --interpolate-fps 30 --interpolate-mode blend
+```
+
+### Full pipeline
+
+```bash
+npx playwright-recast -i ./traces \
+  --srt narration.srt \
+  --speed-idle 4.0 \
+  --text-processing \
+  --provider openai --voice nova --tts-speed 1.2 \
+  --click-effect \
+  --cursor-overlay \
+  --interpolate \
+  --burn-subs \
+  -o demo.mp4
+```
+
+### Disable speed processing
+
+```bash
+npx playwright-recast -i ./traces --no-speed -o raw.mp4
+```

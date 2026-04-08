@@ -1,0 +1,65 @@
+---
+title: pace
+description: Add an artificial pause to a test step for visual pacing in demo videos.
+---
+
+## What it does
+
+`pace(page, ms)` adds a timed wait to the current step, giving the video enough time for voiceover narration to play. Without pacing, fast test execution may cause steps to end before the narration finishes.
+
+Call `pace` at the end of a step definition to pad the step's duration.
+
+## Usage
+
+```typescript
+import { pace } from 'playwright-recast'
+
+await pace(page, 4000) // Wait 4 seconds
+```
+
+## Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `page` | `Page` | Playwright Page instance |
+| `ms` | `number` | Duration to wait in milliseconds |
+
+## When to use
+
+Use `pace` when a step's narration is longer than the action itself. For example, navigating to a page takes milliseconds, but the voiceover explaining it might take several seconds:
+
+```typescript
+Given('the user opens the dashboard', async ({ page }, docString?: string) => {
+  narrate(docString)
+  await page.goto('/dashboard')
+  await pace(page, 4000) // Hold for narration
+})
+```
+
+Without `pace`, the speed processor would compress this step to near-zero duration since nothing is happening after the navigation completes.
+
+## Tips
+
+- Place `pace` at the **end** of the step, after all interactions
+- Match the duration roughly to the expected narration length
+- The speed processor still applies -- `pace` creates idle time that can be compressed, so set durations generously
+- For steps with no narration, `pace` is usually not needed
+
+## Example with playwright-bdd
+
+```typescript
+import { Given, When } from './fixtures'
+import { narrate, pace } from 'playwright-recast'
+
+Given('the user opens the dashboard', async ({ page }, docString?: string) => {
+  narrate(docString)
+  await page.goto('/dashboard')
+  await pace(page, 4000)
+})
+
+When('the user clicks the settings icon', async ({ page }, docString?: string) => {
+  narrate(docString)
+  await page.click('[data-testid="settings"]')
+  await pace(page, 3000)
+})
+```

@@ -1,0 +1,147 @@
+---
+title: Background Music
+description: Add background music with auto-ducking during voiceover, looping, and fade-out
+---
+
+
+Add background music to your demo videos. The music auto-ducks during voiceover segments, loops if shorter than the video, and fades out at the end.
+
+## Basic usage
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .subtitlesFromSrt('./narration.srt')
+  .voiceover(OpenAIProvider({ voice: 'nova' }))
+  .backgroundMusic({ path: './assets/music.mp3' })
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+The music plays at 30% volume by default, automatically ducking to 10% during voiceover segments.
+
+## Configuring volume
+
+```typescript
+.backgroundMusic({
+  path: './assets/music.mp3',
+  volume: 0.3,       // Base volume level 0.0-1.0 (default: 0.3)
+})
+```
+
+Start with `0.2-0.3` for background ambiance. Go up to `0.4-0.5` if the music is a key part of the demo experience.
+
+## Auto-ducking
+
+Ducking automatically lowers the music volume during voiceover segments so the narration is clearly audible:
+
+```typescript
+.backgroundMusic({
+  path: './assets/music.mp3',
+  volume: 0.3,
+  ducking: true,       // Enable auto-ducking (default: true)
+  duckLevel: 0.1,      // Volume during voiceover 0.0-1.0 (default: 0.1)
+  duckFadeMs: 500,     // Fade duration for ducking transitions (default: 500ms)
+})
+```
+
+**How ducking works:**
+1. Before a voiceover segment starts, music fades down to `duckLevel` over `duckFadeMs`
+2. During voiceover, music stays at `duckLevel`
+3. After voiceover ends, music fades back up to `volume` over `duckFadeMs`
+
+To disable ducking and keep a constant volume:
+
+```typescript
+.backgroundMusic({
+  path: './assets/music.mp3',
+  volume: 0.2,
+  ducking: false,     // Fixed volume, no ducking
+})
+```
+
+## Looping
+
+If the music file is shorter than the video, it loops automatically by default:
+
+```typescript
+.backgroundMusic({
+  path: './assets/music.mp3',
+  loop: true,          // Loop if shorter than video (default: true)
+})
+```
+
+Set `loop: false` if you want the music to play once and then stop. The remaining video plays without music.
+
+## Fade-out
+
+The music fades out at the end of the video:
+
+```typescript
+.backgroundMusic({
+  path: './assets/music.mp3',
+  fadeOutMs: 3000,     // Fade-out duration at end of video (default: 3000ms)
+})
+```
+
+Set `fadeOutMs: 0` for an abrupt end (not recommended).
+
+## With intro and outro
+
+Background music covers the full output duration, including [intro and outro](/docs/guides/intro-outro-branding) segments. The music starts from the very beginning of the intro and fades out at the end of the outro:
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .intro({ path: './assets/intro.mp4' })
+  .outro({ path: './assets/outro.mp4' })
+  .subtitlesFromSrt('./narration.srt')
+  .voiceover(provider)
+  .backgroundMusic({
+    path: './assets/ambient.mp3',
+    volume: 0.25,
+    duckLevel: 0.08,
+    fadeOutMs: 4000,
+  })
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+## Complete example
+
+A full configuration with all music options:
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .speedUp({ duringIdle: 3.0 })
+  .subtitlesFromSrt('./narration.srt')
+  .voiceover(OpenAIProvider({ voice: 'nova' }))
+  .backgroundMusic({
+    path: './assets/corporate-ambient.mp3',
+    volume: 0.3,           // 30% base volume
+    ducking: true,          // Lower during narration
+    duckLevel: 0.1,         // 10% during voiceover
+    duckFadeMs: 500,        // 500ms transition
+    fadeOutMs: 3000,         // 3 second fade at end
+    loop: true,             // Loop if track is short
+  })
+  .render({ format: 'mp4', resolution: '1080p' })
+  .toFile('demo.mp4')
+```
+
+## Tips for choosing music
+
+- **Instrumental only:** Vocals compete with voiceover narration
+- **Consistent energy:** Avoid tracks with dramatic dynamics that might clash with ducking transitions
+- **Loopable:** Choose tracks that loop cleanly if your video is longer than the music
+- **License:** Use royalty-free music for commercial demos
+
+## Next steps
+
+- [Adding Voiceover](/docs/guides/adding-voiceover) -- add TTS narration that triggers ducking
+- [Intro, Outro, and Branding](/docs/guides/intro-outro-branding) -- extend music across branded segments
+- [Full Pipeline example](/docs/examples/full-pipeline) -- see background music in a complete pipeline

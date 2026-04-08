@@ -1,0 +1,49 @@
+---
+title: Parse
+description: Extract structured data from Playwright trace.zip files.
+---
+
+The `.parse()` stage reads a Playwright trace archive and extracts all the data needed for video generation.
+
+## Basic usage
+
+```typescript
+import { Recast } from 'playwright-recast'
+
+const pipeline = Recast
+  .from('./test-results/trace.zip')
+  .parse()
+```
+
+You can also point to a directory containing trace files:
+
+```typescript
+const pipeline = Recast
+  .from('./test-results/')
+  .parse()
+```
+
+## What gets extracted
+
+The parser reads the `trace.zip` and produces a structured representation containing:
+
+| Data | Source | Used by |
+|---|---|---|
+| **Actions** | User interactions (click, fill, type, navigation) | Speed processing, click effects, auto-zoom |
+| **Screenshots** | Frame-by-frame page captures | Video frames |
+| **Network events** | API calls, resource loading | Speed classification (network wait) |
+| **Cursor positions** | Mouse coordinates at each action | Cursor overlay, click effects, auto-zoom |
+| **BDD step titles** | playwright-bdd Gherkin step names | Subtitle generation via `.subtitlesFromTrace()` |
+
+## CLI equivalent
+
+```bash
+# Parse is implicit in CLI mode — it always runs
+npx playwright-recast -i ./test-results/trace.zip -o demo.mp4
+```
+
+## Tips
+
+- The trace file must be generated with Playwright's tracing enabled (`--trace on` or via `playwright.config.ts`).
+- `.parse()` should always be the first stage after `.from()`. Other stages depend on the parsed trace data.
+- Parsing is fast — the trace is read once and the structured data is passed through the pipeline.

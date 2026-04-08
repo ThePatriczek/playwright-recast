@@ -1,0 +1,156 @@
+---
+title: Adding Voiceover
+description: Step-by-step guide to adding TTS narration to your demo videos
+---
+
+
+This guide walks you through adding professional text-to-speech narration to your playwright-recast videos. By the end, you will have a polished demo with timed voiceover audio.
+
+## Prerequisites
+
+- A Playwright trace file (`trace.zip`)
+- An API key for [OpenAI TTS](/docs/providers/openai) or [ElevenLabs](/docs/providers/elevenlabs)
+- An SRT subtitle file with your narration script
+
+## Step 1: Write your narration script
+
+Create an SRT file with the text you want narrated. Each subtitle entry maps to one TTS audio segment.
+
+```text
+1
+00:00:01,000 --> 00:00:05,000
+Welcome to the dashboard. Let's explore the key features.
+
+2
+00:00:06,000 --> 00:00:10,000
+First, notice the real-time analytics panel on the left.
+
+3
+00:00:11,000 --> 00:00:16,000
+Clicking on any metric reveals a detailed breakdown chart.
+```
+
+Save this as `narration.srt` next to your trace file.
+
+**Tip:** Don't worry about exact timing in the SRT. The voiceover stage will adjust subtitle timing to match the actual TTS audio duration. Focus on writing natural narration text.
+
+## Step 2: Choose a TTS provider
+
+playwright-recast ships with two built-in providers. Pick whichever suits your needs.
+
+### OpenAI TTS
+
+Set the `OPENAI_API_KEY` environment variable, then:
+
+```typescript
+import { Recast, OpenAIProvider } from 'playwright-recast'
+
+const provider = OpenAIProvider({
+  voice: 'nova',           // alloy, echo, fable, onyx, nova, shimmer
+  model: 'gpt-4o-mini-tts',
+  speed: 1.2,              // 1.0 = normal, up to 4.0
+  instructions: 'Professional product demo narration.',
+})
+```
+
+### ElevenLabs
+
+Set the `ELEVENLABS_API_KEY` environment variable, then:
+
+```typescript
+import { ElevenLabsProvider } from 'playwright-recast/providers/elevenlabs'
+
+const provider = ElevenLabsProvider({
+  voiceId: 'onwK4e9ZLuTAKqWW03F9',  // Daniel
+  modelId: 'eleven_multilingual_v2',
+  languageCode: 'en',
+})
+```
+
+See [TTS Providers](/docs/providers) for the full list of options.
+
+## Step 3: Build the pipeline
+
+Combine the SRT file and TTS provider into a pipeline:
+
+```typescript
+import { Recast, OpenAIProvider } from 'playwright-recast'
+
+await Recast
+  .from('./test-results/trace.zip')
+  .parse()
+  .subtitlesFromSrt('./narration.srt')
+  .voiceover(OpenAIProvider({ voice: 'nova', speed: 1.2 }))
+  .render({ format: 'mp4', resolution: '1080p' })
+  .toFile('demo.mp4')
+```
+
+The pipeline will:
+1. Parse the trace into frames and actions
+2. Load your SRT subtitle timings
+3. Synthesize each subtitle entry into speech audio
+4. Adjust subtitle timing to match actual TTS duration
+5. Render the final video with the voiceover audio track
+
+## Step 4: Clean up text for TTS (optional)
+
+If your subtitle text contains typographic characters (smart quotes, em dashes, ellipsis), TTS engines may produce artifacts. Add `.textProcessing()` before `.voiceover()` to sanitize:
+
+```typescript
+await Recast
+  .from('./test-results/trace.zip')
+  .parse()
+  .subtitlesFromSrt('./narration.srt')
+  .textProcessing({ builtins: true })
+  .voiceover(OpenAIProvider({ voice: 'nova' }))
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+Text processing writes to a separate `ttsText` field -- your burnt-in subtitles still show the original text with proper typography. See [Text Processing](/docs/pipeline/text-processing) for custom rules.
+
+## Step 5: Burn subtitles into the video (optional)
+
+To display the narration text as styled subtitles on-screen:
+
+```typescript
+.render({
+  format: 'mp4',
+  burnSubtitles: true,
+  subtitleStyle: {
+    fontSize: 48,
+    primaryColor: '#1a1a1a',
+    backgroundColor: '#FFFFFF',
+    backgroundOpacity: 0.75,
+    bold: true,
+  },
+})
+```
+
+See [Customizing Subtitles](/docs/guides/customizing-subtitles) for the full styling guide.
+
+## Troubleshooting timing
+
+**Audio overlaps the next scene:** Your narration text may be too long for the available time. Either shorten the text or add `.speedUp()` before subtitles to compress idle time and give more room.
+
+**Long pauses between narration segments:** The subtitle entries in your SRT may have gaps. The voiceover stage inserts silence for gaps between subtitle entries. Tighten the SRT timings or use `.speedUp()` to compress idle periods.
+
+**TTS sounds robotic at high speed:** OpenAI's `speed` option above 1.5x can sound unnatural. Consider using ElevenLabs for more natural-sounding high-speed speech, or keep the speed at 1.0-1.2x and let `.speedUp()` handle video pacing instead.
+
+## CLI alternative
+
+If you prefer the command line:
+
+```bash
+# OpenAI
+npx playwright-recast -i ./traces --srt narration.srt --provider openai --voice nova
+
+# ElevenLabs
+npx playwright-recast -i ./traces --srt narration.srt --provider elevenlabs --voice onwK4e9ZLuTAKqWW03F9
+```
+
+## Next steps
+
+- [Customizing Subtitles](/docs/guides/customizing-subtitles) -- style and position burnt-in text
+- [Speed Control](/docs/guides/speed-control) -- compress idle time to match narration pacing
+- [Background Music](/docs/guides/background-music) -- add music that auto-ducks during voiceover

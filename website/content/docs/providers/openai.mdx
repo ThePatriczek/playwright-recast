@@ -1,0 +1,84 @@
+---
+title: OpenAI TTS
+description: Generate voiceover narration using OpenAI's text-to-speech API.
+---
+
+## Setup
+
+The OpenAI provider uses the `openai` npm package as a peer dependency. Install it alongside playwright-recast:
+
+```bash
+npm install openai
+```
+
+Set your API key as an environment variable:
+
+```bash
+export OPENAI_API_KEY="sk-..."
+```
+
+## Usage
+
+```typescript
+import { Recast } from 'playwright-recast'
+import { OpenAIProvider } from 'playwright-recast/providers/openai'
+
+await Recast
+  .from('./traces')
+  .parse()
+  .subtitlesFromSrt('./narration.srt')
+  .voiceover(OpenAIProvider({
+    voice: 'nova',
+    speed: 1.2,
+    instructions: 'Professional product demo narration.',
+  }))
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+## Configuration options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `voice` | `string` | `'nova'` | Voice to use for synthesis |
+| `model` | `string` | `'gpt-4o-mini-tts'` | OpenAI TTS model |
+| `speed` | `number` | `1.0` | Speech speed multiplier |
+| `instructions` | `string` | `undefined` | System prompt for voice style and tone |
+| `apiKey` | `string` | `process.env.OPENAI_API_KEY` | API key (overrides env variable) |
+
+## Available voices
+
+OpenAI provides six built-in voices:
+
+| Voice | Description |
+|-------|-------------|
+| `alloy` | Neutral, balanced |
+| `echo` | Warm, conversational |
+| `fable` | Expressive, storytelling |
+| `onyx` | Deep, authoritative |
+| `nova` | Friendly, natural |
+| `shimmer` | Clear, polished |
+
+## Instructions
+
+The `instructions` parameter lets you control the voice style and tone. This maps to OpenAI's system-level instructions for TTS:
+
+```typescript
+OpenAIProvider({
+  voice: 'nova',
+  instructions: 'Calm, professional demo narration. Speak clearly with moderate pacing.',
+})
+```
+
+## CLI usage
+
+```bash
+npx playwright-recast -i ./traces --srt narration.srt --provider openai --voice nova
+npx playwright-recast -i ./traces --srt narration.srt --provider openai --voice shimmer --tts-speed 1.2
+```
+
+## Environment variable
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `OPENAI_API_KEY` | Yes (unless `apiKey` is set) | Your OpenAI API key |

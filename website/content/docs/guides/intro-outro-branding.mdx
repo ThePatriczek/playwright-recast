@@ -1,0 +1,110 @@
+---
+title: Intro, Outro, and Branding
+description: Prepend and append branded video clips with smooth crossfade transitions
+---
+
+
+Add branded intro and outro clips to your demo videos. Both stages support smooth crossfade transitions and automatically normalize resolution and FPS to match the main content.
+
+## Preparing your clips
+
+Intro and outro clips can be any video format supported by ffmpeg (`.mp4`, `.mov`, `.webm`). A few recommendations:
+
+- **Resolution:** Match your output resolution (e.g., 1920x1080 for 1080p). If they differ, playwright-recast will scale and pad automatically, but matching avoids quality loss.
+- **Duration:** Keep intros short (3-5 seconds). Outros can be longer if they include a call-to-action.
+- **Audio:** Original audio from the clips is preserved through the crossfade. Use this for branding jingles or sound effects.
+
+## Adding an intro
+
+Prepend a video clip with a crossfade transition into the main content:
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .intro({ path: './assets/intro.mp4' })
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+The intro plays first, then crossfades into the beginning of the demo video.
+
+### Crossfade duration
+
+Control how long the crossfade transition takes:
+
+```typescript
+.intro({
+  path: './assets/intro.mp4',
+  fadeDuration: 1000,   // 1 second crossfade (default: 500ms)
+})
+```
+
+The crossfade blends both video and audio simultaneously using ffmpeg's `xfade` (video) and `acrossfade` (audio) filters.
+
+## Adding an outro
+
+Append a video clip with a crossfade transition from the main content:
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .outro({ path: './assets/outro.mp4' })
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+### Combining intro and outro
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .speedUp({ duringIdle: 3.0 })
+  .subtitlesFromSrt('./narration.srt')
+  .voiceover(OpenAIProvider({ voice: 'nova' }))
+  .intro({ path: './assets/intro.mp4', fadeDuration: 800 })
+  .outro({ path: './assets/outro.mp4', fadeDuration: 800 })
+  .render({ format: 'mp4', resolution: '1080p' })
+  .toFile('demo.mp4')
+```
+
+## Resolution matching
+
+If your intro/outro clips have a different resolution than the main content, playwright-recast automatically:
+
+1. Probes the source resolution
+2. Scales and pads the clip to match the output resolution
+3. Generates a silent audio track if the clip has no audio
+
+This means you can use the same intro clip across 720p, 1080p, and 4K renders without re-exporting.
+
+## Background music across intro/outro
+
+When you add [background music](/docs/guides/background-music), it covers the full output duration including intro and outro segments. The music starts from the beginning of the intro and fades out at the end of the outro:
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .intro({ path: './assets/intro.mp4' })
+  .outro({ path: './assets/outro.mp4' })
+  .backgroundMusic({ path: './assets/music.mp3', volume: 0.3 })
+  .voiceover(provider)
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+## Tips for effective branding
+
+- **Consistent transitions:** Use the same `fadeDuration` for intro and outro to create visual consistency
+- **Logo placement:** Center your logo in the intro clip with a clean background for a professional look
+- **Call to action:** Use the outro for "Learn more" or "Try it free" messaging
+- **Keep it brief:** Viewers are here for the demo -- 3-5 second intros work best
+
+## Next steps
+
+- [Background Music](/docs/guides/background-music) -- add music that spans intro through outro
+- [Full Pipeline example](/docs/examples/full-pipeline) -- see intro/outro in a complete pipeline
+- [Intro/Outro reference](/docs/pipeline/intro-outro) -- full pipeline stage documentation

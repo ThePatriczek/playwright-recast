@@ -1,0 +1,59 @@
+---
+title: Text Highlight
+description: Animated marker overlays on text elements in the video.
+---
+
+The `.textHighlight()` stage renders animated marker overlays on text elements. A swipe-in animation reveals the highlight left-to-right, then the overlay disappears at the subtitle boundary.
+
+## Basic usage
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .textHighlight()
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+## How it works
+
+Text highlight reads highlight data from `report.json` automatically. Each highlight specifies a bounding box and timing, and the renderer draws an animated marker overlay at that position.
+
+The swipe-in animation reveals the highlight from left to right. The highlight end time is clamped to the subtitle boundary so overlays do not overflow into the next step.
+
+## The `highlight()` helper
+
+Capture highlight targets during test execution:
+
+```typescript
+import { highlight } from 'playwright-recast'
+
+When('the user sees the total', async ({ page }) => {
+  const total = page.locator('.total-amount')
+  await highlight(total)
+})
+```
+
+### Highlighting specific text
+
+Target a substring within an element:
+
+```typescript
+// Highlight just "Revenue" inside a heading
+await highlight(page.locator('h1'), { text: 'Revenue' })
+```
+
+The helper uses the Range API to find the exact text position, including support for text inside `input` and `textarea` elements via mirror measurement.
+
+The helper stores the element's bounding box as a Playwright annotation. These annotations are read by `.textHighlight()` during video generation.
+
+## CLI equivalent
+
+Text highlight is configured through the programmatic API and report data.
+
+## Tips
+
+- Place `.textHighlight()` after subtitle generation so highlight timing aligns with subtitle boundaries.
+- Highlight data comes from `report.json` — the file is generated automatically when using the `highlight()` step helper.
+- Only actions from the recording context are processed. Setup/background highlights are filtered out.

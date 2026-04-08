@@ -1,0 +1,82 @@
+---
+title: highlight
+description: Highlight an element or specific text in the demo video with an animated marker overlay.
+---
+
+## What it does
+
+`highlight(locator)` captures an element's bounding box and stores it as a Playwright annotation. During video generation, the renderer draws an animated marker overlay that sweeps in from left to right, highlighting the element during the step's time window.
+
+You can highlight an entire element or a specific substring within it.
+
+## Usage
+
+```typescript
+import { highlight } from 'playwright-recast'
+
+// Highlight an entire element
+const heading = page.locator('h1')
+await highlight(heading)
+
+// Highlight specific text within an element
+const paragraph = page.locator('.description')
+await highlight(paragraph, { text: 'important detail' })
+```
+
+## Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `locator` | `Locator` | (required) | Playwright Locator pointing to the element |
+| `opts.text` | `string` | `undefined` | Specific text to highlight (substring match). If omitted, highlights the entire element. |
+| `opts.color` | `string` | `'#FFEB3B'` | Highlight color as hex `#RRGGBB` |
+| `opts.opacity` | `number` | `0.35` | Highlight opacity (0.0--1.0) |
+| `opts.duration` | `number` | `3000` | Visibility duration in milliseconds |
+| `opts.fadeOut` | `number` | `500` | Fade out duration in milliseconds |
+| `opts.swipeDuration` | `number` | `300` | Swipe-in animation duration in milliseconds |
+
+## Highlighting specific text
+
+When you pass the `text` option, the helper finds the exact substring within the element and measures its bounding box:
+
+- **Regular elements:** Uses the browser Range API to locate the text node and measure its position
+- **Input/textarea elements:** Creates a temporary mirror overlay to measure text position within form fields
+
+```typescript
+const input = page.locator('input[name="email"]')
+await highlight(input, { text: '@example.com' })
+```
+
+## Customizing appearance
+
+```typescript
+await highlight(heading, {
+  color: '#FF5722',      // Orange highlight
+  opacity: 0.5,          // More visible
+  duration: 5000,        // Show for 5 seconds
+  swipeDuration: 500,    // Slower reveal animation
+})
+```
+
+## Example in a BDD step
+
+```typescript
+import { Then } from './fixtures'
+import { narrate, highlight, pace } from 'playwright-recast'
+
+Then('the total is displayed', async ({ page }, docString?: string) => {
+  narrate(docString)
+  const total = page.locator('[data-testid="order-total"]')
+  await highlight(total, { text: '$42.99' })
+  await pace(page, 3000)
+})
+```
+
+```text
+Then the total is displayed
+  """
+  The order total is calculated and displayed at the bottom.
+  """
+```
+
+The video will show a yellow marker sweeping across "$42.99" during this step.

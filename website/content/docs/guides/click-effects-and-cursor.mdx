@@ -1,0 +1,184 @@
+---
+title: Click Effects and Cursor
+description: Add visual click ripples, click sounds, and animated cursor overlays to your demo videos
+---
+
+
+This guide shows how to highlight user interactions with animated click ripples, click sounds, and a visible cursor that moves between action positions.
+
+## Click effects
+
+The `.clickEffect()` stage detects click and selectOption actions from the Playwright trace and renders an animated ripple at each click position.
+
+### Basic usage
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .clickEffect()
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+With defaults, this adds a blue ripple that expands to 30px radius over 400ms at each click position.
+
+### Customizing the ripple
+
+```typescript
+.clickEffect({
+  color: '#3B82F6',    // Ripple color (hex). Default: '#3B82F6' (blue)
+  opacity: 0.5,        // Ripple opacity 0.0-1.0. Default: 0.5
+  radius: 30,          // Max radius in px (relative to 1080p). Default: 30
+  duration: 400,       // Animation duration in ms. Default: 400
+})
+```
+
+The ripple appears as an expanding circle that fades out over the animation duration. The radius is relative to 1080p -- it scales proportionally at other resolutions.
+
+### Adding click sounds
+
+Enable the bundled click sound or provide your own:
+
+```typescript
+// Bundled default click sound
+.clickEffect({ sound: true })
+
+// Custom click sound file
+.clickEffect({ sound: './assets/click.mp3', soundVolume: 0.8 })
+```
+
+The `soundVolume` option controls the click sound level from 0.0 (silent) to 1.0 (full volume). Default is 0.8.
+
+Click sound timing is automatically remapped through speed processing, so sounds play at the correct video time even when idle periods are compressed.
+
+### Filtering clicks
+
+By default, all click and selectOption actions with cursor coordinates are highlighted. To filter:
+
+```typescript
+// Only highlight click actions, not selectOption
+.clickEffect({
+  filter: (action) => action.method === 'click',
+})
+
+// Skip clicks on the navigation bar
+.clickEffect({
+  filter: (action) => !action.title.includes('navigation'),
+})
+```
+
+## Cursor overlay
+
+The `.cursorOverlay()` stage renders an animated cursor that appears before each action, moves to the action position with easing, then disappears after a timeout.
+
+### Basic usage
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .cursorOverlay()
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+### Customizing the cursor
+
+```typescript
+.cursorOverlay({
+  size: 24,             // Cursor size in px (relative to 1080p). Default: 24
+  color: '#FFFFFF',     // Dot color (hex). Default: '#FFFFFF'
+  opacity: 0.9,         // Opacity 0.0-1.0. Default: 0.9
+  shadow: true,         // Drop shadow. Default: true
+  easing: 'ease-out',   // Movement easing. Default: 'ease-in-out'
+  hideAfterMs: 500,     // Fade out delay after last action. Default: 500
+})
+```
+
+### Custom cursor image
+
+Replace the default dot with a custom cursor image:
+
+```typescript
+.cursorOverlay({
+  image: './assets/cursor-arrow.png',   // PNG with transparency
+})
+```
+
+The image should be a PNG with an alpha channel. It will be rendered at the `size` dimension.
+
+### Filtering actions
+
+Control which trace actions generate cursor positions:
+
+```typescript
+.cursorOverlay({
+  filter: (action) => action.method === 'click' || action.method === 'fill',
+})
+```
+
+## Combining click effects and cursor
+
+Both stages work together. Add the cursor for movement visualization and click effects for interaction highlighting:
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .cursorOverlay({
+    color: '#FFFFFF',
+    opacity: 0.9,
+    easing: 'ease-out',
+  })
+  .clickEffect({
+    color: '#3B82F6',
+    opacity: 0.5,
+    sound: true,
+  })
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+The cursor animates to the click position, then the ripple effect plays at that position. This creates a natural "point and click" visual pattern.
+
+## With speed processing
+
+Click effects and cursor overlays automatically remap their timestamps through speed processing. Add `.speedUp()` before them and timing stays correct:
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .speedUp({ duringIdle: 4.0, duringUserAction: 1.0 })
+  .cursorOverlay()
+  .clickEffect({ sound: true })
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+## CLI usage
+
+```bash
+# Click effects with defaults
+npx playwright-recast -i ./traces --click-effect
+
+# Click effects with custom sound
+npx playwright-recast -i ./traces --click-effect --click-sound click.mp3
+
+# Click effects from JSON config
+npx playwright-recast -i ./traces --click-effect-config config.json
+
+# Cursor overlay
+npx playwright-recast -i ./traces --cursor-overlay
+
+# Cursor overlay from JSON config
+npx playwright-recast -i ./traces --cursor-overlay-config config.json
+```
+
+## Next steps
+
+- [Zoom and Focus](/docs/guides/zoom-and-focus) -- zoom into action targets for emphasis
+- [Speed Control](/docs/guides/speed-control) -- compress idle periods between interactions
+- [Click Effect reference](/docs/pipeline/click-effect) -- full pipeline stage documentation
+- [Cursor Overlay reference](/docs/pipeline/cursor-overlay) -- full pipeline stage documentation

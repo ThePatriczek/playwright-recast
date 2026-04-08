@@ -1,0 +1,87 @@
+---
+title: Click Effect
+description: Add animated ripple effects and click sounds at interaction points.
+---
+
+The `.clickEffect()` stage renders animated ripple highlights at click positions with optional click sounds. It makes user interactions visually obvious in the final video.
+
+## Basic usage
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .clickEffect()
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+## Configuration options
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `color` | `string` | `'#3B82F6'` | Ripple color (hex) |
+| `opacity` | `number` | `0.5` | Ripple opacity (0.0-1.0) |
+| `radius` | `number` | `30` | Maximum radius in pixels (relative to 1080p) |
+| `duration` | `number` | `400` | Animation duration in milliseconds |
+| `sound` | `boolean \| string` | `false` | `true` for bundled click sound, or path to custom audio |
+| `soundVolume` | `number` | `0.8` | Sound volume (0.0-1.0) |
+| `filter` | `function` | all clicks | Filter which actions get the effect |
+
+### Full example
+
+```typescript
+.clickEffect({
+  color: '#3B82F6',
+  opacity: 0.5,
+  radius: 30,
+  duration: 400,
+  sound: true,
+  soundVolume: 0.8,
+})
+```
+
+## Filtering clicks
+
+By default, both `click` and `selectOption` actions receive the ripple effect. Use the `filter` option to restrict which actions are highlighted:
+
+```typescript
+// Only regular clicks, not select options
+.clickEffect({
+  filter: (action) => action.method === 'click',
+})
+```
+
+## Click sound
+
+Enable the bundled click sound with `sound: true`, or provide a path to a custom audio file:
+
+```typescript
+// Bundled sound
+.clickEffect({ sound: true })
+
+// Custom sound
+.clickEffect({ sound: './assets/click.mp3', soundVolume: 0.6 })
+```
+
+Click sounds are mixed into the audio track alongside voiceover. Volume is independently adjustable.
+
+## CLI equivalent
+
+```bash
+# Enable with defaults
+npx playwright-recast -i ./traces --click-effect
+
+# With custom sound
+npx playwright-recast -i ./traces --click-effect --click-sound click.mp3
+
+# With full config
+npx playwright-recast -i ./traces --click-effect-config config.json
+```
+
+## Tips
+
+- Click timestamps are automatically remapped through speed processing, so ripples appear at the correct video time even after speed changes.
+- The ripple is generated once via ffmpeg lavfi (expanding circle with fade-out), then overlaid at each click position.
+- Combine with [Cursor Overlay](/docs/pipeline/cursor-overlay) for maximum clarity — the cursor moves to position, then the ripple appears.
+- Only actions from the recording context are processed. Setup/background clicks are filtered out automatically.

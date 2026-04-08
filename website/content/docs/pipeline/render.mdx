@@ -1,0 +1,114 @@
+---
+title: Render
+description: Encode the final video with format, resolution, FPS, and subtitle burn-in options.
+---
+
+The `.render()` stage configures the final video encoding. It controls the output format, resolution, frame rate, and subtitle burn-in styling.
+
+## Basic usage
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .render({ format: 'mp4', resolution: '1080p' })
+  .toFile('demo.mp4')
+```
+
+## Configuration options
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `format` | `string` | `'mp4'` | Output format |
+| `resolution` | `string` | `'1080p'` | Output resolution: `'720p'`, `'1080p'`, `'4k'` |
+| `fps` | `number` | `30` | Output frame rate |
+| `burnSubtitles` | `boolean` | `false` | Burn subtitles into the video |
+| `subtitleStyle` | `object` | default ffmpeg | Subtitle appearance configuration |
+
+## Output with `.toFile()`
+
+After configuring the render, call `.toFile()` to execute the pipeline and write the result:
+
+```typescript
+.render({ format: 'mp4', resolution: '1080p' })
+.toFile('demo.mp4')
+```
+
+## Subtitle burn-in
+
+Set `burnSubtitles: true` to render subtitles directly into the video frames. Without `subtitleStyle`, ffmpeg's default SRT rendering is used.
+
+### Subtitle style options
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `fontFamily` | `string` | `'Arial'` | Any system font |
+| `fontSize` | `number` | `48` | Font size in pixels (relative to 1080p) |
+| `primaryColor` | `string` | `'#FFFFFF'` | Text color (hex) |
+| `backgroundColor` | `string` | `'#000000'` | Box background color (hex) |
+| `backgroundOpacity` | `number` | `0.75` | Box opacity (0.0 transparent - 1.0 opaque) |
+| `padding` | `number` | `20` | Box padding in pixels |
+| `bold` | `boolean` | `false` | Bold text |
+| `position` | `string` | `'bottom'` | `'bottom'` or `'top'` |
+| `marginVertical` | `number` | `50` | Distance from edge in pixels |
+| `marginHorizontal` | `number` | `100` | Side margins (text wraps within) |
+| `wrapStyle` | `string` | `'smart'` | `'smart'`, `'endOfLine'`, `'none'` |
+| `chunkOptions` | `object` | — | Punctuation-based text splitting |
+
+### Full subtitle styling example
+
+```typescript
+.render({
+  format: 'mp4',
+  resolution: '1080p',
+  fps: 60,
+  burnSubtitles: true,
+  subtitleStyle: {
+    fontFamily: 'Arial',
+    fontSize: 48,
+    primaryColor: '#1a1a1a',
+    backgroundColor: '#FFFFFF',
+    backgroundOpacity: 0.75,
+    padding: 20,
+    bold: true,
+    position: 'bottom',
+    marginVertical: 50,
+    marginHorizontal: 100,
+    wrapStyle: 'smart',
+    chunkOptions: {
+      maxCharsPerLine: 55,
+      minCharsPerChunk: 15,
+    },
+  },
+})
+```
+
+### Chunk options
+
+Long subtitle text is split into shorter single-line entries. Time is distributed proportionally by character count.
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `maxCharsPerLine` | `number` | `55` | Split text when it exceeds this length |
+| `minCharsPerChunk` | `number` | `15` | Merge fragments shorter than this |
+
+Splitting priority:
+1. Sentence boundaries (`. ! ?`)
+2. Clause boundaries (`, ; :`) if still too long
+
+## CLI equivalent
+
+```bash
+# Basic render
+npx playwright-recast -i ./traces -o demo.mp4
+
+# With subtitle burn-in
+npx playwright-recast -i ./traces --srt narration.srt --burn-subs -o demo.mp4
+```
+
+## Tips
+
+- Use `720p` during development for faster rendering. Switch to `1080p` or `4k` for final output.
+- Without `burnSubtitles`, subtitle files (SRT/VTT) are still generated alongside the video for use in video players that support external subtitles.
+- Subtitle font size is relative to 1080p. At other resolutions, the size scales proportionally.
+- The `smart` wrap style balances line lengths for a centered, even appearance.

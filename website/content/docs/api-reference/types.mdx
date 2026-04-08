@@ -1,0 +1,534 @@
+---
+title: Types
+description: TypeScript types and interfaces exported by playwright-recast
+---
+
+
+All types are exported from the `playwright-recast` package and can be imported for type-safe configuration.
+
+```typescript
+import type { SpeedConfig, RenderConfig, SubtitleStyle } from 'playwright-recast'
+```
+
+---
+
+## Trace Types
+
+### `ParsedTrace`
+
+The complete parsed trace output from `.parse()`.
+
+```typescript
+interface ParsedTrace {
+  metadata: {
+    browserName: string
+    platform: string
+    viewport: { width: number; height: number }
+    startTime: MonotonicMs
+    endTime: MonotonicMs
+    wallTime: number
+    playwrightVersion?: string
+  }
+  frames: ScreencastFrame[]
+  actions: TraceAction[]
+  resources: TraceResource[]
+  events: TraceEvent[]
+  cursorPositions: CursorPosition[]
+  frameReader: FrameReader
+}
+```
+
+### `TraceAction`
+
+A Playwright action extracted from the trace.
+
+```typescript
+interface TraceAction {
+  callId: string
+  stepId?: string
+  title: string
+  class: string
+  method: string
+  params: Record<string, unknown>
+  startTime: MonotonicMs
+  endTime: MonotonicMs
+  parentId?: string
+  pageId?: string
+  error?: { message: string }
+  point?: CursorPosition
+  annotations?: TraceAnnotation[]
+  keyword?: string      // BDD step keyword (Given/When/Then)
+  text?: string          // BDD step text
+  docString?: string     // BDD doc string (voiceover text)
+}
+```
+
+### `TraceAnnotation`
+
+Annotation attached to a trace action.
+
+```typescript
+interface TraceAnnotation {
+  type: KnownAnnotationType | (string & {})
+  description?: string
+}
+
+type KnownAnnotationType = 'voiceover' | 'voiceover-hidden' | 'zoom' | 'demo-uid' | 'demo-persona' | 'demo-video-path'
+```
+
+### `ScreencastFrame`
+
+A screencast frame captured in the trace.
+
+```typescript
+interface ScreencastFrame {
+  sha1: string
+  timestamp: MonotonicMs
+  pageId: string
+  width: number
+  height: number
+}
+```
+
+### `CursorPosition`
+
+Cursor position from a trace input event.
+
+```typescript
+interface CursorPosition {
+  x: number
+  y: number
+  timestamp: MonotonicMs
+}
+```
+
+### `TraceResource`
+
+A network resource captured in the trace.
+
+```typescript
+interface TraceResource {
+  url: string
+  method: string
+  status: number
+  startTime: MonotonicMs
+  endTime: MonotonicMs
+  mimeType: string
+  requestSize?: number
+  responseSize?: number
+}
+```
+
+### `MonotonicMs`
+
+Branded type for monotonic timestamps in milliseconds. Prevents mixing with wall clock time.
+
+```typescript
+type MonotonicMs = number & { readonly __brand: 'MonotonicMs' }
+```
+
+---
+
+## SpeedConfig
+
+Configuration for the `.speedUp()` stage.
+
+```typescript
+interface SpeedConfig {
+  duringIdle?: number              // Default: 4.0
+  duringUserAction?: number        // Default: 1.0
+  duringNetworkWait?: number       // Default: 2.0
+  duringNavigation?: number        // Default: 2.0
+  minSegmentDuration?: number      // Default: 500
+  maxSpeed?: number                // Default: 100.0
+  rules?: SpeedRule[]
+  segments?: Array<{ startMs: number; endMs: number; speed: number }>
+  recordingPageId?: string
+  postFastForwardSettleMs?: number // Default: 0
+}
+```
+
+### `SpeedRule`
+
+Custom speed rule — first match wins.
+
+```typescript
+interface SpeedRule {
+  name: string
+  match: (context: SpeedRuleContext) => boolean
+  speed: number
+}
+```
+
+### `SpeedRuleContext`
+
+Context passed to custom speed rule match functions.
+
+```typescript
+interface SpeedRuleContext {
+  time: MonotonicMs
+  activeActions: TraceAction[]
+  activeRequests: TraceResource[]
+  timeSinceLastAction: number
+  timeUntilNextAction: number
+  activityType: ActivityType
+}
+```
+
+### `ActivityType`
+
+```typescript
+type ActivityType = 'user-action' | 'navigation' | 'network-wait' | 'idle'
+```
+
+### `SpeedSegment`
+
+A contiguous time segment with a single speed multiplier.
+
+```typescript
+interface SpeedSegment {
+  originalStart: MonotonicMs
+  originalEnd: MonotonicMs
+  speed: number
+  outputStart: number
+  outputEnd: number
+}
+```
+
+### `TimeRemapFn`
+
+Maps original trace time to output video time.
+
+```typescript
+type TimeRemapFn = (originalTime: MonotonicMs) => number
+```
+
+---
+
+## Subtitle Types
+
+### `SubtitleEntry`
+
+A single subtitle entry.
+
+```typescript
+interface SubtitleEntry {
+  index: number
+  startMs: number
+  endMs: number
+  text: string
+  ttsText?: string     // Processed text for TTS (set by textProcessing)
+  keyword?: string
+  zoom?: StepZoom
+}
+```
+
+### `StepZoom`
+
+Zoom instruction attached to a subtitle entry.
+
+```typescript
+interface StepZoom {
+  x: number            // Center X (0.0-1.0)
+  y: number            // Center Y (0.0-1.0)
+  level: number        // Zoom level (1.0 = no zoom)
+  startMs?: number     // Optional zoom window start
+  endMs?: number       // Optional zoom window end
+}
+```
+
+### `SubtitleFormat`
+
+```typescript
+type SubtitleFormat = 'srt' | 'vtt'
+```
+
+### `SubtitleOptions`
+
+```typescript
+interface SubtitleOptions {
+  format?: SubtitleFormat
+}
+```
+
+---
+
+## Render Types
+
+### `RenderConfig`
+
+Configuration for the `.render()` stage.
+
+```typescript
+interface RenderConfig {
+  format?: 'mp4' | 'webm'
+  resolution?: '720p' | '1080p' | '1440p' | '4k' | { width: number; height: number }
+  fps?: number
+  burnSubtitles?: boolean
+  subtitleStyle?: SubtitleStyle
+  cursorOverlay?: boolean
+  codec?: string
+  crf?: number
+}
+```
+
+### `SubtitleStyle`
+
+Full subtitle styling options for burnt-in subtitles.
+
+```typescript
+interface SubtitleStyle {
+  fontFamily?: string              // Default: 'Arial'
+  fontSize?: number                // Default: 52
+  primaryColor?: string            // Default: '#1a1a1a'
+  backgroundColor?: string         // Default: '#FFFFFF'
+  backgroundOpacity?: number       // Default: 0.75
+  padding?: number                 // Default: 18
+  shadow?: number                  // Default: 0
+  position?: 'bottom' | 'top'     // Default: 'bottom'
+  marginVertical?: number          // Default: 50
+  marginHorizontal?: number        // Default: 80
+  bold?: boolean                   // Default: true
+  wrapStyle?: 'smart' | 'endOfLine' | 'none'  // Default: 'smart'
+  chunkOptions?: {                 // Default: null (no chunking)
+    maxCharsPerLine?: number       // Default: 60
+    minCharsPerChunk?: number      // Default: 15
+  } | null
+}
+```
+
+### `ZoomKeyframe`
+
+Defines a zoom state at a specific time.
+
+```typescript
+interface ZoomKeyframe {
+  atMs: number           // Time in output video (ms)
+  x?: number             // Center X (0.0-1.0). Default: 0.5
+  y?: number             // Center Y (0.0-1.0). Default: 0.5
+  level?: number         // Zoom level. Default: 1.0
+  transitionMs?: number  // Transition duration. Default: 300
+}
+```
+
+---
+
+## Voiceover Types
+
+### `TtsProvider`
+
+The contract every TTS provider must implement.
+
+```typescript
+interface TtsProvider {
+  readonly name: string
+  synthesize(text: string, options?: TtsOptions): Promise<AudioSegment>
+  estimateDurationMs(text: string, options?: TtsOptions): number
+  isAvailable(): Promise<boolean>
+  dispose(): Promise<void>
+}
+```
+
+### `AudioSegment`
+
+A chunk of synthesized audio.
+
+```typescript
+interface AudioSegment {
+  data: Buffer
+  durationMs: number
+  format: {
+    sampleRate: number
+    channels: number
+    codec: string
+  }
+}
+```
+
+### `TtsOptions`
+
+```typescript
+interface TtsOptions {
+  voice?: string
+  speed?: number
+  format?: 'mp3' | 'wav' | 'opus' | 'pcm'
+  locale?: string
+}
+```
+
+---
+
+## AutoZoomConfig
+
+Configuration for the `.autoZoom()` stage.
+
+```typescript
+interface AutoZoomConfig {
+  clickLevel?: number      // Default: 1.5
+  inputLevel?: number      // Default: 1.6
+  idleLevel?: number       // Default: 1.0
+  centerBias?: number      // Default: 0.2
+  transitionMs?: number    // Default: 400
+  easing?: EasingSpec      // Default: 'ease-in-out'
+}
+```
+
+---
+
+## EasingSpec
+
+Easing specification for zoom transitions.
+
+```typescript
+type EasingPreset = 'linear' | 'ease-in' | 'ease-out' | 'ease-in-out'
+
+type EasingSpec =
+  | EasingPreset
+  | { cubicBezier: [number, number, number, number] }
+  | { fn: (t: number) => number }
+```
+
+---
+
+## ClickEffectConfig
+
+```typescript
+interface ClickEffectConfig {
+  color?: string                           // Default: '#3B82F6'
+  opacity?: number                         // Default: 0.5
+  radius?: number                          // Default: 30
+  duration?: number                        // Default: 400
+  sound?: string | true                    // Default: undefined
+  soundVolume?: number                     // Default: 0.8
+  filter?: (action: TraceAction) => boolean
+}
+```
+
+### `ClickEvent`
+
+```typescript
+interface ClickEvent {
+  x: number              // Viewport pixels
+  y: number              // Viewport pixels
+  videoTimeMs: number    // After speed remapping
+}
+```
+
+---
+
+## CursorOverlayConfig
+
+```typescript
+interface CursorOverlayConfig {
+  image?: string                            // Custom cursor image path
+  size?: number                             // Default: 24
+  color?: string                            // Default: '#FFFFFF'
+  opacity?: number                          // Default: 0.9
+  easing?: 'linear' | 'ease-in-out' | 'ease-out'  // Default: 'ease-in-out'
+  hideAfterMs?: number                      // Default: 500
+  shadow?: boolean                          // Default: true
+  filter?: (action: TraceAction) => boolean
+}
+```
+
+### `CursorKeyframe`
+
+```typescript
+interface CursorKeyframe {
+  x: number              // Viewport pixels
+  y: number              // Viewport pixels
+  videoTimeSec: number   // After speed remapping
+}
+```
+
+---
+
+## TextProcessingConfig
+
+```typescript
+interface TextProcessingConfig {
+  builtins?: boolean                // Default: false
+  rules?: TextProcessingRule[]
+  transform?: (text: string) => string
+}
+
+interface TextProcessingRule {
+  pattern: string | RegExp
+  flags?: string                    // Default: 'g'
+  replacement: string               // Supports $1, $2 capture groups
+}
+```
+
+---
+
+## TextHighlightConfig
+
+```typescript
+interface TextHighlightConfig {
+  color?: string                            // Default: '#FFEB3B'
+  opacity?: number                          // Default: 0.35
+  duration?: number                         // Default: 3000
+  fadeOut?: number                          // Default: 500
+  swipeDuration?: number                   // Default: 300
+  padding?: { x?: number; y?: number }
+  filter?: (highlight: HighlightEvent) => boolean
+}
+
+interface HighlightEvent {
+  x: number
+  y: number
+  width: number
+  height: number
+  videoTimeMs: number
+  endTimeMs: number
+  color: string
+  opacity: number
+  swipeDuration: number
+  fadeOut: number
+}
+```
+
+---
+
+## InterpolateConfig
+
+```typescript
+interface InterpolateConfig {
+  fps?: number                                      // Default: 60
+  mode?: 'dup' | 'blend' | 'mci'                   // Default: 'mci'
+  quality?: 'fast' | 'balanced' | 'quality'         // Default: 'balanced'
+  passes?: number                                   // Default: 1
+}
+```
+
+---
+
+## IntroConfig / OutroConfig
+
+```typescript
+interface IntroConfig {
+  path: string               // Path to intro video file
+  fadeDuration?: number      // Default: 500 (ms)
+}
+
+interface OutroConfig {
+  path: string               // Path to outro video file
+  fadeDuration?: number      // Default: 500 (ms)
+}
+```
+
+---
+
+## BackgroundMusicConfig
+
+```typescript
+interface BackgroundMusicConfig {
+  path: string              // Path to music audio file
+  volume?: number           // Default: 0.3
+  ducking?: boolean         // Default: true
+  duckLevel?: number        // Default: 0.1
+  duckFadeMs?: number       // Default: 500
+  fadeOutMs?: number        // Default: 3000
+  loop?: boolean            // Default: true
+}
+```

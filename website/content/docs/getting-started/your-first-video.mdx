@@ -1,0 +1,132 @@
+---
+title: Your First Video
+description: Step-by-step tutorial to create a polished demo video from a Playwright test.
+---
+
+This tutorial walks you through creating a demo video from scratch: writing a Playwright test, capturing a trace, and running it through the recast pipeline.
+
+## 1. Write a Playwright test
+
+Create a test that demonstrates the workflow you want to capture:
+
+```typescript
+// tests/demo.spec.ts
+import { test } from '@playwright/test'
+
+test('dashboard demo', async ({ page }) => {
+  await page.goto('https://your-app.com/login')
+  await page.fill('#email', 'demo@example.com')
+  await page.fill('#password', 'password')
+  await page.click('button[type="submit"]')
+  await page.waitForURL('/dashboard')
+  await page.click('.analytics-tab')
+  await page.waitForTimeout(2000)
+})
+```
+
+## 2. Run the test with tracing
+
+Enable tracing in your Playwright config or run with the `--trace on` flag:
+
+```bash
+npx playwright test tests/demo.spec.ts --trace on
+```
+
+This produces a `trace.zip` file in your `test-results/` directory.
+
+## 3. Generate the video
+
+### Option A: CLI (quick)
+
+```bash
+npx playwright-recast -i ./test-results/demo-dashboard-demo/trace.zip -o demo.mp4
+```
+
+### Option B: Programmatic (full control)
+
+```typescript
+// scripts/generate-video.ts
+import { Recast } from 'playwright-recast'
+
+await Recast
+  .from('./test-results/demo-dashboard-demo/trace.zip')
+  .parse()
+  .speedUp({
+    duringIdle: 4.0,
+    duringUserAction: 1.0,
+  })
+  .clickEffect({ color: '#3B82F6' })
+  .render({
+    format: 'mp4',
+    resolution: '1080p',
+  })
+  .toFile('demo.mp4')
+```
+
+Run it:
+
+```bash
+npx tsx scripts/generate-video.ts
+```
+
+## 4. Add narration (optional)
+
+Create an SRT subtitle file with your narration script:
+
+```text
+1
+00:00:01,000 --> 00:00:04,000
+First, we log in to the application.
+
+2
+00:00:05,000 --> 00:00:08,000
+Navigate to the analytics dashboard.
+
+3
+00:00:09,000 --> 00:00:12,000
+Here we can see real-time metrics.
+```
+
+Then add subtitles and voiceover to your pipeline:
+
+```typescript
+import { Recast, OpenAIProvider } from 'playwright-recast'
+
+await Recast
+  .from('./test-results/demo-dashboard-demo/trace.zip')
+  .parse()
+  .speedUp({ duringIdle: 4.0, duringUserAction: 1.0 })
+  .subtitlesFromSrt('./narration.srt')
+  .textProcessing({ builtins: true })
+  .voiceover(OpenAIProvider({ voice: 'nova' }))
+  .clickEffect({ color: '#3B82F6' })
+  .render({
+    format: 'mp4',
+    resolution: '1080p',
+    burnSubtitles: true,
+    subtitleStyle: {
+      fontSize: 48,
+      primaryColor: '#1a1a1a',
+      backgroundColor: '#FFFFFF',
+      backgroundOpacity: 0.75,
+      padding: 20,
+    },
+  })
+  .toFile('demo.mp4')
+```
+
+## 5. Review your video
+
+Open `demo.mp4` in any video player. The pipeline produces a polished video with:
+
+- Idle time compressed at 4x speed
+- Click effects highlighting user interactions
+- Burnt-in subtitles with styled background boxes
+- AI-generated voiceover narration
+
+## What's next
+
+- Explore [Pipeline Stages](/docs/pipeline/overview) to customize each step
+- Add [Auto Zoom](/docs/pipeline/auto-zoom) to focus on input fields
+- Include [Background Music](/docs/pipeline/background-music) for a professional finish
+- Add [Intro/Outro](/docs/pipeline/intro-outro) clips for branding

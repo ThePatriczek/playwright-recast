@@ -1,0 +1,67 @@
+---
+title: Installation
+description: Install playwright-recast and its system dependencies.
+---
+
+## Install the package
+
+```bash
+npm install playwright-recast
+```
+
+Or with Bun:
+
+```bash
+bun add playwright-recast
+```
+
+## Install ffmpeg
+
+playwright-recast uses ffmpeg and ffprobe for all video processing. Both must be available on your `PATH`.
+
+### macOS
+
+```bash
+brew install ffmpeg
+```
+
+### Ubuntu / Debian
+
+```bash
+sudo apt install ffmpeg
+```
+
+### Windows
+
+Download from [ffmpeg.org](https://ffmpeg.org/download.html) and add the `bin` directory to your system `PATH`.
+
+### Verify installation
+
+```bash
+ffmpeg -version
+ffprobe -version
+```
+
+Both commands should print version information without errors.
+
+## TTS providers (optional)
+
+If you plan to use voiceover, install the provider SDK and set the API key:
+
+### OpenAI
+
+```bash
+export OPENAI_API_KEY="sk-..."
+```
+
+### ElevenLabs
+
+```bash
+export ELEVENLABS_API_KEY="..."
+```
+
+See the [Providers](/docs/providers) section for full configuration details.
+
+## Next steps
+
+Once installed, head to the [Quick Start](/docs/getting-started/quick-start) to generate your first video.

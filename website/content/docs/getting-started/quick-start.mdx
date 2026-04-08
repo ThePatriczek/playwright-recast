@@ -1,0 +1,86 @@
+---
+title: Quick Start
+description: Generate a video from a Playwright trace in under a minute.
+---
+
+## CLI usage
+
+The fastest way to turn a Playwright trace into a video:
+
+```bash
+npx playwright-recast -i ./test-results/trace.zip -o demo.mp4
+```
+
+### Common CLI options
+
+```bash
+# With speed processing
+npx playwright-recast -i ./traces --speed-idle 4.0 --speed-action 1.0
+
+# With external SRT subtitles
+npx playwright-recast -i ./traces --srt narration.srt --burn-subs
+
+# With TTS voiceover (OpenAI)
+npx playwright-recast -i ./traces --srt narration.srt --provider openai --voice nova
+
+# With TTS voiceover (ElevenLabs)
+npx playwright-recast -i ./traces --srt narration.srt --provider elevenlabs --voice onwK4e9ZLuTAKqWW03F9
+```
+
+See the [CLI Reference](/docs/cli) for all available flags.
+
+## Programmatic API
+
+For full control, use the fluent TypeScript API:
+
+```typescript
+import { Recast } from 'playwright-recast'
+
+// Minimal — trace to video
+await Recast.from('./traces').parse().render().toFile('output.mp4')
+```
+
+### Full pipeline example
+
+```typescript
+import { Recast, OpenAIProvider } from 'playwright-recast'
+
+await Recast
+  .from('./test-results/')
+  .parse()
+  .hideSteps(s => s.keyword === 'Given' && s.text?.includes('logged in'))
+  .speedUp({
+    duringIdle: 4.0,
+    duringUserAction: 1.0,
+    duringNetworkWait: 2.0,
+    minSegmentDuration: 500,
+  })
+  .subtitlesFromSrt('./narration.srt')
+  .voiceover(OpenAIProvider({
+    voice: 'nova',
+    speed: 1.2,
+    instructions: 'Professional product demo narration.',
+  }))
+  .render({
+    format: 'mp4',
+    resolution: '1080p',
+    fps: 60,
+    burnSubtitles: true,
+    subtitleStyle: {
+      fontSize: 48,
+      primaryColor: '#1a1a1a',
+      backgroundColor: '#FFFFFF',
+      backgroundOpacity: 0.75,
+      padding: 20,
+      bold: true,
+      chunkOptions: { maxCharsPerLine: 55 },
+    },
+  })
+  .toFile('demo.mp4')
+```
+
+Every stage is optional. Use just the ones you need and chain them in order. See the [Pipeline Overview](/docs/pipeline/overview) for the full list.
+
+## Next steps
+
+Follow the [Your First Video](/docs/getting-started/your-first-video) tutorial for a step-by-step walkthrough.

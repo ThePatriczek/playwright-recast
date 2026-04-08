@@ -1,0 +1,102 @@
+---
+title: Minimal Pipeline
+description: Simplest possible playwright-recast pipeline — trace to video in 3 lines
+---
+
+
+The simplest possible pipeline: parse a trace and render a video.
+
+## Trace to MP4
+
+```typescript
+import { Recast } from 'playwright-recast'
+
+// Three lines: parse, render, write
+await Recast
+  .from('./test-results/trace.zip')
+  .parse()
+  .render()
+  .toFile('output.mp4')
+```
+
+That's it. The trace is parsed into frames, rendered as an MP4 at 1080p, and written to disk.
+
+## With speed processing
+
+Compress idle time so the video isn't painfully slow:
+
+```typescript
+import { Recast } from 'playwright-recast'
+
+await Recast
+  .from('./test-results/trace.zip')
+  .parse()
+  .speedUp({ duringIdle: 4.0, duringUserAction: 1.0 })
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+## With subtitles
+
+Add burnt-in subtitles from an SRT file:
+
+```typescript
+import { Recast } from 'playwright-recast'
+
+await Recast
+  .from('./test-results/trace.zip')
+  .parse()
+  .subtitlesFromSrt('./narration.srt')
+  .render({ burnSubtitles: true })
+  .toFile('demo.mp4')
+```
+
+## With voiceover
+
+Add TTS narration from an SRT script:
+
+```typescript
+import { Recast, OpenAIProvider } from 'playwright-recast'
+
+await Recast
+  .from('./test-results/trace.zip')
+  .parse()
+  .subtitlesFromSrt('./narration.srt')
+  .voiceover(OpenAIProvider({ voice: 'nova' }))
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+## CLI equivalent
+
+```bash
+# Basic trace to video
+npx playwright-recast -i ./test-results/trace.zip -o demo.mp4
+
+# With speed processing
+npx playwright-recast -i ./test-results/trace.zip -o demo.mp4 --speed-idle 4.0
+
+# With subtitles
+npx playwright-recast -i ./test-results/trace.zip -o demo.mp4 --srt narration.srt --burn-subs
+```
+
+## To buffer
+
+If you need the video as a buffer instead of a file:
+
+```typescript
+import { Recast } from 'playwright-recast'
+
+const buffer = await Recast
+  .from('./test-results/trace.zip')
+  .parse()
+  .render()
+  .toBuffer()
+
+// Use buffer for upload, streaming, etc.
+```
+
+## Next steps
+
+- [Full Pipeline](/docs/examples/full-pipeline) — see all stages combined
+- [Branching Pipelines](/docs/examples/branching-pipelines) — fork a base pipeline into multiple outputs

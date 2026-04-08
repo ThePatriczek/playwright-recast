@@ -1,0 +1,204 @@
+---
+title: Customizing Subtitles
+description: Control subtitle font, color, position, chunking, and text processing
+---
+
+
+This guide covers everything you can do with subtitle styling in playwright-recast -- from basic font and color changes to advanced punctuation-based chunking and text processing.
+
+## Enabling burnt-in subtitles
+
+By default, subtitles are not rendered into the video. To burn them in, set `burnSubtitles: true` in the render config:
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .subtitlesFromSrt('./narration.srt')
+  .render({ burnSubtitles: true })
+  .toFile('demo.mp4')
+```
+
+Without a `subtitleStyle`, this uses ffmpeg's default SRT rendering. To customize the look, add a `subtitleStyle` object.
+
+## Font and size
+
+```typescript
+.render({
+  burnSubtitles: true,
+  subtitleStyle: {
+    fontFamily: 'Arial',   // Any system font installed on the machine
+    fontSize: 48,          // Size in pixels, relative to 1080p
+    bold: true,            // Bold text (default: true)
+  },
+})
+```
+
+The `fontSize` is relative to 1080p resolution. If you render at 720p or 4K, the font scales proportionally.
+
+## Color and background
+
+```typescript
+.render({
+  burnSubtitles: true,
+  subtitleStyle: {
+    primaryColor: '#1a1a1a',       // Text color (hex)
+    backgroundColor: '#FFFFFF',    // Box background color (hex)
+    backgroundOpacity: 0.75,       // 0.0 = transparent, 1.0 = opaque
+    padding: 20,                   // Background box padding in px
+    shadow: 0,                     // Drop shadow distance (0 = none)
+  },
+})
+```
+
+**Tip:** A semi-transparent white background (`#FFFFFF` at 0.75 opacity) with dark text works well on most video content. For dark UIs, try a dark background with light text.
+
+## Position and margins
+
+```typescript
+.render({
+  burnSubtitles: true,
+  subtitleStyle: {
+    position: 'bottom',       // 'bottom' or 'top'
+    marginVertical: 50,       // Distance from the edge in px
+    marginHorizontal: 100,    // Side margins (text wraps within)
+    wrapStyle: 'smart',       // 'smart' (even lines), 'endOfLine', 'none'
+  },
+})
+```
+
+- `position: 'bottom'` places subtitles near the bottom of the frame (default)
+- `position: 'top'` places them near the top -- useful when bottom content is important
+- `marginHorizontal` controls how far from the edges the text can extend
+
+## Punctuation-based chunking
+
+Long subtitle text can overflow a single line. The `chunkOptions` setting splits entries into shorter, single-line chunks based on punctuation:
+
+```typescript
+.render({
+  burnSubtitles: true,
+  subtitleStyle: {
+    chunkOptions: {
+      maxCharsPerLine: 55,    // Split when text exceeds this length
+      minCharsPerChunk: 15,   // Don't create tiny fragments
+    },
+  },
+})
+```
+
+**How chunking works:**
+
+1. If the subtitle text is shorter than `maxCharsPerLine`, it stays as-is
+2. Otherwise, split at sentence boundaries first (`. ! ?`)
+3. If chunks are still too long, split at clause boundaries (`, ; : -- --`)
+4. As a fallback, split at word boundaries
+5. Fragments shorter than `minCharsPerChunk` are merged with adjacent chunks
+6. Time is distributed proportionally by character count
+
+**Before chunking (one long subtitle):**
+```
+00:00:01,000 --> 00:00:08,000
+Welcome to the dashboard. Let's explore the analytics panel and see real-time metrics in action.
+```
+
+**After chunking (two shorter subtitles):**
+```
+00:00:01,000 --> 00:00:04,000
+Welcome to the dashboard.
+
+00:00:04,000 --> 00:00:08,000
+Let's explore the analytics panel and see real-time metrics in action.
+```
+
+Set `chunkOptions: null` to disable chunking entirely.
+
+## Subtitle sources
+
+There are three ways to provide subtitle text:
+
+### External SRT file
+
+Load pre-written subtitles from an SRT file:
+
+```typescript
+.subtitlesFromSrt('./narration.srt')
+```
+
+### From trace (BDD steps)
+
+Auto-generate subtitles from playwright-bdd step titles in the trace:
+
+```typescript
+.subtitlesFromTrace()
+```
+
+This extracts step text from parsed trace actions. Works best with playwright-bdd integration where steps have descriptive titles.
+
+### Custom text function
+
+Generate subtitles with a custom function that extracts text from each trace action:
+
+```typescript
+.subtitles(action => action.docString ?? action.text)
+```
+
+## Text processing for TTS
+
+When using voiceover, typographic characters can cause artifacts in TTS synthesis. The `.textProcessing()` stage cleans subtitle text before sending it to the provider:
+
+```typescript
+.subtitlesFromSrt('./narration.srt')
+.textProcessing({ builtins: true })
+.voiceover(provider)
+```
+
+The built-in rules handle:
+- Smart quotes (`"` `"` `'` `'`) -- removed
+- Guillemets (`<<` `>>`) -- removed
+- Em/en dashes (`--` `--`) -- replaced with commas
+- Ellipsis (`...`) -- replaced with `...`
+- Non-breaking spaces -- normalized
+
+The key insight: text processing writes to a separate `ttsText` field. Burnt-in subtitles still display the original text with proper typography, while the TTS engine receives clean text.
+
+For custom rules, see [Text Processing](/docs/pipeline/text-processing).
+
+## Complete example
+
+Here is a fully styled subtitle configuration:
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .subtitlesFromSrt('./narration.srt')
+  .textProcessing({ builtins: true })
+  .voiceover(OpenAIProvider({ voice: 'nova' }))
+  .render({
+    format: 'mp4',
+    resolution: '1080p',
+    burnSubtitles: true,
+    subtitleStyle: {
+      fontFamily: 'Arial',
+      fontSize: 48,
+      primaryColor: '#1a1a1a',
+      backgroundColor: '#FFFFFF',
+      backgroundOpacity: 0.75,
+      padding: 20,
+      bold: true,
+      position: 'bottom',
+      marginVertical: 50,
+      marginHorizontal: 100,
+      wrapStyle: 'smart',
+      chunkOptions: { maxCharsPerLine: 55 },
+    },
+  })
+  .toFile('demo.mp4')
+```
+
+## Next steps
+
+- [Adding Voiceover](/docs/guides/adding-voiceover) -- pair subtitles with TTS narration
+- [Speed Control](/docs/guides/speed-control) -- compress idle time for better subtitle pacing
+- [Subtitle Utilities](/docs/api-reference/subtitle-utilities) -- programmatic SRT/ASS manipulation
