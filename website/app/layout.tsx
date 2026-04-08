@@ -19,7 +19,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning className={inter.className}>
       <body className="overflow-x-hidden">
-        <RootProvider search={{ options: { type: 'static' } }}>
+        <RootProvider search={{ options: { type: 'static', api: '/playwright-recast/api/search' } }}>
           {children}
         </RootProvider>
       </body>
