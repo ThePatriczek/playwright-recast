@@ -26,7 +26,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: website
-        run: npm install
+        run: npm install --no-package-lock
 
       - name: Build
         working-directory: website
