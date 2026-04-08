@@ -33,7 +33,7 @@ const useCases: UseCase[] = [
 
 export function UseCases() {
   return (
-    <section className="relative border-t border-fd-border bg-fd-background px-6 py-24">
+    <section className="relative border-t border-fd-border bg-fd-background px-4 py-16 sm:px-6 sm:py-24">
       <div className="mx-auto max-w-5xl">
         <BlurFade delay={0.1}>
           <div className="mb-14 text-center">
@@ -46,7 +46,7 @@ export function UseCases() {
           </div>
         </BlurFade>
 
-        <div className="grid gap-6 sm:grid-cols-3">
+        <div className="grid gap-4 sm:gap-6 sm:grid-cols-3">
           {useCases.map((useCase, i) => (
             <BlurFade key={useCase.title} delay={0.1 + i * 0.08}>
               <div className="group flex h-full flex-col rounded-xl border border-fd-border bg-fd-card p-6 transition-all duration-200 hover:border-fd-primary/20 hover:shadow-lg hover:shadow-fd-primary/5">

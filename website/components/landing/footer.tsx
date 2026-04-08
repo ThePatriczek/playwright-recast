@@ -1,6 +1,6 @@
 export function Footer() {
   return (
-    <footer className="border-t border-fd-border px-6 py-12">
+    <footer className="border-t border-fd-border px-4 py-8 sm:px-6 sm:py-12">
       <div className="mx-auto flex max-w-5xl flex-col items-center gap-4 text-center">
         <span className="text-sm font-semibold text-fd-foreground">
           playwright-recast

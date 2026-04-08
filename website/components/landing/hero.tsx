@@ -26,14 +26,14 @@ function NpmInstallBadge() {
         setCopied(true)
         setTimeout(() => setCopied(false), 2000)
       }}
-      className="group mt-6 inline-flex cursor-pointer items-center gap-2 rounded-lg border border-fd-border bg-fd-card px-4 py-2 font-mono text-sm text-fd-muted-foreground transition-colors hover:border-fd-primary/30 hover:text-fd-foreground"
+      className="group mt-6 inline-flex max-w-full cursor-pointer items-center gap-2 rounded-lg border border-fd-border bg-fd-card px-3 py-2 font-mono text-xs text-fd-muted-foreground transition-colors hover:border-fd-primary/30 hover:text-fd-foreground sm:px-4 sm:text-sm"
     >
-      <span className="text-fd-primary">$</span>
-      {command}
+      <span className="shrink-0 text-fd-primary">$</span>
+      <span className="truncate">{command}</span>
       {copied ? (
-        <Check className="h-3.5 w-3.5 text-green-500" />
+        <Check className="h-3.5 w-3.5 shrink-0 text-green-500" />
       ) : (
-        <Copy className="h-3.5 w-3.5 opacity-0 transition-opacity group-hover:opacity-100" />
+        <Copy className="h-3.5 w-3.5 shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
       )}
     </button>
   )
@@ -77,7 +77,7 @@ await Recast
   const [copied, setCopied] = useState(false)
 
   return (
-    <div className="w-full max-w-2xl overflow-hidden rounded-xl border border-white/10 bg-slate-950 shadow-2xl shadow-indigo-500/10">
+    <div className="w-full max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-white/10 bg-slate-950 shadow-2xl shadow-indigo-500/10 sm:max-w-2xl">
       <div className="flex items-center justify-between border-b border-white/10 px-4 py-2.5">
         <div className="flex items-center gap-2">
           <div className="h-3 w-3 rounded-full bg-red-500/70" />
@@ -101,7 +101,7 @@ await Recast
           )}
         </button>
       </div>
-      <pre className="overflow-x-auto p-5 text-left text-[13px] leading-6">
+      <pre className="overflow-x-auto p-3 text-left text-[11px] leading-5 sm:p-5 sm:text-[13px] sm:leading-6">
         <code>
           {codeLines.map((line, li) => (
             <div key={li} className={line.length === 0 ? 'h-5' : undefined}>
@@ -120,7 +120,7 @@ await Recast
 
 export function Hero() {
   return (
-    <section className="relative flex min-h-[90vh] flex-col items-center justify-center overflow-hidden px-6 py-24">
+    <section className="relative flex min-h-[90vh] flex-col items-center justify-center overflow-hidden px-4 py-16 sm:px-6 sm:py-24">
       <Particles
         className="absolute inset-0 dark:opacity-100"
         quantity={60}
@@ -130,17 +130,17 @@ export function Hero() {
 
       <div className="relative z-10 mx-auto flex max-w-5xl flex-col items-center text-center">
         <BlurFade delay={0.1}>
-          <div className="mb-8 inline-flex items-center gap-2 rounded-full border border-fd-border bg-fd-card/80 px-4 py-1.5 text-sm text-fd-muted-foreground backdrop-blur-sm">
-            <span className="relative flex h-2 w-2">
+          <div className="mb-8 inline-flex items-center gap-2 rounded-full border border-fd-border bg-fd-card/80 px-3 py-1.5 text-xs backdrop-blur-sm sm:px-4 sm:text-sm text-fd-muted-foreground">
+            <span className="relative flex h-2 w-2 shrink-0">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
               <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500" />
             </span>
-            v0.12.0 — Single-phase recorder
+            <span className="truncate">v0.12.0 — Single-phase recorder</span>
           </div>
         </BlurFade>
 
         <BlurFade delay={0.2}>
-          <h1 className="bg-gradient-to-b from-fd-foreground to-fd-foreground/70 bg-clip-text text-5xl font-bold tracking-tight text-transparent sm:text-6xl lg:text-7xl">
+          <h1 className="bg-gradient-to-b from-fd-foreground to-fd-foreground/70 bg-clip-text text-3xl font-bold tracking-tight text-transparent sm:text-5xl lg:text-7xl">
             Playwright traces to
             <br />
             demo videos
@@ -148,7 +148,7 @@ export function Hero() {
         </BlurFade>
 
         <BlurFade delay={0.4}>
-          <p className="mx-auto mt-6 max-w-xl text-base leading-relaxed text-fd-muted-foreground sm:text-lg">
+          <p className="mx-auto mt-4 max-w-xl text-sm leading-relaxed text-fd-muted-foreground sm:mt-6 sm:text-base lg:text-lg">
             Your tests already capture everything.{' '}
             <span className="font-medium text-fd-foreground">playwright-recast</span>{' '}
             turns those artifacts into polished, narrated product videos
@@ -157,7 +157,7 @@ export function Hero() {
         </BlurFade>
 
         <BlurFade delay={0.6}>
-          <div className="mt-10 flex flex-col items-center gap-3 sm:flex-row">
+          <div className="mt-8 flex w-full flex-col items-center gap-3 sm:mt-10 sm:w-auto sm:flex-row">
             <Link href="/docs/getting-started/installation">
               <ShimmerButton
                 shimmerColor="#a78bfa"
