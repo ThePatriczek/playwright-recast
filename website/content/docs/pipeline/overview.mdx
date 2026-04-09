@@ -8,7 +8,7 @@ playwright-recast uses a fluent pipeline API where every processing step is a ch
 ## Pipeline architecture
 
 ```
-Trace.zip → parse() → hideSteps() → speedUp() → subtitles() → textProcessing() → voiceover() → render() → MP4
+Trace.zip → parse() → injectActions() → hideSteps() → speedUp() → subtitles() → textProcessing() → voiceover() → render() → MP4
 ```
 
 Each stage transforms the pipeline state and passes it to the next. The full processing flow:
@@ -16,6 +16,7 @@ Each stage transforms the pipeline state and passes it to the next. The full pro
 | Stage | Method | Description |
 |---|---|---|
 | **Parse** | `.parse()` | Extract actions, frames, network events, and cursor positions from trace.zip |
+| **Inject Actions** | `.injectActions(actions)` | Add synthetic actions from DOM tracking into the parsed trace (for `page.pause()` recordings) |
 | **Filter** | `.hideSteps(predicate)` | Remove setup/login steps from the output |
 | **Speed** | `.speedUp(config)` | Adjust playback speed based on activity type |
 | **Subtitles** | `.subtitles()` / `.subtitlesFromSrt()` / `.subtitlesFromTrace()` | Generate or import subtitle text |

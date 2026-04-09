@@ -1,0 +1,204 @@
+---
+title: MCP Server
+description: Use playwright-recast as an MCP server for AI-assisted demo video creation via Claude Code or other MCP clients.
+---
+
+## Overview
+
+playwright-recast ships an MCP (Model Context Protocol) server that exposes recording, analysis, and rendering as tools. Any MCP-compatible AI agent -- Claude Code, Claude Desktop, or other MCP clients -- can discover and call these tools to create demo videos through natural conversation.
+
+The key insight: the AI agent becomes the voiceover writer. Instead of templates or scripting, you describe what you want, the agent records a browser session, and you iterate on the voiceover text conversationally before rendering the final video.
+
+## Installation
+
+The MCP server binary is included with playwright-recast:
+
+```bash
+npm install playwright-recast
+```
+
+Run it directly:
+
+```bash
+npx recast-mcp
+```
+
+Or configure it in your MCP client (see [Configuration](#configuration) below).
+
+## Configuration
+
+### Environment variables
+
+The server reads configuration from environment variables. All are optional -- sensible defaults are used when not set.
+
+| Variable | Default | Description |
+|---|---|---|
+| `RECAST_WORK_DIR` | Current directory | Working directory for recordings |
+| `RECAST_RESOLUTION` | `4k` | Output resolution: `720p`, `1080p`, `1440p`, `4k` |
+| `RECAST_FPS` | `120` | Output frame rate |
+| `RECAST_TTS_VOICE` | `nova` (OpenAI) | Default TTS voice ID |
+| `RECAST_TTS_MODEL` | `gpt-4o-mini-tts` (OpenAI) | Default TTS model |
+| `RECAST_INTRO_PATH` | none | Path to intro video file (.mov/.mp4) to prepend |
+| `RECAST_OUTRO_PATH` | none | Path to outro video file (.mov/.mp4) to append |
+| `RECAST_CLICK_SOUND` | `true` | Enable click sound effects |
+| `RECAST_BACKGROUND_MUSIC` | none | Path to background music file (.mp3/.wav) |
+| `RECAST_BACKGROUND_MUSIC_VOLUME` | `0.15` | Background music volume (0.0--1.0) |
+| `OPENAI_API_KEY` | none | OpenAI API key for TTS voiceover |
+| `ELEVENLABS_API_KEY` | none | ElevenLabs API key for TTS voiceover |
+
+The TTS provider is auto-detected from available API keys. If `OPENAI_API_KEY` is set, OpenAI is used. If only `ELEVENLABS_API_KEY` is set, ElevenLabs is used. If neither is set, the server renders videos without voiceover.
+
+### Claude Code `.mcp.json`
+
+Add the server to your project or user MCP configuration:
+
+```json
+{
+  "mcpServers": {
+    "recast": {
+      "command": "npx",
+      "args": ["recast-mcp"],
+      "env": {
+        "OPENAI_API_KEY": "sk-...",
+        "RECAST_RESOLUTION": "4k",
+        "RECAST_INTRO_PATH": "./assets/intro.mov",
+        "RECAST_OUTRO_PATH": "./assets/outro.mov",
+        "RECAST_BACKGROUND_MUSIC": "./assets/bg-music.mp3"
+      }
+    }
+  }
+}
+```
+
+### Claude Desktop
+
+```json
+{
+  "mcpServers": {
+    "recast": {
+      "command": "npx",
+      "args": ["recast-mcp"],
+      "env": {
+        "OPENAI_API_KEY": "sk-..."
+      }
+    }
+  }
+}
+```
+
+## Workflow
+
+The typical workflow uses three tools in sequence:
+
+```
+record_session  -->  analyze_trace  -->  (edit voiceover)  -->  render_video
+```
+
+1. **Record** -- `record_session` opens a browser. You interact with the app and click Resume in the Playwright Inspector when done.
+2. **Analyze** -- `analyze_trace` parses the trace and returns structured steps with labels, timing, and auto-detected hidden steps.
+3. **Write voiceover** -- The agent proposes voiceover text for each visible step. You iterate conversationally.
+4. **Render** -- `render_video` takes the steps with voiceover text and produces the final video with subtitles, TTS audio, click effects, zoom, and cursor overlay.
+
+A fourth tool, `list_recordings`, lets you browse existing recordings in a directory.
+
+## Tools
+
+### record_session
+
+Opens a browser at a given URL for interactive recording. The user navigates the app, then clicks Resume in the Playwright Inspector when done. Returns trace metadata.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `url` | `string` | Yes | URL to open in the browser |
+| `outputDir` | `string` | No | Output directory (default: `.recast-studio/`) |
+| `viewportWidth` | `number` | No | Viewport width (default: 1920) |
+| `viewportHeight` | `number` | No | Viewport height (default: 1080) |
+| `ignoreHttpsErrors` | `boolean` | No | Ignore HTTPS certificate errors |
+| `loadStorage` | `string` | No | Path to Playwright storage state JSON for pre-loaded auth |
+
+Returns the trace directory path, trace file path, video path, action count, and recording duration.
+
+### analyze_trace
+
+Parses a Playwright trace and returns structured steps with action descriptions, timing, and hidden-step detection. The agent uses these steps to understand the recording and write voiceover text.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `traceDir` | `string` | Yes | Directory containing `trace.zip` (returned by `record_session`) |
+
+Returns metadata (action count, duration, viewport, URL) and an array of steps. Each step includes:
+
+- `id` -- unique step identifier (e.g., `step-1`)
+- `label` -- human-readable description (e.g., "Click Download button")
+- `hidden` -- whether the step was auto-detected as setup/login
+- `actions` -- raw actions in the step (method, selector, value)
+- `startTimeMs` / `endTimeMs` -- timing relative to trace start
+- `durationMs` -- step duration
+
+Hidden steps are auto-detected for login sequences, cookie consent dialogs, and initial navigation.
+
+### render_video
+
+Renders a polished demo video from a trace recording. Accepts the steps from `analyze_trace` with voiceover text and hidden flags filled in by the agent.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `traceDir` | `string` | Yes | Directory containing `trace.zip` |
+| `steps` | `array` | Yes | Steps with `id`, `hidden`, and optional `voiceover` text |
+| `settings` | `object` | No | Rendering configuration (see below) |
+
+Settings options:
+
+| Setting | Type | Default | Description |
+|---|---|---|---|
+| `ttsProvider` | `string` | From config | `openai`, `elevenlabs`, or `none` |
+| `voice` | `string` | From config | Voice ID (provider-specific) |
+| `model` | `string` | From config | TTS model name |
+| `speed` | `number` | `1.0` | TTS speech speed multiplier |
+| `format` | `string` | `mp4` | Output format: `mp4` or `webm` |
+| `resolution` | `string` | `4k` | `720p`, `1080p`, `1440p`, or `4k` |
+| `fps` | `number` | `120` | Output frame rate |
+| `burnSubtitles` | `boolean` | `true` | Burn subtitles into the video |
+| `cursorOverlay` | `boolean` | `true` | Add animated cursor overlay |
+| `clickEffect` | `boolean` | `true` | Add click ripple effects with sound |
+| `autoZoom` | `boolean` | `true` | Enable auto-zoom on user actions |
+| `textHighlight` | `boolean` | `true` | Enable text highlight overlays |
+| `introPath` | `string` | From config | Path to intro video to prepend |
+| `outroPath` | `string` | From config | Path to outro video to append |
+| `backgroundMusicPath` | `string` | From config | Path to background music file |
+| `backgroundMusicVolume` | `number` | `0.15` | Background music volume (0.0--1.0) |
+| `outputPath` | `string` | `<traceDir>/demo.mp4` | Output file path |
+
+Returns the output path, file size, step counts, and a summary of enabled features.
+
+### list_recordings
+
+Lists available trace recordings in a directory.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `dir` | `string` | No | Directory to scan (default: working directory) |
+
+Returns an array of recordings, each with the trace directory path and flags for whether video, SRT, and rendered output files exist.
+
+## Hidden steps
+
+When you mark steps as hidden (either through auto-detection or manually), the MCP server removes them from the final video entirely. Here is how it works:
+
+1. Hidden steps are converted to time ranges based on their trace timing.
+2. Adjacent hidden ranges with less than 2 seconds between them are merged. This prevents tiny visible gaps between consecutive hidden steps (e.g., a multi-step login flow).
+3. The merged ranges are assigned a speed of 9999x in the speed processor, which effectively produces zero frames for those periods.
+4. Visible ranges keep their normal 1x speed.
+
+The result is a clean cut -- hidden steps are not sped up or blurred, they are removed from the video completely.
+
+## DOM action tracking
+
+Playwright's `page.pause()` does not produce standard trace actions because user interactions happen outside the test runner. To compensate, the recorder uses DOM-level event tracking:
+
+1. **`page.exposeFunction('__recastReportAction', ...)`** -- Registers a bridge function that the page calls to report actions back to Node.js. This persists across page navigations.
+2. **`page.addInitScript(...)`** -- Injects event listeners for `click`, `input`, and `keydown` into every new document. Each event reports the action method, a selector, coordinates, and a timestamp through the bridge function.
+3. **`_recorded-actions.json`** -- When the recording ends, all tracked actions are written to this file in the output directory.
+4. **`pipeline.injectActions()`** -- During rendering, the MCP server reads `_recorded-actions.json`, aligns timestamps to the trace's monotonic timeline, filters out actions from hidden time ranges, and injects the remaining actions into the pipeline. These synthetic actions drive `clickEffect`, `autoZoom`, `cursorOverlay`, and `hideSteps` -- the same stages that work with standard trace actions.
+
+The selector resolution prioritizes ARIA attributes, `data-testid`, element IDs, `name` attributes, and visible text content, in that order.

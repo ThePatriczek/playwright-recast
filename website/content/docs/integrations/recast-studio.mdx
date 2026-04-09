@@ -14,9 +14,15 @@ Combined with the `studio-workflow` Claude Code skill, you can go from a browser
 1. Run `recast-studio <url>` -- a browser opens with the Playwright Inspector
 2. Interact with the page as you would in a demo
 3. Click "Resume" in the Inspector when done
-4. recast-studio saves `trace.zip` and `video.webm` to the output directory
+4. recast-studio saves `trace.zip`, `video.webm`, and `_recorded-actions.json` to the output directory
 
-The recording uses `page.pause()` inside a Playwright Test, so tracing and video capture happen automatically through the test runner.
+The recording uses `page.pause()` for trace and video capture. Since `page.pause()` interactions happen outside the Playwright test runner and do not produce standard trace actions, recast-studio uses DOM-level event tracking to capture user interactions.
+
+### DOM action tracking
+
+When the browser opens, recast-studio injects event listeners via `page.addInitScript()` and registers a bridge function via `page.exposeFunction('__recastReportAction', ...)`. Every click, input change, and key press in the page is reported back to Node.js through this bridge, which persists across page navigations.
+
+When recording ends, the tracked actions are saved to `_recorded-actions.json` in the output directory. During rendering, these actions are injected into the pipeline via `.injectActions()`, so downstream stages like `clickEffect`, `autoZoom`, `cursorOverlay`, and `hideSteps` work as if the actions came from a standard Playwright test.
 
 ## Installation
 
@@ -80,8 +86,9 @@ After recording, the output directory contains:
 
 | File | Description |
 |------|-------------|
-| `trace.zip` | Playwright trace with actions, screenshots, network, and cursor data |
+| `trace.zip` | Playwright trace with screenshots, snapshots, and screencast frames |
 | `video.webm` | Raw screen recording from the browser |
+| `_recorded-actions.json` | DOM-tracked user actions (clicks, fills, key presses) with selectors, coordinates, and timestamps |
 
 Previous artifacts in the output directory are automatically cleaned before each recording.
 

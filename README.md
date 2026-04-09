@@ -55,6 +55,7 @@ await Recast
 - **Step helpers** — `narrate()`, `zoom()`, `pace()` — importable helpers for Playwright step definitions.
 - **Background music** — Add background music with auto-ducking during voiceover, looping, and fade-out. Covers intro/outro.
 - **Intro/outro** — Prepend/append branded video clips with smooth crossfade transitions. Audio preserved.
+- **MCP server** — AI-assisted video creation via Model Context Protocol. Record, analyze, and render through any MCP-compatible client (Claude Code, etc.).
 - **recast-studio** — Record browser sessions via Playwright Codegen, then generate videos with a Claude Code skill. No code required.
 - **CLI included** — `npx playwright-recast -i trace.zip -o demo.mp4` — no code needed.
 - **Zero lock-in** — Every stage is optional. Use just the trace parser, just the subtitle generator, or the full pipeline.
@@ -189,6 +190,7 @@ Every stage is optional and composable:
 | Stage | Description |
 |-------|-------------|
 | `.parse()` | Parse Playwright trace.zip into structured data (actions, frames, network, cursor) |
+| `.injectActions(actions)` | Inject synthetic actions into a parsed trace (e.g., DOM-tracked actions from `page.pause()` recordings) |
 | `.hideSteps(predicate)` | Remove steps from the output (e.g., login, setup) |
 | `.speedUp(config)` | Adjust video speed based on activity (idle, action, network) |
 | `.subtitles(textFn)` | Generate subtitles from trace actions |
@@ -513,6 +515,60 @@ await base.subtitlesFromSrt('./en.srt').voiceover(openai).render().toFile('demo-
 // Branch B: subtitles only
 await base.subtitlesFromSrt('./cs.srt').render({ burnSubtitles: true }).toFile('demo-cs.mp4')
 ```
+
+---
+
+## MCP Server
+
+playwright-recast includes an MCP (Model Context Protocol) server for AI-assisted video creation. Any MCP-compatible client (Claude Code, Cursor, etc.) can record browser sessions, analyze traces, and render polished videos through a conversational workflow.
+
+**Typical workflow:** `record_session` --> `analyze_trace` --> (edit voiceover text) --> `render_video`
+
+### Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `record_session` | Opens a browser at a URL for interactive recording. Returns trace metadata. |
+| `analyze_trace` | Parses a trace and returns structured steps with timing and auto-detected hidden steps. |
+| `list_recordings` | Lists available trace recordings in a directory. |
+| `render_video` | Renders a polished video from steps with voiceover text, hidden flags, and full pipeline configuration. |
+
+### Configuration
+
+Add to your project's `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "recast": {
+      "command": "npx",
+      "args": ["-y", "-p", "playwright-recast", "recast-mcp"],
+      "env": {
+        "OPENAI_API_KEY": "sk-...",
+        "RECAST_RESOLUTION": "1080p",
+        "RECAST_WORK_DIR": "."
+      }
+    }
+  }
+}
+```
+
+**Environment variables:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OPENAI_API_KEY` | — | OpenAI API key (enables OpenAI TTS) |
+| `ELEVENLABS_API_KEY` | — | ElevenLabs API key (enables ElevenLabs TTS) |
+| `RECAST_TTS_PROVIDER` | auto-detected | Force `openai`, `elevenlabs`, or `none` |
+| `RECAST_TTS_VOICE` | `nova` / `3HdFueVb2f3yUQzeEpyz` | Default voice ID (provider-specific) |
+| `RECAST_RESOLUTION` | `4k` | Output resolution: `720p`, `1080p`, `1440p`, `4k` |
+| `RECAST_FPS` | `120` | Output FPS |
+| `RECAST_WORK_DIR` | `.` | Working directory for recordings |
+| `RECAST_INTRO_PATH` | — | Default intro video path |
+| `RECAST_OUTRO_PATH` | — | Default outro video path |
+| `RECAST_BACKGROUND_MUSIC` | — | Default background music path |
+
+TTS provider is auto-detected from available API keys when `RECAST_TTS_PROVIDER` is not set.
 
 ---
 
