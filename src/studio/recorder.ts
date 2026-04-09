@@ -1,7 +1,7 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { spawn } from 'node:child_process'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { RecordOptions, RecordingResult } from './types.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -36,7 +36,7 @@ export async function record(
   const vh = options.viewport.height
 
   // Dynamic import of playwright API
-  const pw = await import(path.join(packageRoot, 'node_modules', 'playwright', 'index.mjs'))
+  const pw = await import(pathToFileURL(path.join(packageRoot, 'node_modules', 'playwright', 'index.mjs')).href)
 
   const browser = await pw.chromium.launch({ headless: false })
 

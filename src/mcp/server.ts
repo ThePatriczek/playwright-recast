@@ -10,7 +10,7 @@ import { registerListRecordings } from './tools/list-recordings.js'
 const config = loadConfig()
 
 const server = new McpServer(
-  { name: 'playwright-recast', version: '0.13.0' },
+  { name: 'playwright-recast', version: '0.13.1' },
   {
     instructions: [
       'This server creates demo videos from browser recordings.',
