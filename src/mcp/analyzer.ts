@@ -197,7 +197,8 @@ function sanitizeSelector(selector: string): string {
   return match?.[1] ?? ''
 }
 
-function extractQuotedText(title: string): string | undefined {
+function extractQuotedText(title: string | undefined): string | undefined {
+  if (!title) return undefined
   const match = title.match(/"([^"]+)"/)
   return match?.[1]
 }
@@ -467,7 +468,8 @@ export async function analyzeTrace(
   // Dynamic import to keep groupActions unit-testable without trace files
   const { parseTrace } = await import('../parse/trace-parser.js')
 
-  const parsed: ParsedTrace = await parseTrace(traceDir)
+  const tracePath = traceDir.endsWith('.zip') ? traceDir : `${traceDir}/trace.zip`
+  const parsed: ParsedTrace = await parseTrace(tracePath)
   const { metadata, actions, frames, frameReader } = parsed
 
   // Convert TraceAction[] → RawAction[]
@@ -477,7 +479,7 @@ export async function analyzeTrace(
     params: a.params,
     startTime: a.startTime as number,
     endTime: a.endTime as number,
-    title: a.title,
+    title: a.title ?? '',
     annotations: a.annotations?.map((ann) => ({
       type: ann.type,
       description: ann.description,
