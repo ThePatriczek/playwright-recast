@@ -1509,7 +1509,7 @@ Create `.mcp.json` at plugin root:
   "mcpServers": {
     "recast": {
       "command": "npx",
-      "args": ["recast-mcp"],
+      "args": ["-y", "-p", "playwright-recast", "recast-mcp"],
       "env": {
         "RECAST_WORK_DIR": "."
       }

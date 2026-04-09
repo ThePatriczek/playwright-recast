@@ -20,7 +20,7 @@ npm install playwright-recast
 Run it directly:
 
 ```bash
-npx recast-mcp
+npx -y -p playwright-recast recast-mcp
 ```
 
 Or configure it in your MCP client (see [Configuration](#configuration) below).
@@ -57,7 +57,7 @@ Add the server to your project or user MCP configuration:
   "mcpServers": {
     "recast": {
       "command": "npx",
-      "args": ["recast-mcp"],
+      "args": ["-y", "-p", "playwright-recast", "recast-mcp"],
       "env": {
         "OPENAI_API_KEY": "sk-...",
         "RECAST_RESOLUTION": "4k",
@@ -77,7 +77,7 @@ Add the server to your project or user MCP configuration:
   "mcpServers": {
     "recast": {
       "command": "npx",
-      "args": ["recast-mcp"],
+      "args": ["-y", "-p", "playwright-recast", "recast-mcp"],
       "env": {
         "OPENAI_API_KEY": "sk-..."
       }

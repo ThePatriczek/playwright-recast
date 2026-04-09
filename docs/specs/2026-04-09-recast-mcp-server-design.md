@@ -333,7 +333,7 @@ Users configure the MCP server in their AI agent's settings:
   "mcpServers": {
     "recast": {
       "command": "npx",
-      "args": ["recast-mcp"],
+      "args": ["-y", "-p", "playwright-recast", "recast-mcp"],
       "env": {
         "OPENAI_API_KEY": "sk-...",
         "ELEVENLABS_API_KEY": "..."
@@ -350,7 +350,7 @@ Users configure the MCP server in their AI agent's settings:
   "mcpServers": {
     "recast": {
       "command": "npx",
-      "args": ["recast-mcp"],
+      "args": ["-y", "-p", "playwright-recast", "recast-mcp"],
       "env": {
         "OPENAI_API_KEY": "sk-..."
       }
