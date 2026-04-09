@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.13.1 (2026-04-09)
+
+### Bug fixes
+
+- **Windows ESM import error** — Dynamic `import()` of Playwright module failed on Windows because `path.join()` produces `C:\...` paths which are not valid ESM import specifiers. Fixed with `pathToFileURL()` conversion.
+- **npx package resolution** — `npx recast-mcp` downloaded the wrong npm package (`recast-mcp@0.2.0`, a social media tool). All docs and configs updated to `npx -y -p playwright-recast recast-mcp`.
+
 ## 0.13.0 (2026-04-09)
 
 ### Features
