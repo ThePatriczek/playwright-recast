@@ -2,7 +2,7 @@
   "mcpServers": {
     "recast": {
       "command": "npx",
-      "args": ["recast-mcp"],
+      "args": ["-y", "-p", "playwright-recast", "recast-mcp"],
       "env": {
         "RECAST_WORK_DIR": ".",
         "RECAST_TTS_VOICE": "3HdFueVb2f3yUQzeEpyz",
