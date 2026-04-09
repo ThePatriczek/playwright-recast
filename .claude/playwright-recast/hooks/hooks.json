@@ -1,0 +1,37 @@
+{
+  "description": "Workflow guidance hooks for playwright-recast demo video creation",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "mcp__recast__record_session",
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "Recording complete. Now call analyze_trace with the returned traceDir to detect steps and generate labels. After analysis, write voiceover text for each visible step using marketing tone: focus on client value, not UI mechanics."
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__recast__analyze_trace",
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "Trace analyzed. Now write voiceover text for each visible step. Guidelines:\n- Focus on client value (what it saves, simplifies, speeds up), NOT UI descriptions\n- Never say 'the user clicks' — say what the action achieves\n- Keep each step to 1-2 sentences, short-medium length\n- Use professional, natural tone suitable for TTS\n- First step: hook the viewer (name the problem being solved)\n- Last step: soft call to action\n- Present all steps to the user for review before calling render_video"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "mcp__recast__render_video",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/pre-render-validate.js",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

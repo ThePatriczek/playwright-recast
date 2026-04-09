@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "recast": {
+      "command": "npx",
+      "args": ["recast-mcp"],
+      "env": {
+        "RECAST_WORK_DIR": "."
+      }
+    }
+  }
+}

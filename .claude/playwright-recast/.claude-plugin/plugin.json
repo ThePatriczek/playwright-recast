@@ -20,5 +20,7 @@
     "license": "MIT",
     "commands": [],
     "agents": [],
-    "skills": "./skills"
+    "skills": "./skills",
+    "hooks": "./hooks/hooks.json",
+    "mcpServers": "./.mcp.json"
 }
