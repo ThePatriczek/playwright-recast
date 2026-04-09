@@ -26,7 +26,8 @@
   "types": "./dist/index.d.ts",
   "bin": {
     "playwright-recast": "./dist/cli.js",
-    "recast-studio": "./dist/studio/cli.js"
+    "recast-studio": "./dist/studio/cli.js",
+    "recast-mcp": "./dist/mcp/server.js"
   },
   "exports": {
     ".": {
@@ -48,6 +49,10 @@
     "./studio": {
       "types": "./dist/studio/types.d.ts",
       "default": "./dist/studio/recorder.js"
+    },
+    "./mcp": {
+      "types": "./dist/mcp/server.d.ts",
+      "default": "./dist/mcp/server.js"
     }
   },
   "files": [
@@ -63,12 +68,14 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "fflate": "^0.8.2"
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "fflate": "^0.8.2",
+    "zod": "^4.3.6"
   },
   "peerDependencies": {
+    "@elevenlabs/elevenlabs-js": ">=2.0.0",
     "@playwright/test": ">=1.40.0",
-    "openai": ">=5.0.0",
-    "@elevenlabs/elevenlabs-js": ">=2.0.0"
+    "openai": ">=5.0.0"
   },
   "peerDependenciesMeta": {
     "@playwright/test": {
