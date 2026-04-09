@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "recast": {
+      "command": "node",
+      "args": ["./dist/mcp/server.js"],
+      "env": {
+        "RECAST_WORK_DIR": ".",
+        "RECAST_RESOLUTION": "1080p"
+      }
+    }
+  }
+}
