@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ParsedTrace } from '../types/trace.js'
 
@@ -34,7 +34,6 @@ export interface AnalyzedStep {
   startTimeMs: number
   endTimeMs: number
   durationMs: number
-  thumbnailSha1?: string
 }
 
 /** Full analysis result returned by analyzeTrace. */
@@ -486,38 +485,45 @@ export async function analyzeTrace(
     })),
   }))
 
-  const steps = groupActions(rawActions)
+  let steps = groupActions(rawActions)
 
-  // Extract thumbnail JPEGs: for each step, find closest screencast frame
-  // to startTime + 500ms and save to <traceDir>/thumbnails/<stepId>.jpg
-  const thumbDir = join(traceDir, '..', 'thumbnails')
-  if (steps.length > 0 && frames.length > 0) {
-    if (!existsSync(thumbDir)) {
-      mkdirSync(thumbDir, { recursive: true })
-    }
+  // If trace has no user-facing steps (e.g., recording via page.pause()),
+  // fall back to DOM-tracked actions from _recorded-actions.json
+  const traceDirResolved = traceDir.endsWith('.zip')
+    ? join(traceDir, '..')
+    : traceDir
+  const recordedActionsPath = join(traceDirResolved, '_recorded-actions.json')
+  const userFacingSteps = steps.filter((s) => !s.hidden)
+  if (userFacingSteps.length <= 1 && existsSync(recordedActionsPath)) {
+    try {
+      const recorded: Array<{
+        method: string
+        selector: string
+        value?: string
+        timestamp: number
+      }> = JSON.parse(readFileSync(recordedActionsPath, 'utf-8'))
 
-    for (const step of steps) {
-      const targetTime = step.startTimeMs + 500
-      let closest = frames[0]
-      let closestDelta = Math.abs((closest.timestamp as number) - targetTime)
-
-      for (const frame of frames) {
-        const delta = Math.abs((frame.timestamp as number) - targetTime)
-        if (delta < closestDelta) {
-          closest = frame
-          closestDelta = delta
-        }
+      if (recorded.length > 0) {
+        const baseTime = recorded[0]!.timestamp
+        const syntheticActions: RawAction[] = recorded.map((r, i) => ({
+          callId: `recorded-${i}`,
+          method: r.method,
+          params: {
+            selector: r.selector,
+            ...(r.value != null ? { value: r.value } : {}),
+            ...(r.method === 'goto' ? { url: r.value ?? '' } : {}),
+          },
+          startTime: r.timestamp - baseTime,
+          endTime: r.timestamp - baseTime + 100,
+          title: '',
+        }))
+        steps = groupActions(syntheticActions)
       }
-
-      step.thumbnailSha1 = closest.sha1
-      try {
-        const buf = await frameReader.readFrame(closest.sha1)
-        writeFileSync(join(thumbDir, `${step.id}.jpg`), buf)
-      } catch {
-        // Frame might not be available — skip thumbnail
-      }
+    } catch {
+      // Non-critical — use original steps
     }
   }
+
 
   // Determine initial URL from first goto action
   const firstGoto = rawActions.find((a) => a.method === 'goto')

@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.13.0 (2026-04-09)
+
+### Features
+
+- **MCP server: recording-first workflow** — Complete recording → analyze → render pipeline via MCP tools. Record a browser session with `record_session`, analyze with `analyze_trace`, write voiceover, and render with `render_video`.
+- **DOM action tracking** — Recorder captures user interactions (click, fill, press, goto) via `page.exposeFunction()` during `page.pause()` sessions. Actions include click coordinates for visual effects. Saved to `_recorded-actions.json`.
+- **Pipeline `injectActions()` stage** — New pipeline method to merge DOM-tracked synthetic actions into the parsed trace. Enables clickEffect, cursorOverlay, and autoZoom for recording-first workflows where trace doesn't contain user-facing actions.
+- **Hidden step cutting** — Hidden steps are completely cut from the output video (not just sped up). Uses explicit speed segments with 9999x for hidden periods + merge of adjacent hidden ranges within 2s to eliminate gaps. Login flows with credentials are fully removed.
+- **MCP env configuration** — All rendering defaults configurable via environment variables: `RECAST_RESOLUTION`, `RECAST_FPS`, `RECAST_INTRO_PATH`, `RECAST_OUTRO_PATH`, `RECAST_CLICK_SOUND`, `RECAST_BACKGROUND_MUSIC`, `RECAST_BACKGROUND_MUSIC_VOLUME`, `RECAST_TTS_VOICE`, `RECAST_TTS_MODEL`.
+- **Background music support in MCP** — `render_video` now supports background music with auto-ducking during voiceover. Configurable via settings or env vars.
+- **Intro/outro from config** — Default intro/outro video paths loaded from MCP env config, no need to pass in every render call.
+- **Resolution-aware subtitle styling** — Subtitle font size, padding, margins scale automatically based on output resolution (4k/1440p/1080p/720p).
+
+### Breaking Changes
+
+- **Removed `get_step_thumbnail` MCP tool** — Thumbnails from trace screencast frames were unreliable with `page.pause()` recordings. Removed tool and thumbnail generation from analyzer.
+- **Default resolution changed to 4k** — Was 1080p, now 4k with 120fps by default.
+- **Default ElevenLabs voice changed** — Hardcoded fallback voice ID updated to `3HdFueVb2f3yUQzeEpyz`.
+
+### Bug fixes
+
+- **MCP recorder stdio corruption** — Changed from `spawnSync` with `stdio: 'inherit'` to async `spawn` with piped stdio. Prevents JSON-RPC protocol corruption when running from MCP server.
+- **Module resolution in recorder** — Playwright binaries resolved from `packageRoot/node_modules/.bin/` with `NODE_PATH` set, fixing `Cannot find module '@playwright/test'` errors.
+- **Hidden steps not applied** — Fixed timestamp alignment between DOM-tracked actions and trace monotonic time. Speed segments now use 0-based relative timestamps matching speed processor's baseline convention.
+- **Renderer skipping speed processing** — Fixed: renderer's `hasSpeed` check requires at least one non-1x segment. Hidden ranges now use 9999x speed to trigger processing.
+- **Login visible in output** — Fixed: adjacent hidden ranges merged (2s tolerance) to prevent tiny visible gaps between login steps. Synthetic actions from hidden periods filtered before injection.
+- **Click sounds from hidden actions** — Fixed: only visible-period DOM actions are injected into pipeline, preventing click effects during intro/hidden periods.
+- **Hook matcher names** — Plugin hooks updated from `mcp__recast__*` to `mcp__plugin_playwright-recast_recast__*` to match Claude Code's tool naming convention.
+- **Analyze hook blocking agent** — PostToolUse hook prompt rewritten to never block continuation.
+
 ## 0.12.0 (2026-04-08)
 
 ### Breaking Changes

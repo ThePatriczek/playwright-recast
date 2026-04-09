@@ -58,12 +58,14 @@ Track which action indices belong to each step and whether it's hidden.
 
 For each visible step, write 1-2 sentences of voiceover text. Follow the script-writer skill guidelines:
 
+- **Narrative arc** — always follow: Hook (problem) → Solution/Walkthrough → Result
 - **Marketing tone** — benefit-focused, professional, concise
 - **Language** — infer from the UI language, user's instructions, or conversation context
 - Never describe mechanical clicks — describe what the user ACHIEVES
 - Never mention credentials or passwords
 - Each sentence should be natural for TTS (ElevenLabs)
-- First visible step = hook (why should the viewer care?)
+- First visible step = hook (name the problem being solved)
+- Middle steps = solution/walkthrough (what each action achieves for the user)
 - Last visible step = result + soft CTA
 
 ### Step 4: Generate SRT file

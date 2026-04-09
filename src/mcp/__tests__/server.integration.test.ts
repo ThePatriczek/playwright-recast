@@ -12,7 +12,7 @@ describe('MCP server integration', () => {
     execSync('npm run build', { cwd: ROOT, stdio: 'pipe' })
   })
 
-  it('lists all 5 tools via MCP protocol', async () => {
+  it('lists all 4 tools via MCP protocol', async () => {
     const transport = new StdioClientTransport({
       command: 'node',
       args: [SERVER_PATH],
@@ -28,7 +28,6 @@ describe('MCP server integration', () => {
 
     expect(toolNames).toEqual([
       'analyze_trace',
-      'get_step_thumbnail',
       'list_recordings',
       'record_session',
       'render_video',

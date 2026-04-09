@@ -4,7 +4,11 @@
       "command": "npx",
       "args": ["recast-mcp"],
       "env": {
-        "RECAST_WORK_DIR": "."
+        "RECAST_WORK_DIR": ".",
+        "RECAST_TTS_VOICE": "3HdFueVb2f3yUQzeEpyz",
+        "RECAST_RESOLUTION": "4k",
+        "RECAST_FPS": "120",
+        "RECAST_CLICK_SOUND": "true"
       }
     }
   }

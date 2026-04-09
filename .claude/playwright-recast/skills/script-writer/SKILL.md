@@ -93,8 +93,9 @@ Every script follows this 4-part arc:
 - **Language:** Match the user's language or explicit request
 - **Tone:** Professional, smart, clear, no hype
 - **Audience:** Determined by context (corporate, legal, sales, technical)
-- **Sentences:** Short to medium, varied rhythm
+- **Sentences:** Short to medium, varied rhythm. 1-2 sentences per step.
 - **No filler:** Every sentence earns its place
+- **Narrative arc:** Always follow Hook → Solution/Walkthrough → Result structure across visible steps
 - **No meta:** Never write "the user clicks", "we see on screen" — describe what it *means*
 - **No lists, headings, or quotes** inside the voiceover text
 - **Merge rapid steps** into a single fluid sentence

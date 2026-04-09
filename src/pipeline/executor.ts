@@ -252,6 +252,30 @@ export class PipelineExecutor {
           break
         }
 
+        case 'injectActions': {
+          if (!state.parsed) throw new Error('injectActions() requires parse() first')
+          // Merge synthetic actions into the parsed trace
+          state.parsed = {
+            ...state.parsed,
+            actions: [...state.parsed.actions, ...stage.actions]
+              .sort((a, b) => (a.startTime as number) - (b.startTime as number)),
+            cursorPositions: [
+              ...state.parsed.cursorPositions,
+              ...stage.actions
+                .filter((a) => a.point)
+                .map((a) => a.point!),
+            ].sort((a, b) => (a.timestamp as number) - (b.timestamp as number)),
+          }
+          // Re-create filtered with merged actions
+          state.filtered = {
+            ...state.parsed,
+            originalActions: state.parsed.actions,
+            hiddenRanges: [],
+          }
+          console.log(`  injectActions: ${stage.actions.length} synthetic actions merged (total: ${state.parsed.actions.length})`)
+          break
+        }
+
         case 'hideSteps': {
           if (!state.parsed) throw new Error('hideSteps() requires parse() first')
           state.filtered = filterSteps(state.parsed, stage.predicate)

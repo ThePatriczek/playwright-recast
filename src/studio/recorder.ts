@@ -1,14 +1,22 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
-import { spawnSync } from 'node:child_process'
+import { spawn } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import type { RecordOptions, RecordingResult } from './types.js'
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const packageRoot = path.resolve(__dirname, '..', '..')
+
 /**
- * Record a browser session with tracing + video in a single phase.
+ * Record a browser session with tracing + video + DOM action tracking.
  *
- * Launches Playwright Test with page.pause() which opens the Inspector.
- * User interacts, clicks "Resume" when done → trace + video are saved
- * by the test runner automatically.
+ * Uses Playwright Test with page.pause() for trace/video capture,
+ * plus an injected DOM tracking script that reports user interactions
+ * (click, fill, press) back to Node.js via page.exposeFunction().
+ *
+ * The DOM-tracked actions are saved to _recorded-actions.json and can be
+ * injected into the pipeline via injectActions() for hideSteps, clickEffect,
+ * autoZoom, and cursorOverlay.
  */
 export async function record(
   url: string,
@@ -19,106 +27,178 @@ export async function record(
 
   // Clean up artifacts from previous runs
   for (const f of fs.readdirSync(outputDir)) {
-    if (f.endsWith('.webm') || f === 'trace.zip') {
+    if (f.endsWith('.webm') || f === 'trace.zip' || f === '_recorded-actions.json') {
       fs.unlinkSync(path.join(outputDir, f))
     }
   }
 
   const vw = options.viewport.width
   const vh = options.viewport.height
-  const storageLine = options.loadStorage
-    ? `  storageState: ${JSON.stringify(path.resolve(options.loadStorage))},`
-    : ''
 
-  // Generate a test that opens the Inspector for interactive recording
-  const testPath = path.join(outputDir, '_recording-session.ts')
-  fs.writeFileSync(testPath, `import { test } from '@playwright/test'
-test.use({
-  viewport: { width: ${vw}, height: ${vh} },
-  ignoreHTTPSErrors: ${options.ignoreHttpsErrors},
-${storageLine}
-})
-test('recording', async ({ page }) => {
-  await page.goto(${JSON.stringify(url)}, { timeout: 60_000, waitUntil: 'domcontentloaded' })
-  await page.pause()
-})
-`)
+  // Dynamic import of playwright API
+  const pw = await import(path.join(packageRoot, 'node_modules', 'playwright', 'index.mjs'))
 
-  const configPath = path.join(outputDir, '_recording-config.ts')
-  fs.writeFileSync(configPath, `import { defineConfig } from '@playwright/test'
-export default defineConfig({
-  testDir: ${JSON.stringify(outputDir)},
-  outputDir: ${JSON.stringify(path.join(outputDir, 'test-results'))},
-  testMatch: '_recording-session.ts',
-  timeout: 0,
-  reporter: 'list',
-  use: {
-    trace: 'on',
-    video: {
-      mode: 'on',
-      size: { width: ${vw}, height: ${vh} },
+  const browser = await pw.chromium.launch({ headless: false })
+
+  const context = await browser.newContext({
+    viewport: { width: vw, height: vh },
+    ignoreHTTPSErrors: options.ignoreHttpsErrors,
+    recordVideo: {
+      dir: outputDir,
+      size: { width: vw, height: vh },
     },
-    launchOptions: { headless: false },
-  },
-})
-`)
+    ...(options.loadStorage
+      ? { storageState: path.resolve(options.loadStorage) }
+      : {}),
+  })
+
+  // Start tracing (captures screencast frames)
+  await context.tracing.start({ screenshots: true, snapshots: true })
+
+  const page = await context.newPage()
+
+  // Accumulate actions on Node.js side (survives page navigations)
+  const trackedActions: Array<{
+    method: string
+    selector: string
+    value?: string
+    x?: number
+    y?: number
+    timestamp: number
+  }> = []
+
+  // Expose a function that the page calls to report actions.
+  // This persists across navigations — the bridge stays alive.
+  await page.exposeFunction('__recastReportAction', (action: typeof trackedActions[number]) => {
+    trackedActions.push(action)
+  })
+
+  // Inject event listeners. addInitScript runs on every new document,
+  // but __recastReportAction sends data to Node.js so nothing is lost.
+  await page.addInitScript(() => {
+    function getSelector(el: Element): string {
+      const role = el.getAttribute('role')
+      const ariaLabel = el.getAttribute('aria-label')
+      if (role && ariaLabel) return `[role="${role}"][aria-label="${ariaLabel}"]`
+
+      const testId = el.getAttribute('data-testid')
+      if (testId) return `[data-testid="${testId}"]`
+
+      if (el.id) return `#${el.id}`
+
+      const name = el.getAttribute('name')
+      if (name) return `[name="${name}"]`
+
+      const text = el.textContent?.trim().substring(0, 30)
+      if (text) return `${el.tagName.toLowerCase()}:has-text("${text}")`
+
+      return el.tagName.toLowerCase()
+    }
+
+    document.addEventListener('click', (e) => {
+      const target = e.target as Element
+      ;(window as any).__recastReportAction({
+        method: 'click',
+        selector: getSelector(target),
+        x: e.clientX,
+        y: e.clientY,
+        timestamp: Date.now(),
+      })
+    }, true)
+
+    document.addEventListener('input', (e) => {
+      const target = e.target as HTMLInputElement
+      ;(window as any).__recastReportAction({
+        method: 'fill',
+        selector: getSelector(target),
+        value: target.type === 'password' ? '***' : target.value,
+        timestamp: Date.now(),
+      })
+    }, true)
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === 'Tab' || e.key === 'Escape') {
+        const target = e.target as Element
+        ;(window as any).__recastReportAction({
+          method: 'press',
+          selector: getSelector(target),
+          value: e.key,
+          timestamp: Date.now(),
+        })
+      }
+    }, true)
+  })
+
+  // Track navigations
+  page.on('framenavigated', (frame: any) => {
+    if (frame === page.mainFrame()) {
+      trackedActions.push({
+        method: 'goto',
+        selector: '',
+        value: frame.url(),
+        timestamp: Date.now(),
+      })
+    }
+  })
 
   try {
-    spawnSync('npx', ['playwright', 'test', '--config', configPath], {
-      stdio: 'inherit',
-      cwd: outputDir,
-    })
-
-    // Collect trace + video from test-results/
-    const testResultsDir = path.join(outputDir, 'test-results')
-    if (fs.existsSync(testResultsDir)) {
-      collectArtifacts(testResultsDir, outputDir)
-      fs.rmSync(testResultsDir, { recursive: true, force: true })
-    }
-  } finally {
-    for (const f of [testPath, configPath]) {
-      if (fs.existsSync(f)) fs.unlinkSync(f)
-    }
+    await page.goto(url, { timeout: 60_000, waitUntil: 'domcontentloaded' })
+  } catch {
+    // Navigation may fail (e.g., redirects), continue anyway
   }
 
+  // Open Inspector — user interacts and clicks Resume when done
+  await page.pause()
+
+  // Stop tracing and save
   const tracePath = path.join(outputDir, 'trace.zip')
-  const videoPath = path.join(outputDir, 'video.webm')
+  await context.tracing.stop({ path: tracePath })
+
+  // Get video path before closing
+  const video = page.video()
+  const videoPath = video ? await video.path() : ''
+
+  await context.close()
+  await browser.close()
+
+  // Rename video to standard name
+  const finalVideoPath = path.join(outputDir, 'video.webm')
+  if (videoPath && fs.existsSync(videoPath) && videoPath !== finalVideoPath) {
+    fs.renameSync(videoPath, finalVideoPath)
+  }
+
+  // Save tracked actions
+  if (trackedActions.length > 0) {
+    fs.writeFileSync(
+      path.join(outputDir, '_recorded-actions.json'),
+      JSON.stringify(trackedActions, null, 2),
+    )
+  }
 
   // Parse trace for stats
-  let actionCount = 0
+  let actionCount = trackedActions.length
   let durationMs = 0
   if (fs.existsSync(tracePath)) {
     try {
       const { parseTrace } = await import('../parse/trace-parser.js')
       const trace = await parseTrace(tracePath)
-      actionCount = trace.actions.length
+      if (trace.actions.length > actionCount) {
+        actionCount = trace.actions.length
+      }
       durationMs = (trace.metadata.endTime as number) - (trace.metadata.startTime as number)
       trace.frameReader.dispose()
     } catch {
-      // Non-critical
+      if (trackedActions.length > 1) {
+        durationMs = trackedActions[trackedActions.length - 1]!.timestamp - trackedActions[0]!.timestamp
+      }
     }
   }
 
   return {
     outputDir,
     tracePath,
-    videoPath: fs.existsSync(videoPath) ? videoPath : '',
+    videoPath: fs.existsSync(finalVideoPath) ? finalVideoPath : '',
     actionCount,
     durationMs,
-  }
-}
-
-function collectArtifacts(testResultsDir: string, outputDir: string): void {
-  for (const entry of fs.readdirSync(testResultsDir, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue
-    const subdir = path.join(testResultsDir, entry.name)
-    for (const file of fs.readdirSync(subdir)) {
-      const src = path.join(subdir, file)
-      if (file === 'trace.zip') {
-        fs.copyFileSync(src, path.join(outputDir, 'trace.zip'))
-      } else if (file.endsWith('.webm')) {
-        fs.copyFileSync(src, path.join(outputDir, 'video.webm'))
-      }
-    }
   }
 }

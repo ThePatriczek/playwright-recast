@@ -4,14 +4,13 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { loadConfig } from './config.js'
 import { registerRecordSession } from './tools/record-session.js'
 import { registerAnalyzeTrace } from './tools/analyze-trace.js'
-import { registerGetThumbnail } from './tools/get-thumbnail.js'
 import { registerRenderVideo } from './tools/render-video.js'
 import { registerListRecordings } from './tools/list-recordings.js'
 
 const config = loadConfig()
 
 const server = new McpServer(
-  { name: 'playwright-recast', version: '0.12.0' },
+  { name: 'playwright-recast', version: '0.13.0' },
   {
     instructions: [
       'This server creates demo videos from browser recordings.',
@@ -27,7 +26,6 @@ const server = new McpServer(
 
 registerRecordSession(server, config)
 registerAnalyzeTrace(server, config)
-registerGetThumbnail(server, config)
 registerRenderVideo(server, config)
 registerListRecordings(server, config)
 

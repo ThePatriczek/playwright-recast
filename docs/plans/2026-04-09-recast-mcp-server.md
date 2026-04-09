@@ -1492,6 +1492,162 @@ git commit -m "chore(mcp): add local MCP config for testing"
 
 ---
 
+### Task 12: Plugin MCP Integration
+
+**Files (in the plugin repo, NOT playwright-recast):**
+- Create: `.mcp.json` at plugin root
+- Modify: `.claude-plugin/plugin.json` to reference hooks
+
+The playwright-recast Claude Code plugin lives separately from the library. After the MCP server is published in playwright-recast, the plugin needs to declare it so it auto-starts when the plugin is enabled.
+
+- [ ] **Step 1: Add .mcp.json to plugin**
+
+Create `.mcp.json` at plugin root:
+
+```json
+{
+  "mcpServers": {
+    "recast": {
+      "command": "npx",
+      "args": ["recast-mcp"],
+      "env": {
+        "RECAST_WORK_DIR": "."
+      }
+    }
+  }
+}
+```
+
+This uses `npx` so it always gets the latest version. ENV vars like `OPENAI_API_KEY` and `ELEVENLABS_API_KEY` come from the user's shell environment.
+
+- [ ] **Step 2: Update plugin.json to reference hooks**
+
+Add to `.claude-plugin/plugin.json`:
+```json
+"hooks": "./hooks/hooks.json",
+"mcpServers": "./.mcp.json"
+```
+
+- [ ] **Step 3: Commit**
+
+---
+
+### Task 13: Plugin Hooks for Workflow Guidance
+
+**Files (in the plugin repo):**
+- Create: `hooks/hooks.json`
+- Create: `hooks/pre-render-validate.sh`
+
+- [ ] **Step 1: Create hooks.json**
+
+Create `hooks/hooks.json`:
+
+```json
+{
+  "description": "Workflow guidance hooks for playwright-recast demo video creation",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "mcp__recast__record_session",
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "Recording complete. Now call analyze_trace with the returned traceDir to detect steps and generate labels. After analysis, write voiceover text for each visible step using marketing tone: focus on client value, not UI mechanics."
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__recast__analyze_trace",
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "Trace analyzed. Now write voiceover text for each visible step. Guidelines:\n- Focus on client value (what it saves, simplifies, speeds up), NOT UI descriptions\n- Never say 'the user clicks' — say what the action achieves\n- Keep each step to 1-2 sentences, short-medium length\n- Use professional, natural tone suitable for TTS\n- First step: hook the viewer (name the problem being solved)\n- Last step: soft call to action\n- Present all steps to the user for review before calling render_video"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "mcp__recast__render_video",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/pre-render-validate.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+- [ ] **Step 2: Create pre-render validation script (crossplatform — Node.js)**
+
+Create `hooks/pre-render-validate.js`:
+
+```javascript
+#!/usr/bin/env node
+// Crossplatform pre-render validation hook (Linux, Mac, Windows)
+// Validates that all visible steps have voiceover text before rendering.
+
+const input = process.env.TOOL_INPUT
+if (!input) {
+  // No input — allow (non-blocking)
+  console.log(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow' } }))
+  process.exit(0)
+}
+
+try {
+  const data = JSON.parse(input)
+  const steps = data.steps || []
+  const missing = steps
+    .filter(s => !s.hidden && (!s.voiceover || !s.voiceover.trim()))
+    .map(s => s.id)
+
+  if (missing.length > 0) {
+    console.log(JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'deny',
+        permissionDecisionReason: `Missing voiceover text for visible steps: ${missing.join(', ')}. Please write voiceover for all visible steps before rendering.`,
+      },
+    }))
+  } else {
+    console.log(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow' } }))
+  }
+} catch {
+  // Parse error — allow and let MCP server handle validation
+  console.log(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow' } }))
+}
+```
+
+Update the hook reference in `hooks/hooks.json` to use `node` instead of shell:
+
+```json
+"PreToolUse": [
+  {
+    "matcher": "mcp__recast__render_video",
+    "hooks": [
+      {
+        "type": "command",
+        "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/pre-render-validate.js",
+        "timeout": 5
+      }
+    ]
+  }
+]
+```
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add hooks/ .mcp.json .claude-plugin/plugin.json
+git commit -m "feat: add MCP server integration and workflow hooks"
+```
+
+---
+
 ## Verification Plan
 
 After all tasks are complete:

@@ -48,6 +48,16 @@ export class Pipeline {
     return this.addStage({ type: 'parse' })
   }
 
+  /**
+   * Inject synthetic actions into the parsed trace.
+   * Use after parse() to add DOM-tracked actions from recordings that don't produce
+   * real trace actions (e.g. page.pause() sessions). The injected actions participate
+   * in hideSteps, clickEffect, cursorOverlay, autoZoom, and speedUp.
+   */
+  injectActions(actions: TraceAction[]): Pipeline {
+    return this.addStage({ type: 'injectActions', actions })
+  }
+
   /** Filter out steps matching the predicate (they won't appear in the output video) */
   hideSteps(predicate: (action: TraceAction) => boolean): Pipeline {
     return this.addStage({ type: 'hideSteps', predicate })

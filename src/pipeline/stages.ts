@@ -14,6 +14,7 @@ import type { BackgroundMusicConfig } from '../types/background-music.js'
 
 export type StageDescriptor =
   | { type: 'parse' }
+  | { type: 'injectActions'; actions: TraceAction[] }
   | { type: 'hideSteps'; predicate: (action: TraceAction) => boolean }
   | { type: 'speedUp'; config: SpeedConfig }
   | {
