@@ -135,7 +135,7 @@ export function Hero() {
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
               <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500" />
             </span>
-            <span className="truncate">v0.12.0 — Single-phase recorder</span>
+            <span className="truncate">v0.13.0 — MCP recording workflow</span>
           </div>
         </BlurFade>
 
