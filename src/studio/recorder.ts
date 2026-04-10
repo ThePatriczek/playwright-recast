@@ -1,11 +1,7 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { spawn } from 'node:child_process'
-import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { RecordOptions, RecordingResult } from './types.js'
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const packageRoot = path.resolve(__dirname, '..', '..')
 
 /**
  * Record a browser session with tracing + video + DOM action tracking.
@@ -35,8 +31,10 @@ export async function record(
   const vw = options.viewport.width
   const vh = options.viewport.height
 
-  // Dynamic import of playwright API
-  const pw = await import(pathToFileURL(path.join(packageRoot, 'node_modules', 'playwright', 'index.mjs')).href)
+  // Resolve via Node ESM module resolution so hoisted/flat node_modules layouts
+  // (npm, bun, pnpm, npx) work cross-platform, and playwright's exports.import
+  // condition picks index.mjs (named exports).
+  const pw = await import('playwright')
 
   const browser = await pw.chromium.launch({ headless: false })
 

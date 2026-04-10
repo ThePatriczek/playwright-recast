@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.13.2 (2026-04-10)
+
+### Bug fixes
+
+- **Recorder failed on hoisted/flat `node_modules` layouts** — `recorder.ts` hardcoded a lookup for `packageRoot/node_modules/playwright/index.mjs`, assuming a nested install. In flat layouts (npm, bun, pnpm, npx) `playwright` is hoisted as a sibling, so dynamic import failed with `Cannot find module '.../playwright-recast/node_modules/playwright/index.mjs'`. Replaced with a plain `await import('playwright')` that goes through Node's ESM module resolution and picks `index.mjs` via the package `exports.import` condition. Works on npm, bun, pnpm, npx, and nested installs — and cross-platform (Mac/Linux/Windows).
+- **MCP plugin `.mcp.json` missing peer deps in npx install** — Plugin config ran `npx -y -p playwright-recast recast-mcp`, which only fetched `playwright-recast` into the ephemeral npx cache — `@playwright/test`, `playwright`, `openai`, and `@elevenlabs/elevenlabs-js` (optional peer deps) were not installed, so the recorder and voiceover providers crashed at runtime. Added `-p @playwright/test -p openai -p @elevenlabs/elevenlabs-js` to the npx args so a fresh plugin install resolves all peer deps into the same cache directory. The plugin now "just works" after installing the marketplace — no manual peer dep setup required.
+
 ## 0.13.1 (2026-04-09)
 
 ### Bug fixes

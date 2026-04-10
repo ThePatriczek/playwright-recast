@@ -542,7 +542,14 @@ Add to your project's `.mcp.json`:
   "mcpServers": {
     "recast": {
       "command": "npx",
-      "args": ["-y", "-p", "playwright-recast", "recast-mcp"],
+      "args": [
+        "-y",
+        "-p", "playwright-recast",
+        "-p", "@playwright/test",
+        "-p", "openai",
+        "-p", "@elevenlabs/elevenlabs-js",
+        "recast-mcp"
+      ],
       "env": {
         "OPENAI_API_KEY": "sk-...",
         "RECAST_RESOLUTION": "1080p",
