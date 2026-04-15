@@ -1,16 +1,27 @@
 import type { TtsProvider, TtsOptions, AudioSegment } from '../../types/voiceover.js'
 
-export interface ElevenLabsProviderConfig {
-  apiKey?: string
-  voiceId?: string
-  modelId?: string
-  languageCode?: string
+export interface ElevenLabsVoiceSettings {
+  stability?: number
+  similarityBoost?: number
+  style?: number
+  useSpeakerBoost?: boolean
 }
 
-const DEFAULT_VOICE_ID = 'onwK4e9ZLuTAKqWW03F9' // Daniel
-const DEFAULT_MODEL_ID = 'eleven_multilingual_v2'
+export interface ElevenLabsProviderConfig {
+  apiKey?: string
+  /** Voice id (required for synthesis; falls back to DEFAULT_VOICE). */
+  voice?: string
+  /** Model id. Default: 'eleven_multilingual_v2'. */
+  model?: string
+  /** BCP-47 language code (e.g. 'cs'). */
+  languageCode?: string
+  /** Per-voice synthesis parameters. Omit to use the voice's dashboard defaults. */
+  voiceSettings?: ElevenLabsVoiceSettings
+}
 
-/** Minimal interface for the ElevenLabs client's textToSpeech.convert method */
+const DEFAULT_VOICE = 'onwK4e9ZLuTAKqWW03F9' // Daniel
+const DEFAULT_MODEL = 'eleven_multilingual_v2'
+
 interface ElevenLabsStream {
   getReader(): ReadableStreamDefaultReader<Uint8Array>
 }
@@ -27,9 +38,12 @@ interface ElevenLabsClient {
  */
 export function ElevenLabsProvider(config: ElevenLabsProviderConfig = {}): TtsProvider {
   const apiKey = config.apiKey ?? process.env.ELEVENLABS_API_KEY
-  const voiceId = config.voiceId ?? DEFAULT_VOICE_ID
-  const modelId = config.modelId ?? DEFAULT_MODEL_ID
-  const languageCode = config.languageCode
+  const defaults = {
+    voice: config.voice ?? DEFAULT_VOICE,
+    model: config.model ?? DEFAULT_MODEL,
+    languageCode: config.languageCode,
+    voiceSettings: config.voiceSettings,
+  }
 
   let client: ElevenLabsClient | null = null
 
@@ -43,14 +57,21 @@ export function ElevenLabsProvider(config: ElevenLabsProviderConfig = {}): TtsPr
   return {
     name: 'elevenlabs',
 
-    async synthesize(text: string, _options?: TtsOptions): Promise<AudioSegment> {
+    async synthesize(text: string, options?: TtsOptions): Promise<AudioSegment> {
       const el = await getClient()
-      const audio = await el.textToSpeech.convert(voiceId, {
+      const voice = options?.voice ?? defaults.voice
+      const model = options?.model ?? defaults.model
+      const languageCode = options?.languageCode ?? defaults.languageCode
+
+      const params: Record<string, unknown> = {
         text,
-        modelId,
+        modelId: model,
         outputFormat: 'mp3_44100_128',
-        ...(languageCode ? { languageCode } : {}),
-      })
+      }
+      if (languageCode) params.languageCode = languageCode
+      if (defaults.voiceSettings) params.voiceSettings = defaults.voiceSettings
+
+      const audio = await el.textToSpeech.convert(voice, params)
 
       const reader = audio.getReader()
       const chunks: Uint8Array[] = []
@@ -63,7 +84,7 @@ export function ElevenLabsProvider(config: ElevenLabsProviderConfig = {}): TtsPr
       const data = Buffer.concat(chunks)
       return {
         data,
-        durationMs: 0, // Will be measured by voiceover-processor via ffprobe
+        durationMs: 0,
         format: { sampleRate: 44100, channels: 1, codec: 'mp3' },
       }
     },
