@@ -8,6 +8,12 @@ export { setupRecast, narrate, zoom, pace, highlight } from './helpers.js'
 export { OpenAIProvider } from './voiceover/providers/openai.js'
 export { ElevenLabsProvider } from './voiceover/providers/elevenlabs.js'
 export { PollyProvider } from './voiceover/providers/polly.js'
+export type { OpenAIProviderConfig } from './voiceover/providers/openai.js'
+export type { ElevenLabsProviderConfig, ElevenLabsVoiceSettings } from './voiceover/providers/elevenlabs.js'
+export type { PollyProviderConfig } from './voiceover/providers/polly.js'
+
+// Voiceover post-processing
+export { normalizeLoudness } from './voiceover/normalize.js'
 
 // Types
 export type {
@@ -47,6 +53,8 @@ export type {
   AudioSegment,
   VoiceoverEntry,
   VoiceoveredTrace,
+  VoiceoverOptions,
+  LoudnessNormalizeConfig,
 } from './types/voiceover.js'
 
 export type { RenderConfig, SubtitleStyle, ZoomKeyframe } from './types/render.js'

@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.15.0 (2026-04-15)
+
+### Breaking changes
+
+- **ElevenLabs provider config fields renamed** — `ElevenLabsProviderConfig.voiceId` → `voice`, `modelId` → `model`. Migrate: `ElevenLabsProvider({ voiceId: 'abc', modelId: 'xyz' })` → `ElevenLabsProvider({ voice: 'abc', model: 'xyz' })`.
+
+### Features
+
+- **Unified TTS provider config** — All three providers (ElevenLabs, OpenAI, Polly) now share the same common field names (`voice`, `model`, `languageCode`) and consistently merge factory-config defaults with per-call `TtsOptions`. Provider-specific knobs (ElevenLabs `voiceSettings`, OpenAI `instructions`, Polly `engine`/`textType`) remain in the provider's own config.
+- **ElevenLabs `voiceSettings`** — Optional `{ stability, similarityBoost, style, useSpeakerBoost }` can be passed in the factory config. Recommended for consistent loudness — raise `stability` to reduce per-segment volume drift on `eleven_multilingual_v2`.
+- **Loudness normalization in `.voiceover(...)`** — New `VoiceoverOptions.normalize` runs each synthesized segment through a two-pass EBU R128 `loudnorm` pass (default `-16 LUFS` / `-1 dBFS TP` / `11 LU`, linear mode) before concat. Fixes large per-segment loudness drift common with ElevenLabs multilingual voices + non-English languages (e.g. czech).
+
+  ```ts
+  .voiceover(ElevenLabsProvider({ voice: 'abc' }), { normalize: true })
+  .voiceover(provider, { normalize: { targetLufs: -18, truePeakDb: -1.5 } })
+  ```
+
+- **`normalizeLoudness(input, output, config?)`** exported from the public API for standalone use outside the pipeline.
+
 ## 0.14.0 (2026-04-15)
 
 ### Features
