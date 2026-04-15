@@ -785,7 +785,12 @@ export class PipelineExecutor {
           }
 
           const tmpDir = path.join(path.dirname(state.sourceVideoPath ?? '/tmp'), '.recast-vo-tmp')
-          state.voiceovered = await generateVoiceover(state.subtitled, stage.provider, tmpDir)
+          state.voiceovered = await generateVoiceover(
+            state.subtitled,
+            stage.provider,
+            tmpDir,
+            stage.options,
+          )
           break
         }
 
