@@ -208,8 +208,8 @@ async function main(): Promise<void> {
       const { ElevenLabsProvider } = await import('./voiceover/providers/elevenlabs.js')
       pipeline = pipeline.voiceover(
         ElevenLabsProvider({
-          voiceId: values.voice,
-          modelId: values.model,
+          voice: values.voice,
+          model: values.model,
         }),
       )
     } else if (providerName === 'polly') {

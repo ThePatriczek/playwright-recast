@@ -123,8 +123,8 @@ function createTtsProvider(
     if (!apiKey) return null
     return ElevenLabsProvider({
       apiKey,
-      voiceId: settings?.voice ?? config.ttsVoice,
-      modelId: settings?.model ?? config.ttsModel,
+      voice: settings?.voice ?? config.ttsVoice,
+      model: settings?.model ?? config.ttsModel,
     })
   }
 

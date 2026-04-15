@@ -1,7 +1,7 @@
 import type { TraceAction } from '../types/trace.js'
 import type { SpeedConfig } from '../types/speed.js'
 import type { SubtitleOptions } from '../types/subtitle.js'
-import type { TtsProvider } from '../types/voiceover.js'
+import type { TtsProvider, VoiceoverOptions } from '../types/voiceover.js'
 import type { RenderConfig } from '../types/render.js'
 import type { TextProcessingConfig } from '../types/text-processing.js'
 import type { ClickEffectConfig } from '../types/click-effect.js'
@@ -34,7 +34,7 @@ export type StageDescriptor =
   | { type: 'outro'; config: OutroConfig }
   | { type: 'interpolate'; config: InterpolateConfig }
   | { type: 'backgroundMusic'; config: BackgroundMusicConfig }
-  | { type: 'voiceover'; provider: TtsProvider }
+  | { type: 'voiceover'; provider: TtsProvider; options?: VoiceoverOptions }
   | { type: 'render'; config: RenderConfig }
 
 /** Auto-zoom configuration */

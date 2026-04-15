@@ -1,7 +1,7 @@
 import type { TraceAction } from '../types/trace.js'
 import type { SpeedConfig } from '../types/speed.js'
 import type { SubtitleOptions } from '../types/subtitle.js'
-import type { TtsProvider } from '../types/voiceover.js'
+import type { TtsProvider, VoiceoverOptions } from '../types/voiceover.js'
 import type { RenderConfig } from '../types/render.js'
 import type { TextProcessingConfig } from '../types/text-processing.js'
 import type { ClickEffectConfig } from '../types/click-effect.js'
@@ -169,9 +169,17 @@ export class Pipeline {
     return this.addStage({ type: 'backgroundMusic', config })
   }
 
-  /** Generate voiceover audio from subtitles using a TTS provider */
-  voiceover(provider: TtsProvider): Pipeline {
-    return this.addStage({ type: 'voiceover', provider })
+  /**
+   * Generate voiceover audio from subtitles using a TTS provider.
+   *
+   * @param provider  TTS provider (OpenAIProvider, ElevenLabsProvider, PollyProvider, ...).
+   * @param options   Optional post-synthesis processing. `normalize: true` runs
+   *                  each synthesized segment through EBU R128 two-pass loudnorm
+   *                  (default -16 LUFS / -1 dBFS TP / 11 LU) before concat, which
+   *                  fixes per-segment loudness drift common in ElevenLabs + czech.
+   */
+  voiceover(provider: TtsProvider, options?: VoiceoverOptions): Pipeline {
+    return this.addStage({ type: 'voiceover', provider, options })
   }
 
   /** Configure video rendering options */
