@@ -30,7 +30,7 @@ await Recast
   .parse()
   .speedUp({ duringIdle: 3.0, duringUserAction: 1.0 })
   .subtitlesFromSrt('./narration.srt')
-  .voiceover(ElevenLabsProvider({ voiceId: 'daniel' }))
+  .voiceover(ElevenLabsProvider({ voice: 'daniel' }), { normalize: true })
   .render({ format: 'mp4', resolution: '1080p' })
   .toFile('demo.mp4')
 ```
@@ -206,7 +206,7 @@ Every stage is optional and composable:
 | `.intro({ path, fadeDuration? })` | Prepend intro video with crossfade transition |
 | `.outro({ path, fadeDuration? })` | Append outro video with crossfade transition |
 | `.interpolate(config)` | Frame interpolation for smoother video (ffmpeg minterpolate) |
-| `.voiceover(provider)` | Generate TTS audio from subtitle text |
+| `.voiceover(provider, options?)` | Generate TTS audio from subtitle text; `{ normalize: true }` level-matches segments (EBU R128) |
 | `.render(config)` | Render final video (format, resolution, fps, styled subtitle burn-in) |
 | `.toFile(path)` | Execute pipeline and write output |
 
@@ -307,9 +307,13 @@ Requires `OPENAI_API_KEY` environment variable or `apiKey` option.
 import { ElevenLabsProvider } from 'playwright-recast/providers/elevenlabs'
 
 ElevenLabsProvider({
-  voiceId: 'onwK4e9ZLuTAKqWW03F9',  // Daniel
-  modelId: 'eleven_multilingual_v2',
-  languageCode: 'cs',                // Force Czech (ISO 639-1)
+  voice: 'onwK4e9ZLuTAKqWW03F9',  // Daniel
+  model: 'eleven_multilingual_v2',
+  languageCode: 'cs',              // Force Czech (ISO 639-1)
+  voiceSettings: {
+    stability: 0.75,               // Higher = more consistent delivery (less drift)
+    similarityBoost: 0.75,
+  },
 })
 ```
 
@@ -337,6 +341,34 @@ npm install @aws-sdk/client-polly
 ```
 
 Resolves credentials from `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` (and optional `AWS_SESSION_TOKEN`), shared config, or — preferred on AWS — an attached IAM role.
+
+### Loudness normalization
+
+TTS providers (especially ElevenLabs on `eleven_multilingual_v2` + non-English languages) can deliver segments at wildly different levels — one line at −16 LUFS, the next at −32 LUFS. Enable opt-in per-segment normalization to fix it:
+
+```typescript
+.voiceover(ElevenLabsProvider({ voice: 'daniel' }), { normalize: true })
+```
+
+This runs each synthesized segment through two-pass EBU R128 `loudnorm` before concat. Defaults: `−16 LUFS` integrated, `−1 dBFS` true peak, `11 LU` range, linear mode (preserves dynamics). Override any of them:
+
+```typescript
+.voiceover(provider, {
+  normalize: {
+    targetLufs: -18,
+    truePeakDb: -1.5,
+    lra: 11,
+    linear: true,
+  },
+})
+```
+
+Also exported standalone for external use:
+
+```typescript
+import { normalizeLoudness } from 'playwright-recast'
+await normalizeLoudness('input.mp3', 'output.mp3', { targetLufs: -16 })
+```
 
 ---
 
