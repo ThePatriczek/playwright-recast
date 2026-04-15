@@ -2,13 +2,22 @@ import type { TtsProvider, TtsOptions, AudioSegment } from '../../types/voiceove
 
 export interface OpenAIProviderConfig {
   apiKey?: string
+  /** Voice name (e.g. 'nova', 'echo'). Default: 'nova'. */
   voice?: string
+  /** Model id. Default: 'gpt-4o-mini-tts'. */
   model?: string
+  /** BCP-47 language code — OpenAI TTS auto-detects, included for API symmetry. */
+  languageCode?: string
+  /** Playback speed multiplier. Default: 1.0. */
   speed?: number
+  /** Free-form style instructions (GPT-4o-mini-tts family). */
   instructions?: string
 }
 
-/** Minimal interface for the OpenAI client's audio.speech.create method */
+const DEFAULT_VOICE = 'nova'
+const DEFAULT_MODEL = 'gpt-4o-mini-tts'
+const DEFAULT_SPEED = 1.0
+
 interface OpenAIClient {
   audio: {
     speech: {
@@ -23,10 +32,12 @@ interface OpenAIClient {
  */
 export function OpenAIProvider(config: OpenAIProviderConfig = {}): TtsProvider {
   const apiKey = config.apiKey ?? process.env.OPENAI_API_KEY
-  const voice = config.voice ?? 'nova'
-  const model = config.model ?? 'gpt-4o-mini-tts'
-  const speed = config.speed ?? 1.0
-  const instructions = config.instructions
+  const defaults = {
+    voice: config.voice ?? DEFAULT_VOICE,
+    model: config.model ?? DEFAULT_MODEL,
+    speed: config.speed ?? DEFAULT_SPEED,
+    instructions: config.instructions,
+  }
 
   let client: OpenAIClient | null = null
 
@@ -43,13 +54,13 @@ export function OpenAIProvider(config: OpenAIProviderConfig = {}): TtsProvider {
     async synthesize(text: string, options?: TtsOptions): Promise<AudioSegment> {
       const openai = await getClient()
       const params: Record<string, unknown> = {
-        model,
-        voice: options?.voice ?? voice,
+        model: options?.model ?? defaults.model,
+        voice: options?.voice ?? defaults.voice,
+        speed: options?.speed ?? defaults.speed,
         input: text,
-        speed: options?.speed ?? speed,
         response_format: 'mp3',
       }
-      if (instructions) params.instructions = instructions
+      if (defaults.instructions) params.instructions = defaults.instructions
 
       const response = await openai.audio.speech.create(params)
       const data = Buffer.from(await response.arrayBuffer())
@@ -62,7 +73,7 @@ export function OpenAIProvider(config: OpenAIProviderConfig = {}): TtsProvider {
     },
 
     estimateDurationMs(text: string, options?: TtsOptions): number {
-      const spd = options?.speed ?? speed
+      const spd = options?.speed ?? defaults.speed
       const words = text.split(/\s+/).length
       return (words / (150 * spd)) * 60_000
     },

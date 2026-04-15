@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
   convertMock: vi.fn(),
   openaiCreateMock: vi.fn(),
   pollySendMock: vi.fn(),
-  pollyCommandCtor: vi.fn((input: Record<string, unknown>) => ({ input })),
+  pollyCommandCalls: [] as Array<Record<string, unknown>>,
 }))
 
 vi.mock('@elevenlabs/elevenlabs-js', () => ({
@@ -29,7 +29,13 @@ vi.mock('@aws-sdk/client-polly', () => ({
   PollyClient: class {
     send = mocks.pollySendMock
   },
-  SynthesizeSpeechCommand: mocks.pollyCommandCtor,
+  SynthesizeSpeechCommand: class {
+    input: Record<string, unknown>
+    constructor(input: Record<string, unknown>) {
+      this.input = input
+      mocks.pollyCommandCalls.push(input)
+    }
+  },
 }))
 
 function makeStream(bytes: Uint8Array): { getReader: () => unknown } {
@@ -129,7 +135,7 @@ describe('OpenAIProvider', () => {
 describe('PollyProvider', () => {
   beforeEach(() => {
     mocks.pollySendMock.mockReset()
-    mocks.pollyCommandCtor.mockClear()
+    mocks.pollyCommandCalls.length = 0
     mocks.pollySendMock.mockResolvedValue({
       AudioStream: { transformToByteArray: async () => new Uint8Array([1, 2, 3]) },
     })
@@ -141,9 +147,9 @@ describe('PollyProvider', () => {
       voice: 'Joanna', engine: 'neural', languageCode: 'en-US',
     })
     await p.synthesize('hi')
-    expect(mocks.pollyCommandCtor).toHaveBeenCalledWith(expect.objectContaining({
+    expect(mocks.pollyCommandCalls[0]).toMatchObject({
       Text: 'hi', VoiceId: 'Joanna', Engine: 'neural', LanguageCode: 'en-US',
-    }))
+    })
   })
 
   it('voice and languageCode options override config per call', async () => {
@@ -152,9 +158,9 @@ describe('PollyProvider', () => {
       voice: 'Joanna', languageCode: 'en-US',
     })
     await p.synthesize('hi', { voice: 'Matthew', languageCode: 'en-GB' })
-    expect(mocks.pollyCommandCtor).toHaveBeenCalledWith(expect.objectContaining({
+    expect(mocks.pollyCommandCalls[0]).toMatchObject({
       VoiceId: 'Matthew', LanguageCode: 'en-GB',
-    }))
+    })
   })
 
   it('throws when Polly returns no AudioStream', async () => {

@@ -5,9 +5,12 @@ export interface PollyProviderConfig {
   accessKeyId?: string
   secretAccessKey?: string
   sessionToken?: string
+  /** Polly voice id (e.g. 'Joanna', 'Matthew'). Default: 'Joanna'. */
   voice?: string
+  /** Polly has no 'model' concept; `model` in TtsOptions is ignored. */
   engine?: 'standard' | 'neural' | 'long-form' | 'generative'
   sampleRate?: '8000' | '16000' | '22050' | '24000'
+  /** BCP-47 language code. */
   languageCode?: string
   textType?: 'text' | 'ssml'
 }
@@ -16,34 +19,19 @@ const DEFAULT_VOICE = 'Joanna'
 const DEFAULT_ENGINE: PollyProviderConfig['engine'] = 'neural'
 const DEFAULT_SAMPLE_RATE: PollyProviderConfig['sampleRate'] = '24000'
 
-/** Minimal interfaces for the @aws-sdk/client-polly types we touch */
 interface PollyAudioStream {
   transformToByteArray(): Promise<Uint8Array>
 }
-
-interface PollyResponse {
-  AudioStream?: PollyAudioStream
-}
-
-interface PollyClient {
-  send(command: unknown): Promise<PollyResponse>
-}
-
-interface PollyClientCtor {
-  new (config: Record<string, unknown>): PollyClient
-}
-
-interface PollyCommandCtor {
-  new (input: Record<string, unknown>): unknown
-}
+interface PollyResponse { AudioStream?: PollyAudioStream }
+interface PollyClient { send(command: unknown): Promise<PollyResponse> }
+interface PollyClientCtor { new (config: Record<string, unknown>): PollyClient }
+interface PollyCommandCtor { new (input: Record<string, unknown>): unknown }
 
 /**
  * Amazon Polly TTS provider.
  * Requires `@aws-sdk/client-polly` as a peer dependency.
  *
- * Credentials are resolved via the AWS SDK default chain when not passed
- * explicitly — env vars, shared config (~/.aws/credentials), IAM role on
- * EC2/ECS/Lambda, SSO, etc.
+ * Credentials fall back to the AWS SDK default chain when not passed explicitly.
  */
 export function PollyProvider(config: PollyProviderConfig = {}): TtsProvider {
   const region = config.region
@@ -53,11 +41,14 @@ export function PollyProvider(config: PollyProviderConfig = {}): TtsProvider {
   const accessKeyId = config.accessKeyId ?? process.env.AWS_ACCESS_KEY_ID
   const secretAccessKey = config.secretAccessKey ?? process.env.AWS_SECRET_ACCESS_KEY
   const sessionToken = config.sessionToken ?? process.env.AWS_SESSION_TOKEN
-  const voice = config.voice ?? DEFAULT_VOICE
-  const engine = config.engine ?? DEFAULT_ENGINE
-  const sampleRate = config.sampleRate ?? DEFAULT_SAMPLE_RATE
-  const languageCode = config.languageCode
-  const textType = config.textType ?? 'text'
+
+  const defaults = {
+    voice: config.voice ?? DEFAULT_VOICE,
+    engine: config.engine ?? DEFAULT_ENGINE,
+    sampleRate: config.sampleRate ?? DEFAULT_SAMPLE_RATE,
+    languageCode: config.languageCode,
+    textType: config.textType ?? 'text',
+  }
 
   let client: PollyClient | null = null
   let SynthesizeSpeechCommand: PollyCommandCtor | null = null
@@ -87,16 +78,20 @@ export function PollyProvider(config: PollyProviderConfig = {}): TtsProvider {
     async synthesize(text: string, options?: TtsOptions): Promise<AudioSegment> {
       const polly = await getClient()
       const Cmd = SynthesizeSpeechCommand!
-      const command = new Cmd({
+      const voice = options?.voice ?? defaults.voice
+      const languageCode = options?.languageCode ?? defaults.languageCode
+
+      const input: Record<string, unknown> = {
         Text: text,
         OutputFormat: 'mp3',
-        VoiceId: options?.voice ?? voice,
-        Engine: engine,
-        SampleRate: sampleRate,
-        TextType: textType,
-        ...(languageCode ? { LanguageCode: languageCode } : {}),
-      })
+        VoiceId: voice,
+        Engine: defaults.engine,
+        SampleRate: defaults.sampleRate,
+        TextType: defaults.textType,
+      }
+      if (languageCode) input.LanguageCode = languageCode
 
+      const command = new Cmd(input)
       const response = await polly.send(command)
       if (!response.AudioStream) {
         throw new Error('Amazon Polly returned no audio stream')
@@ -106,7 +101,7 @@ export function PollyProvider(config: PollyProviderConfig = {}): TtsProvider {
       return {
         data,
         durationMs: 0,
-        format: { sampleRate: Number(sampleRate), channels: 1, codec: 'mp3' },
+        format: { sampleRate: Number(defaults.sampleRate), channels: 1, codec: 'mp3' },
       }
     },
 
@@ -117,9 +112,6 @@ export function PollyProvider(config: PollyProviderConfig = {}): TtsProvider {
     },
 
     async isAvailable(): Promise<boolean> {
-      // The default credential chain (IAM role, SSO, shared config) can't be
-      // verified without making a call. Return true and surface auth errors
-      // on the first synthesize() instead.
       return true
     },
 
