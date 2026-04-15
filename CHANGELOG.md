@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.14.0 (2026-04-15)
+
+### Features
+
+- **Amazon Polly TTS provider** ([#3](https://github.com/ThePatriczek/playwright-recast/issues/3)) — Added `PollyProvider` for Amazon Polly, alongside OpenAI and ElevenLabs. Supports `standard`, `neural`, `long-form`, and `generative` engines, all Polly voices, and SSML input. Credentials resolved via the AWS SDK default chain (env vars, shared config, IAM role on EC2/ECS/Lambda) — no explicit keys required when running on AWS infra. Wired through CLI (`--provider polly`), MCP (`ttsProvider: "polly"`), and auto-detected when `AWS_ACCESS_KEY_ID` or `AWS_PROFILE` is set. Requires `@aws-sdk/client-polly` as an optional peer dep. Docs: [`/docs/providers/polly`](https://playwright-recast.dev/docs/providers/polly).
+
 ## 0.13.2 (2026-04-10)
 
 ### Bug fixes

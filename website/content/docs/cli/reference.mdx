@@ -52,7 +52,7 @@ Text processing cleans subtitle text before sending to TTS providers (strips sma
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--provider` | `none` | TTS provider: `openai`, `elevenlabs`, or `none` |
+| `--provider` | `none` | TTS provider: `openai`, `elevenlabs`, `polly`, or `none` |
 | `--voice` | (provider default) | Voice ID for the TTS provider |
 | `--model` | (provider default) | Model ID for the TTS provider |
 | `--tts-speed` | `1.0` | TTS speech speed multiplier |
@@ -106,6 +106,12 @@ npx playwright-recast -i ./traces --srt narration.srt --provider openai --voice 
 
 ```bash
 npx playwright-recast -i ./traces --srt narration.srt --provider elevenlabs --voice onwK4e9ZLuTAKqWW03F9
+```
+
+### Amazon Polly voiceover
+
+```bash
+npx playwright-recast -i ./traces --srt narration.srt --provider polly --voice Joanna
 ```
 
 ### Click effects with custom sound

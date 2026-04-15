@@ -44,7 +44,7 @@ await Recast
 - **Fluent pipeline API** — Chainable, immutable, lazy-evaluated. Build complex pipelines that read like English.
 - **Trace-based processing** — Parses Playwright trace.zip (actions, screenshots, network, cursor positions). No manual recording needed.
 - **Smart speed control** — Automatically speeds up idle time, network waits, and navigation while keeping user actions at normal speed.
-- **TTS voiceover** — Generate narration with OpenAI TTS or ElevenLabs. Properly timed with silence padding.
+- **TTS voiceover** — Generate narration with OpenAI TTS, ElevenLabs, or Amazon Polly. Properly timed with silence padding.
 - **Subtitle generation** — SRT, WebVTT, and ASS output. Import external SRT or generate from trace BDD step titles.
 - **Styled subtitle burn-in** — Configurable font, size, color, background box with opacity, padding, position. Smart punctuation-based chunking for single-line display.
 - **playwright-bdd support** — First-class integration with playwright-bdd Gherkin steps. Doc strings become voiceover narration.
@@ -315,6 +315,29 @@ ElevenLabsProvider({
 
 Requires `ELEVENLABS_API_KEY` environment variable or `apiKey` option.
 
+### Amazon Polly
+
+```typescript
+import { PollyProvider } from 'playwright-recast/providers/polly'
+
+PollyProvider({
+  region: 'us-east-1',
+  voice: 'Joanna',          // Matthew, Ruth, Stephen, Ivy, Joey, …
+  engine: 'neural',         // standard | neural | long-form | generative
+  sampleRate: '24000',
+  // Credentials are optional — the AWS SDK default chain is used
+  // (env vars, ~/.aws/credentials, IAM role on EC2/ECS/Lambda, SSO).
+})
+```
+
+Install the SDK alongside this package:
+
+```bash
+npm install @aws-sdk/client-polly
+```
+
+Resolves credentials from `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` (and optional `AWS_SESSION_TOKEN`), shared config, or — preferred on AWS — an attached IAM role.
+
 ---
 
 ## Zoom
@@ -566,8 +589,11 @@ Add to your project's `.mcp.json`:
 |----------|---------|-------------|
 | `OPENAI_API_KEY` | — | OpenAI API key (enables OpenAI TTS) |
 | `ELEVENLABS_API_KEY` | — | ElevenLabs API key (enables ElevenLabs TTS) |
-| `RECAST_TTS_PROVIDER` | auto-detected | Force `openai`, `elevenlabs`, or `none` |
-| `RECAST_TTS_VOICE` | `nova` / `3HdFueVb2f3yUQzeEpyz` | Default voice ID (provider-specific) |
+| `AWS_REGION` / `AWS_DEFAULT_REGION` | `us-east-1` | AWS region for Amazon Polly |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | — | AWS credentials (also enables Polly auto-detect; IAM role on EC2/ECS/Lambda works without these) |
+| `RECAST_POLLY_ENGINE` | `neural` | Polly engine: `standard`, `neural`, `long-form`, `generative` |
+| `RECAST_TTS_PROVIDER` | auto-detected | Force `openai`, `elevenlabs`, `polly`, or `none` |
+| `RECAST_TTS_VOICE` | `nova` / `3HdFueVb2f3yUQzeEpyz` / `Joanna` | Default voice ID (provider-specific) |
 | `RECAST_RESOLUTION` | `4k` | Output resolution: `720p`, `1080p`, `1440p`, `4k` |
 | `RECAST_FPS` | `120` | Output FPS |
 | `RECAST_WORK_DIR` | `.` | Working directory for recordings |

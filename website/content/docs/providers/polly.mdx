@@ -1,0 +1,106 @@
+---
+title: Amazon Polly
+description: Generate voiceover narration using Amazon Polly text-to-speech.
+---
+
+## Setup
+
+The Polly provider uses the `@aws-sdk/client-polly` package as a peer dependency. Install it alongside playwright-recast:
+
+```bash
+npm install @aws-sdk/client-polly
+```
+
+Credentials are resolved via the AWS SDK default chain — env vars, `~/.aws/credentials`, SSO, or an IAM role attached to your EC2/ECS/Fargate/Lambda compute. No explicit keys are required when running on AWS infra.
+
+```bash
+# Local development (one option among many)
+export AWS_ACCESS_KEY_ID="..."
+export AWS_SECRET_ACCESS_KEY="..."
+export AWS_REGION="us-east-1"
+```
+
+## Usage
+
+```typescript
+import { Recast } from 'playwright-recast'
+import { PollyProvider } from 'playwright-recast/providers/polly'
+
+await Recast
+  .from('./traces')
+  .parse()
+  .subtitlesFromSrt('./narration.srt')
+  .voiceover(PollyProvider({
+    region: 'us-east-1',
+    voice: 'Joanna',
+    engine: 'neural',
+  }))
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+## Configuration options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `region` | `string` | `process.env.AWS_REGION` ?? `'us-east-1'` | AWS region |
+| `voice` | `string` | `'Joanna'` | Polly voice ID (e.g. `Matthew`, `Ruth`, `Stephen`, `Ivy`) |
+| `engine` | `'standard' \| 'neural' \| 'long-form' \| 'generative'` | `'neural'` | Polly synthesis engine |
+| `sampleRate` | `'8000' \| '16000' \| '22050' \| '24000'` | `'24000'` | Output sample rate (Hz) |
+| `languageCode` | `string` | `undefined` | Override language for bilingual voices (e.g. `'en-US'`, `'cs-CZ'`) |
+| `textType` | `'text' \| 'ssml'` | `'text'` | Set to `'ssml'` to pass SSML markup |
+| `accessKeyId` | `string` | `process.env.AWS_ACCESS_KEY_ID` | Explicit credential (skip the default chain) |
+| `secretAccessKey` | `string` | `process.env.AWS_SECRET_ACCESS_KEY` | Explicit credential |
+| `sessionToken` | `string` | `process.env.AWS_SESSION_TOKEN` | Optional session token (STS / temporary creds) |
+
+## Engines
+
+Polly offers four engines with different quality / cost tradeoffs:
+
+| Engine | Use case |
+|--------|----------|
+| `standard` | Cheapest, basic concatenative synthesis. Fine for short notifications. |
+| `neural` | Default. High-quality neural voices, good for product demos. |
+| `long-form` | Optimized for long-form content (podcasts, narration). |
+| `generative` | Most expressive, conversational tone. Higher latency and cost. |
+
+Not every voice supports every engine — see the [Polly voice list](https://docs.aws.amazon.com/polly/latest/dg/available-voices.html) for engine availability per voice.
+
+## Running on AWS
+
+Polly is a natural fit when the rest of your pipeline runs on AWS:
+
+- **EC2 / ECS / Fargate**: attach an IAM role with the `polly:SynthesizeSpeech` permission. No API keys needed in the container.
+- **Lambda**: attach the same role to the function. Note that the full pipeline (Playwright + ffmpeg) is heavy for Lambda — Fargate is usually a better fit for the rendering step.
+
+Minimum IAM policy:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "polly:SynthesizeSpeech",
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+## CLI usage
+
+```bash
+npx playwright-recast -i ./traces --srt narration.srt --provider polly --voice Joanna
+npx playwright-recast -i ./traces --srt narration.srt --provider polly --voice Matthew
+```
+
+## Environment variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `AWS_REGION` / `AWS_DEFAULT_REGION` | Recommended | AWS region for Polly. Defaults to `us-east-1`. |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | Optional | Explicit credentials. Not needed with IAM roles. |
+| `AWS_SESSION_TOKEN` | Optional | Required when using temporary STS credentials. |
+| `AWS_PROFILE` | Optional | Use a specific profile from `~/.aws/credentials`. |
+| `RECAST_POLLY_ENGINE` | Optional | MCP default engine. Defaults to `neural`. |

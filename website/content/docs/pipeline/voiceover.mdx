@@ -21,7 +21,7 @@ await Recast
 
 ## Provider concept
 
-Voiceover requires a TTS provider. playwright-recast ships with two built-in providers:
+Voiceover requires a TTS provider. playwright-recast ships with three built-in providers:
 
 ### OpenAI TTS
 
@@ -52,6 +52,20 @@ import { ElevenLabsProvider } from 'playwright-recast/providers/elevenlabs'
 
 Requires `ELEVENLABS_API_KEY` environment variable or `apiKey` option.
 
+### Amazon Polly
+
+```typescript
+import { PollyProvider } from 'playwright-recast/providers/polly'
+
+.voiceover(PollyProvider({
+  region: 'us-east-1',
+  voice: 'Joanna',          // Matthew, Ruth, Stephen, Ivy, …
+  engine: 'neural',         // standard | neural | long-form | generative
+}))
+```
+
+Credentials resolve via the AWS SDK default chain — env vars, shared config, or an IAM role on EC2/ECS/Fargate/Lambda.
+
 See the [Providers](/docs/providers) section for full provider documentation.
 
 ## Timing
@@ -78,6 +92,9 @@ npx playwright-recast -i ./traces --srt narration.srt --provider openai --voice 
 
 # ElevenLabs
 npx playwright-recast -i ./traces --srt narration.srt --provider elevenlabs --voice onwK4e9ZLuTAKqWW03F9
+
+# Amazon Polly
+npx playwright-recast -i ./traces --srt narration.srt --provider polly --voice Joanna
 ```
 
 ## Tips

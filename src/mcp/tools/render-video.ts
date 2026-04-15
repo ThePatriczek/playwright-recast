@@ -12,6 +12,7 @@ import { Pipeline } from '../../pipeline/pipeline.js'
 import { parseTrace } from '../../parse/trace-parser.js'
 import { OpenAIProvider } from '../../voiceover/providers/openai.js'
 import { ElevenLabsProvider } from '../../voiceover/providers/elevenlabs.js'
+import { PollyProvider } from '../../voiceover/providers/polly.js'
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -24,12 +25,12 @@ const StepSchema = z.object({
 })
 
 const SettingsSchema = z.object({
-  ttsProvider: z.enum(['openai', 'elevenlabs', 'none']).optional()
+  ttsProvider: z.enum(['openai', 'elevenlabs', 'polly', 'none']).optional()
     .describe('TTS provider to use. Default: from server config'),
   voice: z.string().optional()
-    .describe('Voice ID (provider-specific). OpenAI: "nova", "alloy", etc. ElevenLabs: voice ID'),
+    .describe('Voice ID (provider-specific). OpenAI: "nova", "alloy", etc. ElevenLabs: voice ID. Polly: "Joanna", "Matthew", "Ruth", etc.'),
   model: z.string().optional()
-    .describe('TTS model. OpenAI: "gpt-4o-mini-tts". ElevenLabs: "eleven_multilingual_v2"'),
+    .describe('TTS model. OpenAI: "gpt-4o-mini-tts". ElevenLabs: "eleven_multilingual_v2". Polly: engine ("standard"|"neural"|"long-form"|"generative")'),
   speed: z.number().positive().optional()
     .describe('TTS speech speed multiplier. Default: 1.0'),
   format: z.enum(['mp4', 'webm']).optional()
@@ -124,6 +125,18 @@ function createTtsProvider(
       apiKey,
       voiceId: settings?.voice ?? config.ttsVoice,
       modelId: settings?.model ?? config.ttsModel,
+    })
+  }
+
+  if (provider === 'polly') {
+    // Credentials are resolved lazily by the AWS SDK default chain
+    // (env vars, shared config, IAM role on EC2/ECS/Lambda).
+    const engine = (settings?.model ?? config.pollyEngine) as
+      'standard' | 'neural' | 'long-form' | 'generative'
+    return PollyProvider({
+      region: config.awsRegion,
+      voice: settings?.voice ?? config.ttsVoice,
+      engine,
     })
   }
 

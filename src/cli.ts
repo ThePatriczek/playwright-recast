@@ -20,7 +20,7 @@ OPTIONS
       --no-speed       Disable speed processing
       --text-processing Enable built-in text sanitization for TTS
       --text-processing-config <path>  JSON config with text processing rules
-      --provider       TTS provider: openai | elevenlabs | none (default: none)
+      --provider       TTS provider: openai | elevenlabs | polly | none (default: none)
       --voice          Voice ID for TTS provider
       --model          Model ID for TTS provider
       --tts-speed      TTS speech speed multiplier
@@ -212,8 +212,15 @@ async function main(): Promise<void> {
           modelId: values.model,
         }),
       )
+    } else if (providerName === 'polly') {
+      const { PollyProvider } = await import('./voiceover/providers/polly.js')
+      pipeline = pipeline.voiceover(
+        PollyProvider({
+          voice: values.voice,
+        }),
+      )
     } else {
-      fatal(`Unknown provider: ${providerName}. Use openai, elevenlabs, or none.`)
+      fatal(`Unknown provider: ${providerName}. Use openai, elevenlabs, polly, or none.`)
     }
   }
 

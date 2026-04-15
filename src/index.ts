@@ -7,6 +7,7 @@ export { setupRecast, narrate, zoom, pace, highlight } from './helpers.js'
 // Providers
 export { OpenAIProvider } from './voiceover/providers/openai.js'
 export { ElevenLabsProvider } from './voiceover/providers/elevenlabs.js'
+export { PollyProvider } from './voiceover/providers/polly.js'
 
 // Types
 export type {
