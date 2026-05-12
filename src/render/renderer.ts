@@ -220,7 +220,7 @@ function renderWithCursorOverlay(
     '-y',
     '-f', 'lavfi', '-i', `color=c=black@0:s=${cursorRes.width}x${cursorRes.height}:d=1:r=30,format=rgba`,
     '-i', cursorPngPath,
-    '-filter_complex', '[0:v][1:v]overlay=0:0:eof_action=repeat:format=auto[out]',
+    '-filter_complex', '[0:v][1:v]overlay=0:0:eof_action=repeat:format=yuv420[out]',
     '-map', '[out]',
     '-c:v', 'qtrle', '-pix_fmt', 'argb',
     cursorClipPath,
@@ -237,7 +237,7 @@ function renderWithCursorOverlay(
   const cursorStream = `movie='${escapedClipPath}':loop=0,setpts=N/30/TB,format=rgba[cursor]`
   const filterParts = [
     cursorStream,
-    `[0:v][cursor]overlay=x='${xExpr}':y='${yExpr}':enable='${enableExpr}':eof_action=pass:format=auto[out]`,
+    `[0:v][cursor]overlay=x='${xExpr}':y='${yExpr}':enable='${enableExpr}':eof_action=pass:format=yuv420[out]`,
   ]
 
   const outputPath = path.join(tmpDir, 'cursor-overlay.mp4')
@@ -314,7 +314,7 @@ function renderWithClickEffects(
     const ox = Math.max(0, cx - Math.round(halfSize))
     const oy = Math.max(0, cy - Math.round(halfSize))
     filterParts.push(
-      `[${prevLabel}][${rippleLabel}]overlay=${ox}:${oy}:eof_action=pass:format=auto[${outLabel}]`,
+      `[${prevLabel}][${rippleLabel}]overlay=${ox}:${oy}:eof_action=pass:format=yuv420[${outLabel}]`,
     )
     prevLabel = outLabel
   }
@@ -383,7 +383,7 @@ function renderWithHighlights(
       `movie='${escapedPath}',setpts=PTS+${timeSec}/TB,format=rgba[${hlLabel}]`,
     )
     filterParts.push(
-      `[${prevLabel}][${hlLabel}]overlay=${ox}:${oy}:eof_action=pass:format=auto[${outLabel}]`,
+      `[${prevLabel}][${hlLabel}]overlay=${ox}:${oy}:eof_action=pass:format=yuv420[${outLabel}]`,
     )
     prevLabel = outLabel
   }

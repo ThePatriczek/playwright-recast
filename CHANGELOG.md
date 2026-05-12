@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.15.1 (2026-05-12)
+
+### Bug fixes
+
+- **Green color cast on output with ffmpeg 8.x** ([#4](https://github.com/ThePatriczek/playwright-recast/issues/4)) — Cursor, click-ripple, and text-highlight overlays used `overlay=...:format=auto`. With ffmpeg 8.x the overlay filter's `format=auto` heuristic selects `yuva444p` when the secondary input is RGBA, so the subsequent encode to `yuv420p` mixed the YUV planes and produced a green-tinted output (a sampled white pixel returned `RGB(127,252,126)` instead of `RGB(253,255,255)`). Pinned `format=yuv420` explicitly on all four overlay filter calls in `src/render/renderer.ts`. Output is clean white on ffmpeg 7.x and 8.x. Thanks to [@maciejdzierzek](https://github.com/maciejdzierzek) for the precise repro and root-cause analysis.
+
 ## 0.15.0 (2026-04-15)
 
 ### Breaking changes
