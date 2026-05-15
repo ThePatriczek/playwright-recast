@@ -14,6 +14,10 @@ import { generateSubtitles } from '../subtitles/subtitle-generator.js'
 import { parseSrt } from '../subtitles/srt-parser.js'
 import { generateVoiceover } from '../voiceover/voiceover-processor.js'
 import { renderVideo, detectBlankLeadIn, type RenderableTrace } from '../render/renderer.js'
+import {
+  assembleVideoFromScreencastFrames,
+  selectRecordingPageFrames,
+} from '../render/screencast-assembler.js'
 import { processText } from '../text-processing/text-processor.js'
 import { writeSrt } from '../subtitles/srt-writer.js'
 import { writeVtt } from '../subtitles/vtt-writer.js'
@@ -248,6 +252,9 @@ export class PipelineExecutor {
             ...state.parsed,
             originalActions: state.parsed.actions,
             hiddenRanges: [],
+          }
+          if (!state.sourceVideoPath) {
+            state.sourceVideoPath = await this.assembleFallbackVideo(state.parsed)
           }
           break
         }
@@ -863,5 +870,36 @@ export class PipelineExecutor {
     }
 
     return searchDir(dir)
+  }
+
+  /**
+   * Build a video from the trace's screencast JPEG frames as a fallback
+   * when no sibling .webm exists. Only invoked from the parse stage when
+   * `findSourceVideo()` returned undefined — the happy path with a real
+   * recordVideo .webm bypasses this entirely. See issue #6.
+   */
+  private async assembleFallbackVideo(parsed: ParsedTrace): Promise<string> {
+    const pageFrames = selectRecordingPageFrames(parsed.frames)
+    if (pageFrames.length === 0) {
+      throw new Error(
+        'No source video found and the trace contains no screencast frames. ' +
+          'Enable `recordVideo` in your Playwright config (use: { video: \'on\' }) ' +
+          'so the .webm sits next to trace.zip, or run tests with --trace=on which ' +
+          'embeds screencast frames.',
+      )
+    }
+    const dir = this.source.endsWith('.zip')
+      ? path.dirname(this.source)
+      : this.source
+    const tmpDir = path.join(dir, '.recast-screencast-tmp')
+    const outputPath = path.join(tmpDir, 'screencast.mp4')
+    console.log(`  Source video: assembling from ${pageFrames.length} screencast frames (no sibling .webm)`)
+    await assembleVideoFromScreencastFrames({
+      frames: pageFrames,
+      readFrame: (sha1) => parsed.frameReader.readFrame(sha1),
+      tmpDir,
+      outputPath,
+    })
+    return outputPath
   }
 }

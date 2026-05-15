@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Bug fixes
+
+- **Standalone trace.zip rendered with no source video** ([#6](https://github.com/ThePatriczek/playwright-recast/issues/6)) — Running `playwright-recast --input <trace>.zip` without a sibling `.webm` (e.g. a trace downloaded from the trace viewer, or a test run without `recordVideo`) failed deep in the renderer with the unhelpful message `Source video not found: undefined`. The renderer previously required a sibling `.webm` recorded by Playwright's `recordVideo` option and never consulted the screencast JPEG frames stored inside the trace zip itself. Pipeline now falls back to assembling a CFR 25fps `.mp4` from the trace's screencast frames (recording-page only, via ffmpeg's concat demuxer with per-frame durations) when no `.webm` is found, so `npx playwright-recast --input foo.trace.zip` works out of the box. If neither a `.webm` nor screencast frames are available, the executor fails fast with an actionable error pointing at the Playwright `video: 'on'` / `--trace=on` knobs. A sibling `.webm` is still preferred (higher native frame rate); the fallback exists so standalone traces aren't a dead end. Reported by [@odiszapc](https://github.com/odiszapc).
+
 ## 0.15.1 (2026-05-12)
 
 ### Bug fixes
