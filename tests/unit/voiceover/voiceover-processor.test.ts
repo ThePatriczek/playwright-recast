@@ -69,6 +69,57 @@ function makeTrace(subtitleCount: number): SubtitledTrace {
   return { subtitles: subs } as unknown as SubtitledTrace
 }
 
+describe('generateVoiceover provider isAvailable guard', () => {
+  beforeAll(() => { fs.mkdirSync(TMP_ROOT, { recursive: true }) })
+  afterAll(() => { fs.rmSync(TMP_ROOT, { recursive: true, force: true }) })
+
+  it('throws an actionable error when provider.isAvailable() returns false', async () => {
+    let synthesizeCalled = false
+    const unavailableProvider: TtsProvider = {
+      name: 'unavailable-test',
+      async synthesize() {
+        synthesizeCalled = true
+        return []
+      },
+      async isAvailable() { return false },
+      async dispose() {},
+    }
+
+    const trace = makeTrace(1)
+    const tmp = path.join(TMP_ROOT, 'isavailable-guard')
+    await expect(generateVoiceover(trace, unavailableProvider, tmp)).rejects.toThrow(
+      /provider "unavailable-test" is not available/,
+    )
+    expect(synthesizeCalled).toBe(false)
+  })
+
+  it('proceeds to synthesize when isAvailable() returns true', async () => {
+    let synthesizeCalled = false
+    const okProvider: TtsProvider = {
+      name: 'ok-test',
+      async synthesize(texts, options) {
+        synthesizeCalled = true
+        const dir = options?.workDir ?? TMP_ROOT
+        fs.mkdirSync(dir, { recursive: true })
+        return texts.map(() => {
+          const p = path.join(dir, `ok-${crypto.randomUUID()}.mp3`)
+          fs.writeFileSync(p, Buffer.alloc(0))
+          return { path: p, durationMs: 0, format: { sampleRate: 24000, channels: 1, codec: 'mp3' } }
+        })
+      },
+      async isAvailable() { return true },
+      async dispose() {},
+    }
+
+    const trace = makeTrace(1)
+    const tmp = path.join(TMP_ROOT, 'isavailable-ok')
+    // Empty mp3s can't be probed for duration; we just want to confirm synthesize
+    // was reached before any downstream failure.
+    await generateVoiceover(trace, okProvider, tmp).catch(() => {})
+    expect(synthesizeCalled).toBe(true)
+  })
+})
+
 describe('generateVoiceover provider length guard', () => {
   beforeAll(() => { fs.mkdirSync(TMP_ROOT, { recursive: true }) })
   afterAll(() => { fs.rmSync(TMP_ROOT, { recursive: true, force: true }) })
