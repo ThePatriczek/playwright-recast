@@ -70,7 +70,12 @@ export function detectBlankLeadIn(videoPath: string, tmpDir: string): number {
 export interface RenderableTrace extends ParsedTrace {
   sourceVideoPath?: string
   subtitles?: SubtitleEntry[]
-  voiceover?: { audioTrackPath: string; entries: unknown[]; totalDurationMs: number }
+  voiceover?: {
+    audioTrackPath: string
+    entries: unknown[]
+    totalDurationMs: number
+    freezes?: Array<{ atVideoMs: number; durationMs: number }>
+  }
   speedSegments?: SpeedSegment[]
   clickEvents?: ClickEvent[]
   clickEffectConfig?: { color: string; opacity: number; radius: number; duration: number; soundVolume: number; sound?: string | true }
@@ -471,6 +476,93 @@ function renderWithSpeed(
 }
 
 /**
+ * Hold the last frame at each freeze point so the narration audio has time to
+ * finish before the next visual action. Splits the video at each freeze
+ * position, holds the last frame of the preceding segment for the requested
+ * duration, then concatenates everything back together.
+ *
+ * Freeze positions are in the speed-mapped (pre-freeze) video timeline.
+ */
+function applyVoiceoverFreezes(
+  videoPath: string,
+  freezes: Array<{ atVideoMs: number; durationMs: number }>,
+  tmpDir: string,
+): string {
+  if (freezes.length === 0) return videoPath
+
+  const videoDur = getVideoDuration(videoPath)
+  const sorted = [...freezes]
+    .map((f) => ({
+      atSec: Math.max(0, Math.min(videoDur, f.atVideoMs / 1000)),
+      durSec: Math.max(0, f.durationMs / 1000),
+    }))
+    .filter((f) => f.durSec > 0.01 && f.atSec < videoDur - 0.01)
+    .sort((a, b) => a.atSec - b.atSec)
+
+  if (sorted.length === 0) return videoPath
+
+  const segPaths: string[] = []
+  let prevEnd = 0
+  for (let i = 0; i < sorted.length; i++) {
+    const f = sorted[i]!
+    if (f.atSec <= prevEnd + 0.01) continue
+    const segPath = path.join(tmpDir, `vo-freeze-seg-${i}.mp4`)
+    ffmpeg([
+      '-y', '-ss', String(prevEnd), '-to', String(f.atSec),
+      '-i', videoPath,
+      '-vf', `tpad=stop_mode=clone:stop_duration=${f.durSec.toFixed(3)}`,
+      '-c:v', 'libx264', '-preset', 'fast', '-crf', '18', '-an',
+      segPath,
+    ])
+    segPaths.push(segPath)
+    prevEnd = f.atSec
+  }
+
+  if (prevEnd < videoDur - 0.01) {
+    const tailPath = path.join(tmpDir, 'vo-freeze-seg-tail.mp4')
+    ffmpeg([
+      '-y', '-ss', String(prevEnd),
+      '-i', videoPath,
+      '-c:v', 'libx264', '-preset', 'fast', '-crf', '18', '-an',
+      tailPath,
+    ])
+    segPaths.push(tailPath)
+  }
+
+  const totalFreezeSec = sorted.reduce((a, b) => a + b.durSec, 0)
+  console.log(
+    `  Voiceover freeze: ${sorted.length} hold(s), +${totalFreezeSec.toFixed(1)}s`,
+  )
+
+  const concatList = path.join(tmpDir, 'vo-freeze-concat.txt')
+  fs.writeFileSync(
+    concatList,
+    segPaths.map((p) => `file '${path.basename(p)}'`).join('\n'),
+  )
+  const outputPath = path.join(tmpDir, 'vo-freezed.mp4')
+  ffmpeg([
+    '-y', '-f', 'concat', '-safe', '0', '-i', concatList,
+    '-c', 'copy', outputPath,
+  ])
+  return outputPath
+}
+
+/**
+ * Shift a pre-freeze video time forward by the cumulative freeze duration
+ * that comes before it.
+ */
+function shiftForFreezes(
+  originalMs: number,
+  freezes: Array<{ atVideoMs: number; durationMs: number }>,
+): number {
+  let shift = 0
+  for (const f of freezes) {
+    if (f.atVideoMs <= originalMs) shift += f.durationMs
+  }
+  return originalMs + shift
+}
+
+/**
  * Render final video from trace data.
  */
 export function renderVideo(
@@ -573,6 +665,23 @@ export function renderVideo(
     )
   }
 
+  // Phase 3.6: Voiceover-driven freezes. If a narration's audio is longer
+  // than its visual window, the voiceover stage records "freeze" points so
+  // the video holds the current frame until the audio finishes. Visual
+  // overlays (cursor, click, highlight) are already baked into `videoInput`,
+  // so they freeze with the frame for free.
+  const voiceoverFreezes = trace.voiceover?.freezes ?? []
+  if (voiceoverFreezes.length > 0) {
+    videoInput = applyVoiceoverFreezes(videoInput, voiceoverFreezes, tmpDir)
+    // Shift click event times so the sound track lines up with the freeze-
+    // shifted visual ripples (which moved with the frozen frames).
+    if (trace.clickEvents) {
+      for (const ce of trace.clickEvents) {
+        ce.videoTimeMs = shiftForFreezes(ce.videoTimeMs, voiceoverFreezes)
+      }
+    }
+  }
+
   // Phase 3.7: Generate click sound track if configured
   let clickSoundTrackPath: string | undefined
   if (trace.clickEvents && trace.clickEvents.length > 0 && trace.clickEffectConfig?.sound) {
@@ -659,6 +768,23 @@ export function renderVideo(
     ffmpegArgs.push('-i', finalAudioPath)
   }
 
+  // Optional soft-subtitle track muxed into the container. The viewer can
+  // toggle this on/off in their player (independent of any burned-in style).
+  // All `-i` inputs MUST be pushed before any output options like `-vf` or
+  // `-map`, otherwise ffmpeg attributes those options to the wrong file.
+  const embedOpt = config.embedSubtitles
+  const wantEmbed = !!embedOpt && trace.subtitles && trace.subtitles.length > 0
+  let subInputIndex = -1
+  if (wantEmbed) {
+    const embedEntries = config.subtitleStyle?.chunkOptions
+      ? chunkSubtitles(trace.subtitles!, config.subtitleStyle.chunkOptions)
+      : trace.subtitles!
+    const embedSrtPath = path.join(tmpDir, 'embed-subtitles.srt')
+    fs.writeFileSync(embedSrtPath, writeSrt(embedEntries))
+    subInputIndex = finalAudioPath ? 2 : 1
+    ffmpegArgs.push('-i', embedSrtPath)
+  }
+
   const vFilters: string[] = []
 
   // Pad video with last frame to match audio duration
@@ -695,6 +821,14 @@ export function renderVideo(
     ffmpegArgs.push('-vf', vFilters.join(','))
   }
 
+  if (wantEmbed) {
+    // With extra inputs, explicit -map is needed so ffmpeg picks all three
+    // streams instead of falling back to its single-best-stream default.
+    ffmpegArgs.push('-map', '0:v:0')
+    if (finalAudioPath) ffmpegArgs.push('-map', '1:a:0')
+    ffmpegArgs.push('-map', `${subInputIndex}:s:0`)
+  }
+
   if (format === 'mp4') {
     ffmpegArgs.push('-c:v', config.codec ?? 'libx264', '-preset', 'fast', '-crf', String(crf))
   } else {
@@ -703,6 +837,21 @@ export function renderVideo(
 
   if (finalAudioPath) {
     ffmpegArgs.push('-c:a', 'aac', '-b:a', '128k')
+  }
+
+  if (wantEmbed) {
+    // mp4 uses mov_text; webm uses webvtt. ffmpeg transcodes the SRT input
+    // into the chosen codec automatically.
+    ffmpegArgs.push('-c:s', format === 'mp4' ? 'mov_text' : 'webvtt')
+
+    const meta = typeof embedOpt === 'object' && embedOpt ? embedOpt : {}
+    const language = meta.language ?? 'eng'
+    const title = meta.title ?? 'Subtitles'
+    ffmpegArgs.push(`-metadata:s:s:0`, `language=${language}`)
+    ffmpegArgs.push(`-metadata:s:s:0`, `title=${title}`)
+    if (meta.default !== false) {
+      ffmpegArgs.push('-disposition:s:0', 'default')
+    }
   }
 
   if (config.fps) {

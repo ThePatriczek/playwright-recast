@@ -5,7 +5,13 @@ import type { StageDescriptor } from './stages.js'
 import type { ParsedTrace, FilteredTrace, TraceAction } from '../types/trace.js'
 import { toMonotonic } from '../types/trace.js'
 import type { SpeedMappedTrace } from '../types/speed.js'
-import type { SubtitledTrace } from '../types/subtitle.js'
+import type { SubtitledTrace, SubtitleEntry } from '../types/subtitle.js'
+import {
+  NARRATE_TITLE_PREFIX,
+  NARRATE_HIDDEN_TITLE_PREFIX,
+  HIGHLIGHT_TITLE_PREFIX,
+  ZOOM_TITLE_PREFIX,
+} from '../helpers.js'
 import type { VoiceoveredTrace } from '../types/voiceover.js'
 import { parseTrace } from '../parse/trace-parser.js'
 import { filterSteps } from '../filter/step-filter.js'
@@ -89,7 +95,10 @@ export class PipelineExecutor {
     // and voiceover/subtitle timing is already adjusted for this in the voiceover/render
     // cases. But click sound timing and cursor keyframes are computed earlier without
     // this compensation, causing audio desync when blank lead-in is non-zero.
-    if (state.sourceVideoPath && (state.clickEvents || state.cursorKeyframes)) {
+    if (
+      state.sourceVideoPath &&
+      (state.clickEvents || state.cursorKeyframes || state.highlightEvents)
+    ) {
       const blankTmpDir = path.join(outputDir, '.recast-blank-probe')
       fs.mkdirSync(blankTmpDir, { recursive: true })
       const blankLeadIn = detectBlankLeadIn(state.sourceVideoPath, blankTmpDir)
@@ -104,6 +113,12 @@ export class PipelineExecutor {
         if (state.cursorKeyframes) {
           for (const kf of state.cursorKeyframes) {
             kf.videoTimeSec = Math.max(0, kf.videoTimeSec - blankLeadIn)
+          }
+        }
+        if (state.highlightEvents) {
+          for (const he of state.highlightEvents) {
+            he.videoTimeMs = Math.max(0, Math.round(he.videoTimeMs - offsetMs))
+            he.endTimeMs = Math.max(0, Math.round(he.endTimeMs - offsetMs))
           }
         }
       }
@@ -414,11 +429,113 @@ export class PipelineExecutor {
             }
           }
 
-          // Extract BDD step text from trace actions
-          const defaultTextFn = (action: TraceAction): string | undefined =>
-            action.text ?? (action.keyword ? `${action.keyword} ${action.title}` : undefined)
+          // If the test used narrate(), prefer the explicit narration spans.
+          // narrate() emits a test.step with a marker-prefixed title; each
+          // narrate's subtitle spans from its start until the next narrate
+          // (or the end of the trace).
+          const narrateActions = speedMapped.actions.filter(
+            (a) =>
+              typeof a.title === 'string' &&
+              (a.title.startsWith(NARRATE_TITLE_PREFIX) ||
+                a.title.startsWith(NARRATE_HIDDEN_TITLE_PREFIX)),
+          )
 
-          state.subtitled = generateSubtitles(speedMapped, defaultTextFn, stage.options)
+          if (narrateActions.length > 0) {
+            const subtitles: SubtitleEntry[] = []
+            const traceEndMs = speedMapped.timeRemap(speedMapped.metadata.endTime)
+            for (let i = 0; i < narrateActions.length; i++) {
+              const current = narrateActions[i]!
+              const next = narrateActions[i + 1]
+              const hidden = current.title.startsWith(NARRATE_HIDDEN_TITLE_PREFIX)
+              if (hidden) continue
+              const text = current.title.slice(NARRATE_TITLE_PREFIX.length)
+              const startMs = speedMapped.timeRemap(current.startTime)
+              const endMs = next ? speedMapped.timeRemap(next.startTime) : traceEndMs
+              if (endMs <= startMs) continue
+              subtitles.push({
+                index: subtitles.length + 1,
+                startMs: Math.round(startMs),
+                endMs: Math.round(endMs),
+                text,
+              })
+            }
+            state.subtitled = { ...speedMapped, subtitles }
+          } else {
+            // Fall back to BDD step text / titles.
+            const defaultTextFn = (action: TraceAction): string | undefined =>
+              action.text ?? (action.keyword ? `${action.keyword} ${action.title}` : undefined)
+            state.subtitled = generateSubtitles(speedMapped, defaultTextFn, stage.options)
+          }
+
+          // Pick up highlight() and zoom() marker steps from the trace so the
+          // user doesn't need a separate report.json or an extra pipeline call.
+
+          const hlDefaults = resolveTextHighlightConfig({})
+          const traceHighlights: HighlightEvent[] = []
+          for (const action of speedMapped.actions) {
+            if (typeof action.title !== 'string') continue
+            if (!action.title.startsWith(HIGHLIGHT_TITLE_PREFIX)) continue
+            try {
+              const data = JSON.parse(action.title.slice(HIGHLIGHT_TITLE_PREFIX.length)) as {
+                x: number; y: number; width: number; height: number
+                color?: string; opacity?: number; duration?: number
+                fadeOut?: number; swipeDuration?: number
+              }
+              const videoTimeMs = Math.max(0, Math.round(speedMapped.timeRemap(action.startTime)))
+              const duration = data.duration ?? hlDefaults.duration
+              const fadeOut = data.fadeOut ?? hlDefaults.fadeOut
+              traceHighlights.push({
+                x: data.x,
+                y: data.y,
+                width: data.width,
+                height: data.height,
+                videoTimeMs,
+                endTimeMs: videoTimeMs + duration + fadeOut,
+                color: data.color ?? hlDefaults.color,
+                opacity: data.opacity ?? hlDefaults.opacity,
+                swipeDuration: data.swipeDuration ?? hlDefaults.swipeDuration,
+                fadeOut,
+              })
+            } catch {
+              // skip malformed markers
+            }
+          }
+          if (traceHighlights.length > 0) {
+            state.highlightEvents = traceHighlights
+            state.highlightConfig = hlDefaults
+            console.log(`  highlight: ${traceHighlights.length} from trace`)
+          }
+
+          if (state.subtitled) {
+            for (const action of speedMapped.actions) {
+              if (typeof action.title !== 'string') continue
+              if (!action.title.startsWith(ZOOM_TITLE_PREFIX)) continue
+              try {
+                const data = JSON.parse(action.title.slice(ZOOM_TITLE_PREFIX.length)) as {
+                  x: number; y: number; level: number
+                }
+                const tMs = speedMapped.timeRemap(action.startTime)
+                const sub = state.subtitled.subtitles.find(
+                  (s) => tMs >= s.startMs && tMs < s.endMs,
+                )
+                if (sub) {
+                  // Start zoom at the actual zoom() marker time within the
+                  // narration window (not at the narration's start), so the
+                  // zoom kicks in only once the target is visible. The
+                  // renderer holds the zoom until `sub.endMs` since we leave
+                  // `zoom.endMs` undefined.
+                  sub.zoom = {
+                    x: data.x,
+                    y: data.y,
+                    level: data.level,
+                    startMs: Math.round(tMs),
+                  }
+                }
+              } catch {
+                // skip malformed markers
+              }
+            }
+          }
           break
         }
 
@@ -786,6 +903,12 @@ export class PipelineExecutor {
               for (const sub of state.subtitled.subtitles) {
                 sub.startMs = Math.max(0, sub.startMs - offsetMs)
                 sub.endMs = Math.max(0, sub.endMs - offsetMs)
+                if (sub.zoom?.startMs !== undefined) {
+                  sub.zoom.startMs = Math.max(0, sub.zoom.startMs - offsetMs)
+                }
+                if (sub.zoom?.endMs !== undefined) {
+                  sub.zoom.endMs = Math.max(0, sub.zoom.endMs - offsetMs)
+                }
               }
             }
             state._blankTrimApplied = true
@@ -813,6 +936,12 @@ export class PipelineExecutor {
               for (const sub of state.subtitled.subtitles) {
                 sub.startMs = Math.max(0, sub.startMs - offsetMs)
                 sub.endMs = Math.max(0, sub.endMs - offsetMs)
+                if (sub.zoom?.startMs !== undefined) {
+                  sub.zoom.startMs = Math.max(0, sub.zoom.startMs - offsetMs)
+                }
+                if (sub.zoom?.endMs !== undefined) {
+                  sub.zoom.endMs = Math.max(0, sub.zoom.endMs - offsetMs)
+                }
               }
             }
             state._blankTrimApplied = true

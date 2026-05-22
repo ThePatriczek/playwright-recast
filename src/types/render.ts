@@ -17,7 +17,17 @@ export interface RenderConfig {
   format?: 'mp4' | 'webm'
   resolution?: '720p' | '1080p' | '1440p' | '4k' | { width: number; height: number }
   fps?: number
+  /** Burn subtitles into the video pixels (cannot be turned off by the viewer). */
   burnSubtitles?: boolean
+  /**
+   * Mux subtitles as a soft (toggleable) track inside the container.
+   * - `true` — embed with default settings (language `eng`, title `Subtitles`).
+   * - `{ language, title, default }` — customize.
+   * Works with both `mp4` (mov_text codec) and `webm` (webvtt codec). Can be
+   * combined with `burnSubtitles` — viewers will see the burned-in version
+   * regardless, and can also toggle the embedded track in their player.
+   */
+  embedSubtitles?: boolean | { language?: string; title?: string; default?: boolean }
   subtitleStyle?: SubtitleStyle
   cursorOverlay?: boolean
   codec?: string

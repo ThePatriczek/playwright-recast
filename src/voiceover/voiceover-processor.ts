@@ -6,6 +6,7 @@ import type {
   TtsProvider,
   VoiceoveredTrace,
   VoiceoverEntry,
+  VoiceoverFreeze,
   VoiceoverOptions,
   LoudnessNormalizeConfig,
 } from '../types/voiceover.js'
@@ -57,6 +58,11 @@ export async function generateVoiceover(
 
   const entries: VoiceoverEntry[] = []
   const segmentFiles: string[] = []
+  const freezes: VoiceoverFreeze[] = []
+  // Capture each subtitle's pre-mutation startMs — these are the video
+  // positions (in the speed-mapped timeline) where we may need to freeze
+  // the frame so audio has time to finish.
+  const originalStartsMs = trace.subtitles.map((s) => s.startMs)
   let cursor = 0
   let timeShift = 0
 
@@ -65,6 +71,8 @@ export async function generateVoiceover(
 
     subtitle.startMs += timeShift
     subtitle.endMs += timeShift
+    if (subtitle.zoom?.startMs !== undefined) subtitle.zoom.startMs += timeShift
+    if (subtitle.zoom?.endMs !== undefined) subtitle.zoom.endMs += timeShift
 
     if (subtitle.startMs > cursor) {
       const silencePath = path.join(tmpDir, `silence-${subtitle.index}.mp3`)
@@ -103,6 +111,17 @@ export async function generateVoiceover(
       const overflow = audioDuration - windowDuration
       segmentFiles.push(segPath)
       subtitle.endMs = subtitle.startMs + audioDuration
+      // Freeze the video on the last frame of this segment's window so the
+      // narration finishes before the next visual action starts. The final
+      // segment has nothing to freeze against; the renderer's end-of-video
+      // tpad handles its overflow instead.
+      const nextOriginalStartMs = originalStartsMs[si + 1]
+      if (nextOriginalStartMs !== undefined) {
+        freezes.push({
+          atVideoMs: nextOriginalStartMs,
+          durationMs: overflow,
+        })
+      }
       timeShift += overflow
       cursor = subtitle.endMs
     }
@@ -141,6 +160,7 @@ export async function generateVoiceover(
       entries,
       audioTrackPath,
       totalDurationMs,
+      freezes,
     },
   }
 }

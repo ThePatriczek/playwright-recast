@@ -68,11 +68,28 @@ export interface VoiceoverEntry {
   outputEndMs: number
 }
 
+/**
+ * A point in the (post-speed, pre-voiceover-shift) video timeline where the
+ * renderer should hold the current frame so the narration audio has time to
+ * finish. Emitted by `generateVoiceover` when a segment's audio is longer
+ * than the visual window between this narration and the next.
+ */
+export interface VoiceoverFreeze {
+  /** Video time (ms) at which to freeze — measured in the source video's
+   *  speed-mapped timeline, i.e. the same timeline `SpeedMappedTrace.timeRemap`
+   *  produces, before any voiceover shift was applied. */
+  atVideoMs: number
+  /** How long to hold the frame, in ms. */
+  durationMs: number
+}
+
 /** Trace after voiceover has been generated */
 export interface VoiceoveredTrace extends SubtitledTrace {
   voiceover: {
     entries: VoiceoverEntry[]
     audioTrackPath: string
     totalDurationMs: number
+    /** Frames to hold so the narration audio always finishes in-frame. */
+    freezes: VoiceoverFreeze[]
   }
 }

@@ -1,47 +1,94 @@
 import type { Page, Locator, TestInfo } from '@playwright/test'
 
+type StepFn = <T>(title: string, body: () => T | Promise<T>) => Promise<T>
+type RecastTest = { info: () => TestInfo; step: StepFn }
+
 /**
  * Get current test info — works in both playwright-bdd and standard Playwright.
  * Must be called from within a test context.
  */
 function getTestInfo(): TestInfo {
-  // @playwright/test provides test.info() but we can't import 'test' generically.
-  // Instead, we use the global __test_info__ or accept it as parameter.
   throw new Error(
-    'getTestInfo() must be overridden. Call Recast.setup(test) first.',
+    'getTestInfo() must be overridden. Call setupRecast(test) first.',
   )
 }
 
 let _getTestInfo: () => TestInfo = getTestInfo
+let _step: StepFn | null = null
+
+/**
+ * Title prefix written to a trace step by `narrate()`. The `subtitlesFromTrace`
+ * pipeline stage looks for this prefix to recover the narration text and
+ * compute the subtitle's time window (this narrate → next narrate).
+ */
+export const NARRATE_TITLE_PREFIX = '__recast_narrate__: '
+/** Same as `NARRATE_TITLE_PREFIX` but the step is excluded from subtitles. */
+export const NARRATE_HIDDEN_TITLE_PREFIX = '__recast_narrate_hidden__: '
+/** Title prefix written to a trace step by `highlight()`. JSON payload carries
+ *  the viewport-pixel bounding box and styling overrides. */
+export const HIGHLIGHT_TITLE_PREFIX = '__recast_highlight__: '
+/** Title prefix written to a trace step by `zoom()`. JSON payload carries
+ *  the center as (x, y) viewport fractions and the zoom level. */
+export const ZOOM_TITLE_PREFIX = '__recast_zoom__: '
+
+/** Characters-per-second used by `narrate({ autoWait: true })` to estimate
+ *  how long the narration will take to speak. Character count is more
+ *  language-robust than word count (cf. German compounds vs. English).
+ *  14 ch/s ≈ 150 wpm × 5 chars/word / 60s, a typical conversational pace. */
+export const NARRATE_DEFAULT_CPS = 14
+
+function estimateNarrationMs(text: string, charsPerSecond: number): number {
+  // Count non-whitespace characters — whitespace inflates length without
+  // adding spoken time.
+  const chars = text.replace(/\s+/g, '').length
+  if (chars === 0 || charsPerSecond <= 0) return 0
+  return Math.round((chars / charsPerSecond) * 1000)
+}
 
 /**
  * Initialize playwright-recast helpers with the test instance.
  * Call once in your fixtures file:
  *
  * ```typescript
- * import { test } from 'playwright-bdd'
- * import { setupRecast } from '@workspace/playwright-recast/helpers'
+ * import { test } from 'playwright-bdd' // or '@playwright/test'
+ * import { setupRecast } from 'playwright-recast'
  * setupRecast(test)
  * ```
  */
-export function setupRecast(testInstance: { info: () => TestInfo }): void {
+export function setupRecast(testInstance: RecastTest): void {
   _getTestInfo = () => testInstance.info()
+  _step = testInstance.step.bind(testInstance)
 }
 
 /**
- * Attach voiceover narration text to the current step.
- * Call from EVERY step definition (even without doc string) so
- * the reporter can match annotations to steps by sequential index.
+ * Attach voiceover narration text to the current point in the test.
  *
- * @param text Doc string content (voiceover text). Pass undefined if none.
- * @param opts.hidden Mark step as hidden (not recorded, excluded from SRT)
+ * Emits a `test.step()` with a marker-prefixed title so the narration is
+ * recorded in the trace zip. `subtitlesFromTrace` later groups each narrate
+ * step's text into a subtitle that spans until the next narrate call (or the
+ * end of the trace). Also pushes a `voiceover` annotation onto `testInfo` so
+ * external reporters can still read it from the JSON report.
+ *
+ * @param text Narration text. Pass undefined to no-op.
+ * @param opts.hidden Mark step as hidden (excluded from SRT). Detected
+ *   automatically if `text` contains `@hidden`.
+ * @param opts.autoWait Pause the test after recording the step for the
+ *   approximate time the narration takes to speak. Useful when running
+ *   without TTS so the recorded video has natural visual time for the line.
+ *   - `true` — estimate via non-whitespace characters / `NARRATE_DEFAULT_CPS`.
+ *   - `number` — wait exactly this many milliseconds.
+ *   - `{ charactersPerSecond, minMs, maxMs }` — tune the estimate.
  */
-export function narrate(
+export async function narrate(
   text: string | undefined,
-  opts?: { hidden?: boolean },
-): void {
+  opts?: {
+    hidden?: boolean
+    autoWait?: boolean | number | { charactersPerSecond?: number; minMs?: number; maxMs?: number }
+  },
+): Promise<void> {
   const hidden = opts?.hidden ?? text?.includes('@hidden') ?? false
   const cleanText = text?.replace(/@hidden\s*/g, '').trim() || ''
+  if (!cleanText) return
 
   const info = _getTestInfo()
   info.annotations.push({ type: 'voiceover', description: cleanText })
@@ -49,6 +96,35 @@ export function narrate(
     type: 'voiceover-hidden',
     description: hidden ? '1' : '0',
   })
+
+  if (_step) {
+    const prefix = hidden ? NARRATE_HIDDEN_TITLE_PREFIX : NARRATE_TITLE_PREFIX
+    await _step(`${prefix}${cleanText}`, async () => {})
+  }
+
+  const waitMs = resolveAutoWait(cleanText, opts?.autoWait)
+  if (waitMs > 0) {
+    await new Promise((resolve) => setTimeout(resolve, waitMs))
+  }
+}
+
+function resolveAutoWait(
+  text: string,
+  autoWait:
+    | boolean
+    | number
+    | { charactersPerSecond?: number; minMs?: number; maxMs?: number }
+    | undefined,
+): number {
+  if (!autoWait) return 0
+  if (typeof autoWait === 'number') return Math.max(0, autoWait)
+  const cps =
+    (typeof autoWait === 'object' && autoWait.charactersPerSecond) || NARRATE_DEFAULT_CPS
+  const minMs = (typeof autoWait === 'object' && autoWait.minMs) || 0
+  const maxMs = typeof autoWait === 'object' ? autoWait.maxMs : undefined
+  const estimated = estimateNarrationMs(text, cps)
+  const clampedLow = Math.max(minMs, estimated)
+  return maxMs !== undefined ? Math.min(maxMs, clampedLow) : clampedLow
 }
 
 /**
@@ -72,11 +148,16 @@ export async function zoom(
 
   const x = (box.x + box.width / 2) / viewport.width
   const y = (box.y + box.height / 2) / viewport.height
+  const payload = { x, y, level }
 
   _getTestInfo().annotations.push({
     type: 'zoom',
-    description: JSON.stringify({ x, y, level }),
+    description: JSON.stringify(payload),
   })
+
+  if (_step) {
+    await _step(`${ZOOM_TITLE_PREFIX}${JSON.stringify(payload)}`, async () => {})
+  }
 }
 
 /**
@@ -178,16 +259,22 @@ export async function highlight(
 
   if (!box) return
 
+  const payload = {
+    x: box.x,
+    y: box.y,
+    width: box.width,
+    height: box.height,
+    ...styleOpts,
+  }
+
   _getTestInfo().annotations.push({
     type: 'highlight',
-    description: JSON.stringify({
-      x: box.x,
-      y: box.y,
-      width: box.width,
-      height: box.height,
-      ...styleOpts,
-    }),
+    description: JSON.stringify(payload),
   })
+
+  if (_step) {
+    await _step(`${HIGHLIGHT_TITLE_PREFIX}${JSON.stringify(payload)}`, async () => {})
+  }
 }
 
 /**
