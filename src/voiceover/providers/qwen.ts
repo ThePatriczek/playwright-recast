@@ -371,13 +371,12 @@ export function QwenTtsProvider(config: QwenTtsProviderConfig): TtsProvider {
       }
     },
 
-    estimateDurationMs(text: string): number {
-      const words = text.split(/\s+/).length
-      return (words / 150) * 60_000
-    },
-
     async isAvailable(): Promise<boolean> {
-      return true
+      const r = spawnSync(pythonBin, ['--version'], { stdio: 'ignore' })
+      if (r.status !== 0) return false
+      const scriptPath = config.__pythonScriptPath__
+        ?? path.join(path.dirname(fileURLToPath(import.meta.url)), 'qwen-sidecar', 'sidecar.py')
+      return fs.existsSync(scriptPath)
     },
 
     async dispose(): Promise<void> {

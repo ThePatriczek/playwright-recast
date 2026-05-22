@@ -109,14 +109,13 @@ export function PollyProvider(config: PollyProviderConfig = {}): TtsProvider {
       }))
     },
 
-    estimateDurationMs(text: string, options?: TtsOptions): number {
-      const spd = options?.speed ?? 1.0
-      const words = text.split(/\s+/).length
-      return (words / (150 * spd)) * 60_000
-    },
-
     async isAvailable(): Promise<boolean> {
-      return true
+      try {
+        await import('@aws-sdk/client-polly')
+        return true
+      } catch {
+        return false
+      }
     },
 
     async dispose(): Promise<void> {

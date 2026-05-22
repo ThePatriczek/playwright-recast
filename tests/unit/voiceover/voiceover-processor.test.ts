@@ -53,7 +53,6 @@ function levelAlternatingProvider(buffers: Buffer[]): TtsProvider {
         }
       })
     },
-    estimateDurationMs() { return 0 },
     async isAvailable() { return true },
     async dispose() {},
   }
@@ -85,7 +84,6 @@ describe('generateVoiceover provider length guard', () => {
         fs.writeFileSync(filePath, Buffer.alloc(0))
         return [{ path: filePath, durationMs: 0, format: { sampleRate: 24000, channels: 1, codec: 'mp3' } }]
       },
-      estimateDurationMs() { return 0 },
       async isAvailable() { return true },
       async dispose() {},
     }

@@ -88,13 +88,14 @@ export function ElevenLabsProvider(config: ElevenLabsProviderConfig = {}): TtsPr
       }))
     },
 
-    estimateDurationMs(text: string): number {
-      const words = text.split(/\s+/).length
-      return (words / 150) * 60_000
-    },
-
     async isAvailable(): Promise<boolean> {
-      return !!apiKey
+      if (!apiKey) return false
+      try {
+        await import('@elevenlabs/elevenlabs-js')
+        return true
+      } catch {
+        return false
+      }
     },
 
     async dispose(): Promise<void> {

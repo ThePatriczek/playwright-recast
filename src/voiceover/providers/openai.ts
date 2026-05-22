@@ -71,14 +71,14 @@ export function OpenAIProvider(config: OpenAIProviderConfig = {}): TtsProvider {
       }))
     },
 
-    estimateDurationMs(text: string, options?: TtsOptions): number {
-      const spd = options?.speed ?? defaults.speed
-      const words = text.split(/\s+/).length
-      return (words / (150 * spd)) * 60_000
-    },
-
     async isAvailable(): Promise<boolean> {
-      return !!apiKey
+      if (!apiKey) return false
+      try {
+        await import('openai')
+        return true
+      } catch {
+        return false
+      }
     },
 
     async dispose(): Promise<void> {

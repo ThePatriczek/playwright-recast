@@ -39,7 +39,6 @@ export interface TtsProvider {
    * written by the provider (typically under `options.workDir`).
    */
   synthesize(texts: string[], options?: TtsOptions): Promise<AudioSegment[]>
-  estimateDurationMs(text: string, options?: TtsOptions): number
   isAvailable(): Promise<boolean>
   dispose(): Promise<void>
 }

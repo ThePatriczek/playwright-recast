@@ -56,6 +56,13 @@ export async function generateVoiceover(
   fs.mkdirSync(tmpDir, { recursive: true })
   const normalizeConfig = resolveNormalize(options?.normalize)
 
+  if (!(await provider.isAvailable())) {
+    throw new Error(
+      `Voiceover provider "${provider.name}" is not available — ` +
+        `check credentials, peer-dependency installation, or runtime prerequisites.`,
+    )
+  }
+
   const texts = trace.subtitles.map((s) => s.ttsText ?? s.text)
   const audios = await provider.synthesize(texts, { workDir: tmpDir })
 
