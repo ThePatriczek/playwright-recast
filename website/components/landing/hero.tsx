@@ -135,7 +135,7 @@ export function Hero() {
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
               <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500" />
             </span>
-            <span className="truncate">v0.16.0 — self-contained narrate / highlight / zoom helpers</span>
+            <span className="truncate">v0.17.0 — local TTS with Qwen3-TTS voice clone &amp; design</span>
           </div>
         </BlurFade>
 
