@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.18.0 (2026-05-22)
+
+### Features
+
+- **Disk cache for `ElevenLabsProvider` / `OpenAIProvider` / `PollyProvider`** — Set `cacheDir` on any built-in provider and re-renders skip the API call for `(text, voice, model, language, settings)` tuples that have already been synthesized. Cache key is a SHA-256 over all audio-affecting inputs, so changing the voice / model / settings invalidates the entry. Saves API spend on iterative edits (re-render after subtitle tweaks → only the changed lines hit the API). Omit `cacheDir` to disable disk caching; intra-batch dedup (same narration reused twice in one render) still applies automatically.
+- **`synthesizeWithCache()` helper + `planBatch` primitives** — Exposed from `src/voiceover/providers/util/audio-cache.ts` for custom-provider authors. Wrap your single-text synthesis function and get cache + dedup for free with one call.
+
+### Internal
+
+- Refactored bundled providers (ElevenLabs / OpenAI / Polly) to share `synthesizeWithCache()` instead of hand-rolled `Promise.all` + buffer writes. Per-provider boilerplate dropped to a single `generateOne(text)` function.
+- Test suite: **410 passed** (+15 — 11 audio-cache helper tests + 4 per-provider cache tests).
+
 ## 0.17.0 (2026-05-22)
 
 ### Features

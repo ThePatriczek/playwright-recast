@@ -99,6 +99,37 @@ describe('ElevenLabsProvider', () => {
     const args = mocks.convertMock.mock.calls[0]![1] as Record<string, unknown>
     expect(args).not.toHaveProperty('voiceSettings')
   })
+
+  it('cacheDir: second batch with same fingerprint serves from disk and does not call the API', async () => {
+    const cacheDir = path.join(TMP_ROOT, `el-cache-${Date.now()}-${Math.random()}`)
+    const p = ElevenLabsProvider({
+      apiKey: 'k', voice: 'v1', model: 'm1', languageCode: 'cs', cacheDir,
+    })
+    const workDir = path.join(TMP_ROOT, `el-work-${Date.now()}-${Math.random()}`)
+
+    await p.synthesize(['hello', 'world'], { workDir })
+    expect(mocks.convertMock).toHaveBeenCalledTimes(2)
+
+    mocks.convertMock.mockClear()
+    const result = await p.synthesize(['hello', 'world'], { workDir })
+
+    expect(mocks.convertMock).not.toHaveBeenCalled()
+    expect(result).toHaveLength(2)
+    for (const seg of result) expect(fs.existsSync(seg.path)).toBe(true)
+  })
+
+  it('cacheDir: different voice produces a separate cache entry', async () => {
+    const cacheDir = path.join(TMP_ROOT, `el-voice-${Date.now()}-${Math.random()}`)
+    const workDir = path.join(TMP_ROOT, `el-voice-w-${Date.now()}-${Math.random()}`)
+
+    const a = ElevenLabsProvider({ apiKey: 'k', voice: 'v1', cacheDir })
+    await a.synthesize(['hello'], { workDir })
+    mocks.convertMock.mockClear()
+
+    const b = ElevenLabsProvider({ apiKey: 'k', voice: 'v2', cacheDir })
+    await b.synthesize(['hello'], { workDir })
+    expect(mocks.convertMock).toHaveBeenCalledTimes(1)
+  })
 })
 
 // --- OpenAI ---------------------------------------------------------------
@@ -144,6 +175,19 @@ describe('OpenAIProvider', () => {
     const args = mocks.openaiCreateMock.mock.calls[0]![0] as Record<string, unknown>
     expect(args).not.toHaveProperty('instructions')
   })
+
+  it('cacheDir: second batch with same fingerprint serves from disk and does not call the API', async () => {
+    const cacheDir = path.join(TMP_ROOT, `oa-cache-${Date.now()}-${Math.random()}`)
+    const workDir = path.join(TMP_ROOT, `oa-work-${Date.now()}-${Math.random()}`)
+    const p = OpenAIProvider({ apiKey: 'k', voice: 'nova', model: 'tts-1', cacheDir })
+
+    await p.synthesize(['hi', 'there'], { workDir })
+    expect(mocks.openaiCreateMock).toHaveBeenCalledTimes(2)
+
+    mocks.openaiCreateMock.mockClear()
+    await p.synthesize(['hi', 'there'], { workDir })
+    expect(mocks.openaiCreateMock).not.toHaveBeenCalled()
+  })
 })
 
 // --- Polly ---------------------------------------------------------------
@@ -187,5 +231,26 @@ describe('PollyProvider', () => {
     mocks.pollySendMock.mockResolvedValueOnce({})
     const p = PollyProvider({ region: 'us-east-1', accessKeyId: 'a', secretAccessKey: 's' })
     await expect(p.synthesize(['x'], { workDir: TMP_ROOT })).rejects.toThrow(/no audio stream/i)
+  })
+
+  it('cacheDir: second batch with same fingerprint serves from disk and does not call the API', async () => {
+    const cacheDir = path.join(TMP_ROOT, `polly-cache-${Date.now()}-${Math.random()}`)
+    const workDir = path.join(TMP_ROOT, `polly-work-${Date.now()}-${Math.random()}`)
+    const p = PollyProvider({
+      region: 'us-east-1', accessKeyId: 'a', secretAccessKey: 's',
+      voice: 'Joanna', cacheDir,
+    })
+
+    await p.synthesize(['hi', 'there'], { workDir })
+    expect(mocks.pollySendMock).toHaveBeenCalledTimes(2)
+
+    mocks.pollySendMock.mockClear()
+    mocks.pollyCommandCalls.length = 0
+    mocks.pollySendMock.mockResolvedValue({
+      AudioStream: { transformToByteArray: async () => new Uint8Array([1, 2, 3]) },
+    })
+
+    await p.synthesize(['hi', 'there'], { workDir })
+    expect(mocks.pollySendMock).not.toHaveBeenCalled()
   })
 })

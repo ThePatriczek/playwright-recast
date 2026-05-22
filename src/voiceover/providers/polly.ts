@@ -1,6 +1,6 @@
+import * as os from 'node:os'
 import type { TtsProvider, TtsOptions, AudioSegment } from '../../types/voiceover.js'
-import { resolveWorkDir } from './util/resolveWorkDir.js'
-import { writeAudioSegment } from './util/writeAudioSegment.js'
+import { synthesizeWithCache } from './util/audio-cache.js'
 
 export interface PollyProviderConfig {
   region?: string
@@ -15,6 +15,13 @@ export interface PollyProviderConfig {
   /** BCP-47 language code. */
   languageCode?: string
   textType?: 'text' | 'ssml'
+  /**
+   * Directory for disk caching of synthesized audio. When set, the provider
+   * skips API calls for `(text, voice, engine, sampleRate, languageCode,
+   * textType)` tuples it has already synthesized. Omit to disable disk
+   * caching (intra-batch dedup still applies).
+   */
+  cacheDir?: string
 }
 
 const DEFAULT_VOICE = 'Joanna'
@@ -80,33 +87,41 @@ export function PollyProvider(config: PollyProviderConfig = {}): TtsProvider {
     async synthesize(texts: string[], options?: TtsOptions): Promise<AudioSegment[]> {
       const polly = await getClient()
       const Cmd = SynthesizeSpeechCommand!
-      const dir = resolveWorkDir(options?.workDir)
+      const voice = options?.voice ?? defaults.voice
+      const languageCode = options?.languageCode ?? defaults.languageCode
+      const engine = defaults.engine!
+      const sampleRate = defaults.sampleRate!
+      const textType = defaults.textType
 
-      return Promise.all(texts.map(async (text) => {
-        const voice = options?.voice ?? defaults.voice
-        const languageCode = options?.languageCode ?? defaults.languageCode
+      async function generateOne(text: string): Promise<Buffer> {
         const input: Record<string, unknown> = {
           Text: text,
           OutputFormat: 'mp3',
           VoiceId: voice,
-          Engine: defaults.engine,
-          SampleRate: defaults.sampleRate,
-          TextType: defaults.textType,
+          Engine: engine,
+          SampleRate: sampleRate,
+          TextType: textType,
         }
         if (languageCode) input.LanguageCode = languageCode
-
         const command = new Cmd(input)
         const response = await polly.send(command)
         if (!response.AudioStream) {
           throw new Error('Amazon Polly returned no audio stream')
         }
-        const buf = Buffer.from(await response.AudioStream.transformToByteArray())
-        return writeAudioSegment(buf, {
-          dir,
-          prefix: 'polly',
-          sampleRate: Number(defaults.sampleRate),
-        })
-      }))
+        return Buffer.from(await response.AudioStream.transformToByteArray())
+      }
+
+      return synthesizeWithCache({
+        texts,
+        workDir: options?.workDir ?? os.tmpdir(),
+        cache: config.cacheDir ? { dir: config.cacheDir } : undefined,
+        fingerprintFor: (text) => [
+          'polly', text, voice, engine, sampleRate, languageCode ?? '', textType,
+        ],
+        generate: (missTexts) => Promise.all(missTexts.map(generateOne)),
+        prefix: 'polly',
+        format: { sampleRate: Number(sampleRate), channels: 1, codec: 'mp3' },
+      })
     },
 
     async isAvailable(): Promise<boolean> {

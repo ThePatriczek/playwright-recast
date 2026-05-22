@@ -82,3 +82,22 @@ npx playwright-recast -i ./traces --srt narration.srt --provider openai --voice 
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `OPENAI_API_KEY` | Yes (unless `apiKey` is set) | Your OpenAI API key |
+
+## Disk caching
+
+Set `cacheDir` to skip API calls for text the provider has already synthesized
+in a previous run. The cache key is a SHA-256 over `(text, voice, model,
+speed, instructions)` so a change to any of these inputs invalidates the
+entry.
+
+```typescript
+OpenAIProvider({
+  voice: 'nova',
+  model: 'gpt-4o-mini-tts',
+  speed: 1.1,
+  cacheDir: './.recast-cache/openai',
+})
+```
+
+Cache layout: `<cacheDir>/<hash>.mp3` (flat). Omit `cacheDir` to disable disk
+caching; intra-batch dedup still applies.

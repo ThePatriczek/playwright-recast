@@ -1,6 +1,6 @@
+import * as os from 'node:os'
 import type { TtsProvider, TtsOptions, AudioSegment } from '../../types/voiceover.js'
-import { resolveWorkDir } from './util/resolveWorkDir.js'
-import { writeAudioSegment } from './util/writeAudioSegment.js'
+import { synthesizeWithCache } from './util/audio-cache.js'
 
 export interface OpenAIProviderConfig {
   apiKey?: string
@@ -14,6 +14,13 @@ export interface OpenAIProviderConfig {
   speed?: number
   /** Free-form style instructions (GPT-4o-mini-tts family). */
   instructions?: string
+  /**
+   * Directory for disk caching of synthesized audio. When set, the provider
+   * skips API calls for `(text, voice, model, speed, instructions)` tuples
+   * it has already synthesized. Omit to disable disk caching (intra-batch
+   * dedup still applies).
+   */
+  cacheDir?: string
 }
 
 const DEFAULT_VOICE = 'nova'
@@ -55,20 +62,31 @@ export function OpenAIProvider(config: OpenAIProviderConfig = {}): TtsProvider {
 
     async synthesize(texts: string[], options?: TtsOptions): Promise<AudioSegment[]> {
       const openai = await getClient()
-      const dir = resolveWorkDir(options?.workDir)
-      return Promise.all(texts.map(async (text) => {
+      const model = options?.model ?? defaults.model
+      const voice = options?.voice ?? defaults.voice
+      const speed = options?.speed ?? defaults.speed
+      const instructions = defaults.instructions
+
+      async function generateOne(text: string): Promise<Buffer> {
         const params: Record<string, unknown> = {
-          model: options?.model ?? defaults.model,
-          voice: options?.voice ?? defaults.voice,
-          speed: options?.speed ?? defaults.speed,
-          input: text,
-          response_format: 'mp3',
+          model, voice, speed, input: text, response_format: 'mp3',
         }
-        if (defaults.instructions) params.instructions = defaults.instructions
+        if (instructions) params.instructions = instructions
         const response = await openai.audio.speech.create(params)
-        const buf = Buffer.from(await response.arrayBuffer())
-        return writeAudioSegment(buf, { dir, prefix: 'openai', sampleRate: 24000 })
-      }))
+        return Buffer.from(await response.arrayBuffer())
+      }
+
+      return synthesizeWithCache({
+        texts,
+        workDir: options?.workDir ?? os.tmpdir(),
+        cache: config.cacheDir ? { dir: config.cacheDir } : undefined,
+        fingerprintFor: (text) => [
+          'openai', text, voice, model, speed, instructions ?? '',
+        ],
+        generate: (missTexts) => Promise.all(missTexts.map(generateOne)),
+        prefix: 'openai',
+        format: { sampleRate: 24000, channels: 1, codec: 'mp3' },
+      })
     },
 
     async isAvailable(): Promise<boolean> {

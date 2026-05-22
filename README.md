@@ -311,6 +311,7 @@ OpenAIProvider({
   model: 'gpt-4o-mini-tts',
   speed: 1.2,
   instructions: 'Calm, professional demo narration.',
+  cacheDir: './.recast-cache/openai',  // optional: disk cache to skip re-synthesis
 })
 ```
 
@@ -329,6 +330,7 @@ ElevenLabsProvider({
     stability: 0.75,               // Higher = more consistent delivery (less drift)
     similarityBoost: 0.75,
   },
+  cacheDir: './.recast-cache/elevenlabs',  // optional: disk cache to skip re-synthesis
 })
 ```
 
@@ -344,6 +346,7 @@ PollyProvider({
   voice: 'Joanna',          // Matthew, Ruth, Stephen, Ivy, Joey, …
   engine: 'neural',         // standard | neural | long-form | generative
   sampleRate: '24000',
+  cacheDir: './.recast-cache/polly',  // optional: disk cache to skip re-synthesis
   // Credentials are optional — the AWS SDK default chain is used
   // (env vars, ~/.aws/credentials, IAM role on EC2/ECS/Lambda, SSO).
 })

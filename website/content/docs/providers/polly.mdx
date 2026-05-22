@@ -104,3 +104,21 @@ npx playwright-recast -i ./traces --srt narration.srt --provider polly --voice M
 | `AWS_SESSION_TOKEN` | Optional | Required when using temporary STS credentials. |
 | `AWS_PROFILE` | Optional | Use a specific profile from `~/.aws/credentials`. |
 | `RECAST_POLLY_ENGINE` | Optional | MCP default engine. Defaults to `neural`. |
+
+## Disk caching
+
+Set `cacheDir` to skip Polly API calls for text the provider has already
+synthesized in a previous run. The cache key is a SHA-256 over `(text, voice,
+engine, sampleRate, languageCode, textType)`.
+
+```typescript
+PollyProvider({
+  voice: 'Joanna',
+  engine: 'neural',
+  languageCode: 'en-US',
+  cacheDir: './.recast-cache/polly',
+})
+```
+
+Cache layout: `<cacheDir>/<hash>.mp3` (flat). Omit `cacheDir` to disable disk
+caching; intra-batch dedup still applies.

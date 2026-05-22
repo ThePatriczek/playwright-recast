@@ -89,3 +89,24 @@ npx playwright-recast -i ./traces --srt narration.srt --provider elevenlabs --vo
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `ELEVENLABS_API_KEY` | Yes (unless `apiKey` is set) | Your ElevenLabs API key |
+
+## Disk caching
+
+Set `cacheDir` to skip API calls for text the provider has already synthesized
+in a previous run. The cache key is a SHA-256 over `(text, voice, model,
+languageCode, voiceSettings)` so a change to any of these inputs invalidates
+the entry.
+
+```typescript
+ElevenLabsProvider({
+  voice: 'onwK4e9ZLuTAKqWW03F9',
+  model: 'eleven_multilingual_v2',
+  languageCode: 'cs',
+  cacheDir: './.recast-cache/elevenlabs',
+})
+```
+
+Cache layout: `<cacheDir>/<hash>.mp3` (flat). Safe to commit to git or share
+across machines — files are content-addressable. Omit `cacheDir` to disable
+disk caching; intra-batch dedup (re-using identical narration within a single
+render) still applies.

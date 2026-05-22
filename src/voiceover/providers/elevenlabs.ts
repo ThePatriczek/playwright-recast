@@ -1,6 +1,6 @@
+import * as os from 'node:os'
 import type { TtsProvider, TtsOptions, AudioSegment } from '../../types/voiceover.js'
-import { resolveWorkDir } from './util/resolveWorkDir.js'
-import { writeAudioSegment } from './util/writeAudioSegment.js'
+import { synthesizeWithCache } from './util/audio-cache.js'
 
 export interface ElevenLabsVoiceSettings {
   stability?: number
@@ -19,6 +19,13 @@ export interface ElevenLabsProviderConfig {
   languageCode?: string
   /** Per-voice synthesis parameters. Omit to use the voice's dashboard defaults. */
   voiceSettings?: ElevenLabsVoiceSettings
+  /**
+   * Directory for disk caching of synthesized audio. When set, the provider
+   * skips API calls for `(text, voice, model, languageCode, voiceSettings)`
+   * tuples it has already synthesized. Omit to disable disk caching (the
+   * provider still dedups within a single batch).
+   */
+  cacheDir?: string
 }
 
 const DEFAULT_VOICE = 'onwK4e9ZLuTAKqWW03F9' // Daniel
@@ -61,20 +68,21 @@ export function ElevenLabsProvider(config: ElevenLabsProviderConfig = {}): TtsPr
 
     async synthesize(texts: string[], options?: TtsOptions): Promise<AudioSegment[]> {
       const el = await getClient()
-      const dir = resolveWorkDir(options?.workDir)
-      return Promise.all(texts.map(async (text) => {
-        const voice = options?.voice ?? defaults.voice
-        const model = options?.model ?? defaults.model
-        const languageCode = options?.languageCode ?? defaults.languageCode
+      const voice = options?.voice ?? defaults.voice
+      const model = options?.model ?? defaults.model
+      const languageCode = options?.languageCode ?? defaults.languageCode
+      const voiceSettings = defaults.voiceSettings
+      // Stable JSON for the fingerprint — undefined collapses to ''.
+      const voiceSettingsKey = voiceSettings ? JSON.stringify(voiceSettings) : ''
 
+      async function generateOne(text: string): Promise<Buffer> {
         const params: Record<string, unknown> = {
           text,
           modelId: model,
           outputFormat: 'mp3_44100_128',
         }
         if (languageCode) params.languageCode = languageCode
-        if (defaults.voiceSettings) params.voiceSettings = defaults.voiceSettings
-
+        if (voiceSettings) params.voiceSettings = voiceSettings
         const audio = await el.textToSpeech.convert(voice, params)
         const reader = audio.getReader()
         const chunks: Uint8Array[] = []
@@ -83,9 +91,20 @@ export function ElevenLabsProvider(config: ElevenLabsProviderConfig = {}): TtsPr
           if (done) break
           chunks.push(value)
         }
-        const buf = Buffer.concat(chunks)
-        return writeAudioSegment(buf, { dir, prefix: 'elevenlabs', sampleRate: 44100 })
-      }))
+        return Buffer.concat(chunks)
+      }
+
+      return synthesizeWithCache({
+        texts,
+        workDir: options?.workDir ?? os.tmpdir(),
+        cache: config.cacheDir ? { dir: config.cacheDir } : undefined,
+        fingerprintFor: (text) => [
+          'elevenlabs', text, voice, model, languageCode ?? '', voiceSettingsKey,
+        ],
+        generate: (missTexts) => Promise.all(missTexts.map(generateOne)),
+        prefix: 'elevenlabs',
+        format: { sampleRate: 44100, channels: 1, codec: 'mp3' },
+      })
     },
 
     async isAvailable(): Promise<boolean> {
