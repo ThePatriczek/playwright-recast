@@ -88,8 +88,13 @@ export async function narrate(
 ): Promise<void> {
   const hidden = opts?.hidden ?? text?.includes('@hidden') ?? false
   const cleanText = text?.replace(/@hidden\s*/g, '').trim() || ''
-  if (!cleanText) return
 
+  // Always push annotations — even for empty/hidden steps — so external
+  // reporters that map annotations to BDD steps by sequential index (the
+  // legacy report.json contract) stay consistent. A `narrate(undefined,
+  // {hidden:true})` call must still produce one voiceover + one
+  // voiceover-hidden annotation, otherwise downstream highlight/zoom
+  // annotations get attributed to the wrong step.
   const info = _getTestInfo()
   info.annotations.push({ type: 'voiceover', description: cleanText })
   info.annotations.push({
@@ -97,7 +102,10 @@ export async function narrate(
     description: hidden ? '1' : '0',
   })
 
-  if (_step) {
+  // The trace marker step is only useful when there is text to record;
+  // empty steps would just clutter the trace. `subtitlesFromTrace` skips
+  // hidden markers anyway.
+  if (cleanText && _step) {
     const prefix = hidden ? NARRATE_HIDDEN_TITLE_PREFIX : NARRATE_TITLE_PREFIX
     await _step(`${prefix}${cleanText}`, async () => {})
   }
