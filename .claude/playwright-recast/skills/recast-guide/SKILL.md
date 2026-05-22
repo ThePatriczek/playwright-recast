@@ -75,10 +75,10 @@ npx playwright-recast -i ./traces --srt narration.srt --burn-subs
 | `.speedUp(config)` | Adjust speed by activity type or explicit segments |
 | `.subtitles(textFn)` | Generate subtitles from trace actions |
 | `.subtitlesFromSrt(path)` | Load external SRT file |
-| `.subtitlesFromTrace()` | Auto-generate from BDD step titles |
+| `.subtitlesFromTrace()` | Auto-generate subtitles/highlights/zoom from `narrate()`/`highlight()`/`zoom()` marker steps; falls back to BDD step titles when no `narrate()` is present |
 | `.textProcessing(config)` | Sanitize subtitle text for TTS (strip quotes, normalize dashes, custom rules) |
 | `.autoZoom(config)` | Auto-zoom to user interaction targets from trace |
-| `.enrichZoomFromReport(steps)` | Apply zoom coordinates from external report data |
+| `.enrichZoomFromReport(steps)` | Apply zoom coordinates from external report data (legacy — prefer the `zoom()` helper which writes directly into the trace) |
 | `.clickEffect(config)` | Visual ripple + optional click sound at click positions |
 | `.voiceover(provider)` | Generate TTS from subtitle text |
 | `.render(config)` | Configure output format/resolution/fps/subtitle styling |
@@ -122,21 +122,29 @@ ElevenLabsProvider({ voiceId: 'onwK4e9ZLuTAKqWW03F9', modelId: 'eleven_multiling
 
 ## playwright-bdd Integration
 
-Step helpers for BDD test definitions:
+Step helpers for BDD test definitions. Each helper (`narrate`, `highlight`, `zoom`) writes a marker-prefixed `test.step()` directly into the trace zip — `subtitlesFromTrace()` picks them all up automatically. No separate `report.json` or extra pipeline calls required.
 
 ```typescript
-import { setupRecast, narrate, pace } from 'playwright-recast'
+import { setupRecast, narrate, highlight, zoom, pace } from 'playwright-recast'
 
 // In fixtures.ts — initialize once:
 setupRecast(test)
 
 // In step definitions:
 Given('the user opens dashboard', async ({ page }, docString?: string) => {
-  narrate(docString)              // Record voiceover text from Gherkin doc string
+  await narrate(docString)        // Records narration into the trace
   await page.goto('/dashboard')
   await pace(page, 4000)          // Pause for voiceover timing
 })
+
+When('the user reviews KPI', async ({ page }, docString?: string) => {
+  await narrate(docString, { autoWait: true }) // pad test by estimated speak time
+  await highlight(page.locator('h2'), { text: 'Revenue' })
+  await zoom(page.locator('.kpi-card'), 1.3)
+})
 ```
+
+**Voiceover-driven freezes:** when TTS audio is longer than its visual window the renderer holds the current frame until the audio finishes — overlays freeze with it, click sounds shift to match. No config required.
 
 Feature file with voiceover text:
 ```gherkin
@@ -164,11 +172,13 @@ Zoom into specific UI areas during steps. Three approaches:
 ])
 ```
 
-**From step helpers** — capture element bounding box during test:
+**From step helpers** — capture element bounding box during the test (writes marker into the trace; picked up automatically by `.subtitlesFromTrace()`):
 ```typescript
 import { zoom } from 'playwright-recast'
 await zoom(page.locator('.sidebar'), 1.3)
 ```
+
+Zoom starts at the `zoom()` call site (not at the parent narration's start) and runs until the end of the surrounding subtitle.
 
 Coordinates: `x` and `y` are viewport fractions (0.0–1.0), `level` is zoom factor (1.0 = none, 2.0 = 2x).
 

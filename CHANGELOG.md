@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Features
+
+- **Self-contained `narrate()` / `highlight()` / `zoom()` helpers** — All three helpers now write marker-prefixed `test.step()` events directly into the Playwright trace zip. `subtitlesFromTrace()` recovers narration spans, highlight overlays, and per-subtitle zoom from the recorded marker steps — no `report.json` or extra pipeline calls (`.textHighlight()` / `.enrichZoomFromReport()`) required. The legacy pipeline stages remain available for non-Playwright highlight sources.
+- **Voiceover-driven freezes** — When a narration's TTS audio is longer than its visual window, the renderer now holds the current frame until the audio finishes. Overlays freeze with the frame and click sounds shift to match — audio-perfect sync without hand-tuning `pace()` calls.
+- **`narrate({ autoWait })`** — Pads the test by an estimated speaking time using a character-based heuristic (`NARRATE_DEFAULT_CPS = 14`). Accepts `true`, an explicit millisecond count, or `{ charactersPerSecond, minMs, maxMs }`. Useful when running without TTS so the recorded video has natural visual time for each line.
+- **`render({ embedSubtitles })`** — Muxes a soft (toggleable) subtitle track into the container: `mov_text` for mp4, `webvtt` for webm. Accepts `true` for defaults or `{ language, title, default }` to customize. Can be combined with `burnSubtitles`.
+
+### Behavior changes
+
+- **Zoom marker start time** — Zoom now starts at the `zoom()` call site (in-window) rather than at the parent narration's start, so the camera kicks in only once the target is visible. The same shifts that move `subtitle.startMs` (blank-trim, voiceover `timeShift`) now also move `zoom.startMs` / `zoom.endMs`.
+
 ## 0.15.2 (2026-05-15)
 
 ### Bug fixes

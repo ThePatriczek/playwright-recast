@@ -5,7 +5,9 @@ description: Highlight an element or specific text in the demo video with an ani
 
 ## What it does
 
-`highlight(locator)` captures an element's bounding box and stores it as a Playwright annotation. During video generation, the renderer draws an animated marker overlay that sweeps in from left to right, highlighting the element during the step's time window.
+`highlight(locator)` measures the element's viewport bounding box and emits a marker-prefixed `test.step()` directly into the Playwright trace zip. During video generation, [`subtitlesFromTrace()`](/docs/pipeline/subtitles) picks up these markers automatically and the renderer draws an animated overlay that sweeps in from left to right at the recorded position.
+
+You don't need to call `.textHighlight()` in the pipeline when using `highlight()` — the trace step is self-contained. You can still call `.textHighlight()` if you want to load highlights from an external `report.json` file instead.
 
 You can highlight an entire element or a specific substring within it.
 

@@ -3,22 +3,36 @@ title: Text Highlight
 description: Animated marker overlays on text elements in the video.
 ---
 
-The `.textHighlight()` stage renders animated marker overlays on text elements. A swipe-in animation reveals the highlight left-to-right, then the overlay disappears at the subtitle boundary.
+Animated marker overlays on text elements. A swipe-in animation reveals the highlight left-to-right, then the overlay disappears at the subtitle boundary.
 
-## Basic usage
+The renderer accepts highlight events from two sources:
+
+1. **Trace step markers (default).** When the test uses the [`highlight()`](/docs/helpers/highlight) helper, each call writes a marker-prefixed `test.step()` into the trace zip. `subtitlesFromTrace()` reads these at parse time and the renderer draws the overlays automatically — **no `.textHighlight()` call required**.
+2. **External `report.json`.** Calling `.textHighlight()` loads highlights from a `report.json` file sitting next to the trace, useful when your highlights come from a non-Playwright source.
+
+## Helper-driven (recommended)
 
 ```typescript
 await Recast
   .from('./traces')
   .parse()
-  .textHighlight()
+  .subtitlesFromTrace()       // picks up highlight markers automatically
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+## Loading from report.json
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .textHighlight()            // loads from <trace>/report.json
   .render({ format: 'mp4' })
   .toFile('demo.mp4')
 ```
 
 ## How it works
-
-Text highlight reads highlight data from `report.json` automatically. Each highlight specifies a bounding box and timing, and the renderer draws an animated marker overlay at that position.
 
 The swipe-in animation reveals the highlight from left to right. The highlight end time is clamped to the subtitle boundary so overlays do not overflow into the next step.
 

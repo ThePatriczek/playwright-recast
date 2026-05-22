@@ -32,13 +32,19 @@ Navigate to the analytics dashboard.
 
 ## Generate from trace
 
-Auto-generate subtitles from BDD step titles found in the trace:
+Auto-generate subtitles from marker steps and BDD step titles found in the trace:
 
 ```typescript
 .subtitlesFromTrace()
 ```
 
-This reads the step names from your Playwright BDD test and uses them as subtitle text. Works with [playwright-bdd](https://github.com/nickkuprin/playwright-bdd) Gherkin steps.
+`subtitlesFromTrace()` picks up three sources of data from the recorded trace:
+
+1. **`narrate()` marker steps** — when present, one subtitle per narration, spanning from each `narrate()` call to the next.
+2. **`highlight()` marker steps** — bounding boxes the renderer turns into animated marker overlays.
+3. **`zoom()` marker steps** — attached to whichever subtitle covers the call site, so the camera kicks in at the right moment.
+
+If no `narrate()` steps are present, it falls back to using BDD step titles (e.g., `Given the user opens the dashboard`) — useful for [playwright-bdd](https://github.com/nickkuprin/playwright-bdd) projects that don't use the helpers.
 
 ## Generate from actions
 

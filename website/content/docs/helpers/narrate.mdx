@@ -5,9 +5,9 @@ description: Attach voiceover narration text to a Playwright test step.
 
 ## What it does
 
-`narrate(text)` attaches voiceover text to the current test step as a Playwright annotation. During video generation, the pipeline reads these annotations to produce TTS audio and subtitles timed to each step.
+`narrate(text)` writes a marker-prefixed `test.step()` directly into the Playwright trace zip and attaches a `voiceover` annotation to `testInfo`. During video generation, [`subtitlesFromTrace()`](/docs/pipeline/subtitles) recovers each narration span from the recorded trace step — no separate report file or pipeline call is required.
 
-Call `narrate` from every step definition -- even when there is no doc string -- so the reporter can match annotations to steps by sequential index.
+Each narrate span starts at the helper's call site and runs until the next `narrate()` call (or the end of the trace). This is what `subtitlesFromTrace` turns into a `SubtitleEntry`.
 
 ## Usage
 
@@ -15,18 +15,43 @@ Call `narrate` from every step definition -- even when there is no doc string --
 import { narrate } from 'playwright-recast'
 
 // With narration text
-narrate('The user opens the dashboard to review analytics.')
+await narrate('The user opens the dashboard to review analytics.')
 
-// Without narration (still call it for index tracking)
-narrate(undefined)
+// Pad the test with the estimated time it takes to speak the line —
+// useful when running without TTS so the video has visual time for it.
+await narrate('Welcome to the new dashboard.', { autoWait: true })
+
+// No-op — pass undefined when a step has no narration.
+await narrate(undefined)
 ```
 
 ## Parameters
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `text` | `string \| undefined` | Voiceover text for this step. Pass `undefined` if no narration. |
-| `opts.hidden` | `boolean` | Mark the step as hidden (excluded from recording and SRT output). |
+| `text` | `string \| undefined` | Voiceover text for this step. Pass `undefined` to no-op. |
+| `opts.hidden` | `boolean` | Mark the step as hidden (excluded from subtitles). Detected automatically if `text` contains `@hidden`. |
+| `opts.autoWait` | `boolean \| number \| object` | Pause after recording the marker step for the approximate time the line takes to speak. See below. |
+
+## autoWait — visual time without TTS
+
+When running without TTS (e.g., live demos or local previews), the video needs enough visual time for each line. `autoWait` waits for an estimate based on `text` length:
+
+| Form | Behavior |
+|------|----------|
+| `true` | Estimate from non-whitespace characters / `NARRATE_DEFAULT_CPS` (14 ch/s ≈ 150 wpm). |
+| `number` | Wait exactly this many milliseconds. |
+| `{ charactersPerSecond, minMs, maxMs }` | Tune the estimate. |
+
+```typescript
+await narrate('Welcome to the new dashboard.', {
+  autoWait: { charactersPerSecond: 16, minMs: 1500, maxMs: 6000 },
+})
+```
+
+## Voiceover-driven freezes
+
+When the pipeline runs `voiceover()` and the synthesized audio for a narration is longer than the visual window between this narrate and the next, the renderer **holds the current frame** until the audio finishes. The frozen frame includes any active highlight/zoom overlay, and `clickEffect` sounds shift along with the timeline. You get audio-perfect sync without having to hand-tune `pace()` calls.
 
 ## Hiding steps
 
@@ -54,13 +79,13 @@ import { Given, When, Then } from './fixtures'
 import { narrate, pace } from 'playwright-recast'
 
 Given('the user opens the dashboard', async ({ page }, docString?: string) => {
-  narrate(docString)
+  await narrate(docString)
   await page.goto('/dashboard')
   await pace(page, 4000)
 })
 
 When('the user clicks the revenue chart', async ({ page }, docString?: string) => {
-  narrate(docString)
+  await narrate(docString)
   await page.click('.revenue-chart')
 })
 ```

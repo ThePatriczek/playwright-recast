@@ -23,6 +23,7 @@ await Recast
 | `resolution` | `string` | `'1080p'` | Output resolution: `'720p'`, `'1080p'`, `'4k'` |
 | `fps` | `number` | `30` | Output frame rate |
 | `burnSubtitles` | `boolean` | `false` | Burn subtitles into the video |
+| `embedSubtitles` | `boolean \| object` | `false` | Mux subtitles as a soft (toggleable) track inside the container |
 | `subtitleStyle` | `object` | default ffmpeg | Subtitle appearance configuration |
 
 ## Output with `.toFile()`
@@ -37,6 +38,28 @@ After configuring the render, call `.toFile()` to execute the pipeline and write
 ## Subtitle burn-in
 
 Set `burnSubtitles: true` to render subtitles directly into the video frames. Without `subtitleStyle`, ffmpeg's default SRT rendering is used.
+
+## Embedded (soft) subtitle track
+
+Set `embedSubtitles: true` to mux subtitles as a toggleable track inside the container. The viewer can switch them on/off in their player. Works for both `mp4` (mov_text) and `webm` (webvtt).
+
+```typescript
+.render({
+  format: 'mp4',
+  embedSubtitles: true,                        // language: 'eng', title: 'Subtitles'
+})
+
+.render({
+  format: 'mp4',
+  embedSubtitles: { language: 'ger', title: 'Deutsch', default: true },
+})
+```
+
+`embedSubtitles` and `burnSubtitles` can be combined — viewers see the burned-in text regardless and can also toggle the embedded track.
+
+## Voiceover-driven freezes
+
+When the pipeline includes `voiceover()` and the synthesized audio for a narration is longer than its visual window, the renderer **holds the current frame** until the audio finishes. The frozen frame keeps any active highlight or zoom overlay; click sounds shift along with the timeline. No configuration required — this happens automatically based on the `freezes` emitted by the voiceover stage.
 
 ### Subtitle style options
 

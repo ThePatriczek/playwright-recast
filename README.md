@@ -52,7 +52,9 @@ await Recast
 - **Cursor overlay** — Animated cursor appears before each click, moves to the click position with ease-out animation, then disappears. Bundled arrow cursor or custom image.
 - **Animated zoom with easing** — Auto-zoom uses customizable easing functions (ease-in-out, ease-out, cubic-bezier, or custom JS functions) with smooth zoom-to-zoom panning.
 - **Frame interpolation** — Smooth out choppy browser recordings with ffmpeg minterpolate. Blend, duplicate, or motion-compensated modes with multi-pass support.
-- **Step helpers** — `narrate()`, `zoom()`, `pace()` — importable helpers for Playwright step definitions.
+- **Step helpers** — `narrate()`, `highlight()`, `zoom()`, `pace()` — importable helpers for Playwright step definitions. `narrate/highlight/zoom` write marker steps directly into the trace zip, so the pipeline picks them up automatically via `subtitlesFromTrace()` (no `report.json` or extra pipeline calls needed).
+- **Voiceover-driven freezes** — When a TTS narration is longer than its visual window, the renderer holds the current frame until the audio finishes; overlays freeze with it, click sounds shift to match.
+- **Soft (embedded) subtitle track** — `render({ embedSubtitles: true })` muxes a toggleable subtitle track into the container (`mov_text` for mp4, `webvtt` for webm).
 - **Background music** — Add background music with auto-ducking during voiceover, looping, and fade-out. Covers intro/outro.
 - **Intro/outro** — Prepend/append branded video clips with smooth crossfade transitions. Audio preserved.
 - **MCP server** — AI-assisted video creation via Model Context Protocol. Record, analyze, and render through any MCP-compatible client (Claude Code, etc.).
@@ -151,26 +153,34 @@ await Recast
 
 ### playwright-bdd Integration
 
-Use `narrate()` and `pace()` in your BDD step definitions:
+Use `narrate()`, `highlight()`, `zoom()`, and `pace()` in your BDD step definitions:
 
 ```typescript
 // steps/fixtures.ts
 import { test } from 'playwright-bdd'
-import { setupRecast, narrate, pace } from 'playwright-recast'
+import { setupRecast, narrate, highlight, zoom, pace } from 'playwright-recast'
 
 setupRecast(test)
-export { narrate, pace }
+export { narrate, highlight, zoom, pace }
 
 // steps/my-steps.ts
 import { Given, When, Then } from './fixtures'
-import { narrate, pace } from 'playwright-recast'
+import { narrate, highlight, zoom, pace } from 'playwright-recast'
 
 Given('the user opens the dashboard', async ({ page }, docString?: string) => {
-  narrate(docString)
+  await narrate(docString)
   await page.goto('/dashboard')
   await pace(page, 4000)
 })
+
+When('the user highlights revenue', async ({ page }, docString?: string) => {
+  await narrate(docString, { autoWait: true })  // pad test with estimated speak time
+  await highlight(page.locator('h2'), { text: 'Revenue' })
+  await zoom(page.locator('.kpi-card'), 1.3)
+})
 ```
+
+Each helper writes a marker-prefixed `test.step()` into the trace zip — `subtitlesFromTrace()` picks them all up and the renderer applies overlays, zoom, and per-narration timing automatically.
 
 ```gherkin
 Feature: Dashboard demo

@@ -5,7 +5,9 @@ description: Zoom into a UI element during a test step for the demo video.
 
 ## What it does
 
-`zoom(locator, level)` captures an element's bounding box and stores viewport-relative coordinates as a Playwright annotation. During video generation, the renderer crops and scales the video to zoom into the recorded position during the step's time window.
+`zoom(locator, level)` measures the element's center as viewport-relative coordinates and emits a marker-prefixed `test.step()` directly into the Playwright trace zip. During video generation, [`subtitlesFromTrace()`](/docs/pipeline/subtitles) picks up these markers automatically and attaches the zoom to the currently-active subtitle — no separate `.enrichZoomFromReport()` call needed.
+
+The zoom **starts at the helper's call site** (not at the start of the surrounding narration) and runs until the end of the subtitle, so the camera kicks in only once the target is visible.
 
 ## Usage
 
@@ -27,8 +29,9 @@ await zoom(sidebar, 1.3)
 
 1. Gets the element's bounding box via `locator.boundingBox()`
 2. Computes the center as viewport-relative fractions (0.0--1.0)
-3. Stores `{ x, y, level }` as a `zoom` annotation on the current test
-4. During rendering, `enrichZoomFromReport()` reads these annotations and applies crop-and-scale zoom with smooth easing transitions
+3. Writes a marker-prefixed `test.step()` carrying `{ x, y, level }` into the trace zip (and pushes a matching `zoom` annotation onto `testInfo` for legacy reporters)
+4. `subtitlesFromTrace()` finds the marker step at parse time and attaches the zoom to whichever subtitle covers the call site
+5. The renderer applies the crop-and-scale zoom from the call-site time until the end of that subtitle, with smooth easing transitions
 
 ## Zoom coordinates
 
