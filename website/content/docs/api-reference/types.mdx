@@ -317,12 +317,17 @@ interface ZoomKeyframe {
 
 ### `TtsProvider`
 
-The contract every TTS provider must implement.
+The contract every TTS provider must implement. `synthesize` is **batch-first** — it receives the full subtitle text array and returns one `AudioSegment` per input. Providers that want per-segment concurrency can do their own `Promise.all` fan-out internally.
 
 ```typescript
 interface TtsProvider {
   readonly name: string
-  synthesize(text: string, options?: TtsOptions): Promise<AudioSegment>
+  /**
+   * Synthesize speech for each text in `texts`. Returns one AudioSegment per
+   * input text, in order. Each segment's `path` points to a file on disk
+   * written by the provider (typically under `options.workDir`).
+   */
+  synthesize(texts: string[], options?: TtsOptions): Promise<AudioSegment[]>
   estimateDurationMs(text: string, options?: TtsOptions): number
   isAvailable(): Promise<boolean>
   dispose(): Promise<void>
@@ -331,11 +336,11 @@ interface TtsProvider {
 
 ### `AudioSegment`
 
-A chunk of synthesized audio.
+A chunk of synthesized audio. The provider writes the audio to disk and returns the path — the consumer (pipeline) owns cleanup of `options.workDir`.
 
 ```typescript
 interface AudioSegment {
-  data: Buffer
+  path: string
   durationMs: number
   format: {
     sampleRate: number
@@ -347,12 +352,22 @@ interface AudioSegment {
 
 ### `TtsOptions`
 
+Per-call overrides applied on top of the provider factory's defaults.
+
 ```typescript
 interface TtsOptions {
+  /** Voice id/name override (provider-specific) */
   voice?: string
+  /** Model id override (provider-specific) */
+  model?: string
+  /** BCP-47 language code override (e.g. 'cs', 'en-US') */
+  languageCode?: string
+  /** Playback speed multiplier (1.0 = natural) */
   speed?: number
+  /** Output audio format hint */
   format?: 'mp3' | 'wav' | 'opus' | 'pcm'
-  locale?: string
+  /** Directory the provider should write output files into. Caller owns cleanup. */
+  workDir?: string
 }
 ```
 

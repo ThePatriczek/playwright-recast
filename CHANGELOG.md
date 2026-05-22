@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.17.0 (2026-05-22)
+
+### Features
+
+- **`QwenTtsProvider`** — Local TTS via Alibaba's Qwen3-TTS family with clone and design modes. Spawns a Python sidecar; opt-in disk caching for both synthesized audio (MP3) and the design reference WAV. See README for setup.
+
+### Breaking changes
+
+- **`TtsProvider.synthesize` is now batch-first** — Signature changes from `synthesize(text: string, options?) => Promise<AudioSegment>` to `synthesize(texts: string[], options?) => Promise<AudioSegment[]>`. The provider receives the full subtitle text array and returns one segment per input, in order. Built-in providers (OpenAI, ElevenLabs, Polly) get free concurrency from internal `Promise.all` fan-out — no caller change required. Custom-provider authors must update their `synthesize` to accept an array.
+- **`AudioSegment.data` is replaced by `AudioSegment.path`** — Synthesized audio is now written to a file on disk and the segment carries the path instead of an in-memory `Buffer`. The new `TtsOptions.workDir` field tells the provider where to write outputs (caller — the pipeline — owns cleanup). Custom-provider authors must write their audio to disk and return the path.
+
+### Migration
+
+If you have a custom `TtsProvider`, wrap your existing per-text logic:
+
+```ts
+synthesize(texts: string[], opts) {
+  const dir = opts?.workDir ?? os.tmpdir()
+  return Promise.all(texts.map(async (text) => {
+    const buf = await mySingleTextSynthesis(text)
+    const p = path.join(dir, `mine-${crypto.randomUUID()}.mp3`)
+    await fs.promises.writeFile(p, buf)
+    return { path: p, durationMs: 0, format: { sampleRate: 24000, channels: 1, codec: 'mp3' } }
+  }))
+}
+```
+
 ## 0.16.0 (2026-05-22)
 
 ### Features

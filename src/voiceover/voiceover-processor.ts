@@ -56,6 +56,15 @@ export async function generateVoiceover(
   fs.mkdirSync(tmpDir, { recursive: true })
   const normalizeConfig = resolveNormalize(options?.normalize)
 
+  const texts = trace.subtitles.map((s) => s.ttsText ?? s.text)
+  const audios = await provider.synthesize(texts, { workDir: tmpDir })
+
+  if (audios.length !== texts.length) {
+    throw new Error(
+      `Provider "${provider.name}" returned ${audios.length} segments for ${texts.length} texts`,
+    )
+  }
+
   const entries: VoiceoverEntry[] = []
   const segmentFiles: string[] = []
   const freezes: VoiceoverFreeze[] = []
@@ -68,6 +77,7 @@ export async function generateVoiceover(
 
   for (let si = 0; si < trace.subtitles.length; si++) {
     const subtitle = trace.subtitles[si]!
+    const audio = audios[si]!
 
     subtitle.startMs += timeShift
     subtitle.endMs += timeShift
@@ -80,17 +90,19 @@ export async function generateVoiceover(
       segmentFiles.push(silencePath)
     }
 
-    // Synthesize raw TTS into a staging file, then (optionally) normalize into
-    // the canonical seg-N.mp3 path that gets concatenated.
     const segPath = path.join(tmpDir, `seg-${subtitle.index}.mp3`)
-    const audio = await provider.synthesize(subtitle.ttsText ?? subtitle.text)
-
     if (normalizeConfig) {
-      const rawPath = path.join(tmpDir, `raw-${subtitle.index}.mp3`)
-      fs.writeFileSync(rawPath, audio.data)
-      await normalizeLoudness(rawPath, segPath, normalizeConfig)
+      await normalizeLoudness(audio.path, segPath, normalizeConfig)
     } else {
-      fs.writeFileSync(segPath, audio.data)
+      // Move (rename) the provider's output into the canonical seg-N.mp3 slot.
+      // Falls back to copy+unlink across devices.
+      try {
+        fs.renameSync(audio.path, segPath)
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'EXDEV') throw err
+        fs.copyFileSync(audio.path, segPath)
+        fs.unlinkSync(audio.path)
+      }
     }
 
     const audioDuration = getAudioDurationMs(segPath)

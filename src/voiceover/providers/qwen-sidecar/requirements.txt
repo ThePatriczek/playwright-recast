@@ -1,0 +1,6 @@
+torch>=2.4.0
+numpy>=1.26.0
+psutil>=5.9.0
+soundfile>=0.12.1
+qwen-tts>=0.1.0
+flash-attn>=2.5.0

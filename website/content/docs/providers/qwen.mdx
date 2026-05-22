@@ -1,0 +1,180 @@
+---
+title: Qwen3-TTS (local, GPU)
+description: Generate voiceover narration locally on a CUDA GPU using Alibaba's Qwen3-TTS models.
+---
+
+`QwenTtsProvider` runs TTS locally via Alibaba's Qwen3-TTS family. It supports two modes:
+
+- **Clone** — synthesize text in the voice of a reference WAV/MP3 (`voiceSample`).
+- **Design** — synthesize text in a voice described by a prompt (`voiceDescription`). The provider first generates a reference WAV from the description, then clones it for every subtitle.
+
+A Python sidecar (PyTorch + `qwen-tts` + `flash-attn`) is spawned once per pipeline run and held open across the whole subtitle batch.
+
+## Requirements
+
+- **CUDA-capable GPU** — ~4–8 GB VRAM depending on model.
+- **Python 3** — invoked via the path you pass as `pythonBin`.
+- **`HF_TOKEN`** in the environment if the chosen weights are gated.
+
+No npm peer dependency is required — the provider talks to the sidecar over stdin/stdout JSON.
+
+## Python environment setup
+
+The sidecar's stack (PyTorch + `flash-attn` + Qwen) is **~5–8 GB on disk**, so where you install it matters. pip caches *downloads* in `~/.cache/pip`, but *installs* are copied into each venv's `site-packages` — so a per-project venv with PyTorch costs ~5–8 GB **per project**.
+
+### Recommended: one shared venv reused across projects
+
+```bash
+python3 -m venv ~/.venvs/qwen-tts
+~/.venvs/qwen-tts/bin/pip install -r node_modules/playwright-recast/dist/voiceover/providers/qwen-sidecar/requirements.txt
+```
+
+```typescript
+QwenTtsProvider({
+  mode: 'clone',
+  voiceSample: './my-voice.wav',
+  refText: 'Welcome! In this screencast we will walk through the key concepts.',
+  pythonBin: `${process.env.HOME}/.venvs/qwen-tts/bin/python3`,
+})
+```
+
+Absolute `pythonBin` works regardless of shell activation — useful for CI, cron, and IDE runners.
+
+### Alternative: `uv` (most disk-efficient)
+
+[`uv`](https://github.com/astral-sh/uv) hardlinks every venv from a global wheel store, so per-project `.venv`s cost almost nothing on disk:
+
+```bash
+uv venv ~/.venvs/qwen-tts
+uv pip install --python ~/.venvs/qwen-tts/bin/python -r node_modules/playwright-recast/dist/voiceover/providers/qwen-sidecar/requirements.txt
+```
+
+If you've got `uv` installed, even a per-project `.venv` is reasonable — the hardlinks deduplicate PyTorch automatically.
+
+### Alternative: per-project `.venv` (full isolation)
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r node_modules/playwright-recast/dist/voiceover/providers/qwen-sidecar/requirements.txt
+```
+
+Then `pythonBin: '.venv/bin/python3'`. Cleanest isolation; pay ~5–8 GB per project unless paired with `uv`.
+
+### Conda
+
+Works the same way — point `pythonBin` at the env's `bin/python3` (or `.../envs/<name>/bin/python3`).
+
+### `flash-attn` build notes
+
+`flash-attn` needs a CUDA toolchain at install time. If no precompiled wheel matches your CUDA/PyTorch combo, follow the build instructions at [Dao-AILab/flash-attention](https://github.com/Dao-AILab/flash-attention).
+
+## Usage — clone mode
+
+```typescript
+import { Recast } from 'playwright-recast'
+import { QwenTtsProvider } from 'playwright-recast/providers/qwen'
+
+await Recast
+  .from('./traces')
+  .parse()
+  .subtitlesFromSrt('./narration.srt')
+  .voiceover(QwenTtsProvider({
+    mode: 'clone',
+    voiceSample: './my-voice.wav',
+    refText: 'Welcome! In this screencast we will walk through the key concepts.',
+    language: 'English',
+    cacheAudio: true,
+  }))
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+`refText` is the **literal transcript** of `voiceSample` — Qwen needs both to clone the voice correctly. Get it best by re-recording the line yourself, or by transcribing the sample with whisper.
+
+## Usage — design mode
+
+```typescript
+.voiceover(QwenTtsProvider({
+  mode: 'design',
+  voiceDescription: 'A clear, steady male voice with a calm and even tone.',
+  refText: 'Welcome! In this screencast we will walk through the key concepts.',
+  language: 'English',
+  cacheAudio: true,
+  cacheVoiceDesign: true,           // reuse the generated reference WAV across runs
+}))
+```
+
+In design mode `refText` is the line the model will speak *into* the reference WAV — it doesn't transcribe an existing file. Pick something close in tone and length to your actual narration.
+
+## Configuration options
+
+### Common
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `mode` | `'clone' \| 'design'` | (required) | Which sub-API to use |
+| `refText` | `string` | (required) | Reference text (transcript in clone mode; prompt in design mode) |
+| `language` | `string` | `'English'` | Generation language — pass the Qwen language name (`'English'`, `'German'`, `'Chinese'`, …) |
+| `cloneModel` | `string` | `'Qwen/Qwen3-TTS-12Hz-0.6B-Base'` | HuggingFace model ID for cloning |
+| `cacheDir` | `string` | `'./.recast-cache/voice'` | Where cached artifacts are written |
+| `cacheAudio` | `boolean` | `false` | Cache per-segment MP3s |
+| `pythonBin` | `string` | `'python3'` | Python interpreter to launch the sidecar |
+| `device` | `string` | `'cuda:0'` | Torch device |
+| `dtype` | `'bfloat16' \| 'float16' \| 'float32'` | `'bfloat16'` | Model precision |
+
+### Clone mode
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `voiceSample` | `string` | Path to a `.wav` / `.mp3` of the voice you want to clone |
+
+### Design mode
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `voiceDescription` | `string` | (required) | Natural-language description of the target voice |
+| `designModel` | `string` | `'Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign'` | HuggingFace model ID for voice design |
+| `cacheVoiceDesign` | `boolean` | `false` | Cache the generated reference WAV across runs |
+
+## Caching
+
+Caching is **opt-in**, both flags default off:
+
+| Flag | What it caches | Hash includes |
+|------|----------------|---------------|
+| `cacheAudio` | Per-segment MP3s at `cacheDir/audio/<hash>.mp3` | target text, refText, ref-audio fingerprint, language, model, dtype |
+| `cacheVoiceDesign` (design only) | The generated reference WAV at `cacheDir/design/<hash>.wav` | description, refText, language, designModel, dtype |
+
+`cacheDir` defaults to `./.recast-cache/voice`. The cache grows unbounded — manage retention yourself.
+
+In clone mode, the ref-audio fingerprint is a deterministic hash over the *contents* of `voiceSample`, so swapping the file (even keeping the same path) correctly invalidates the cache.
+
+## Error handling
+
+Sidecar failures surface as `QwenSidecarError` with a `stage` field:
+
+| `stage` | Meaning |
+|---------|---------|
+| `init` | Missing Python deps, malformed request, or CUDA / model load failure |
+| `design` | Voice design (design mode only) failed |
+| `clone` | Per-segment synthesis failed |
+
+```typescript
+import { QwenSidecarError } from 'playwright-recast/providers/qwen'
+
+try {
+  await pipeline.toFile('demo.mp4')
+} catch (err) {
+  if (err instanceof QwenSidecarError) {
+    console.error(`Qwen failed at ${err.stage}:`, err.message)
+    console.error(err.pythonTraceback)
+  }
+  throw err
+}
+```
+
+## Notes
+
+- The sidecar process is held open for the full subtitle batch — model load happens once, not per line.
+- Output is always MP3 at the Qwen sample rate (12 kHz native, re-encoded by the sidecar).
+- No CLI flag yet — wire it up programmatically.

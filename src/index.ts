@@ -11,6 +11,12 @@ export { PollyProvider } from './voiceover/providers/polly.js'
 export type { OpenAIProviderConfig } from './voiceover/providers/openai.js'
 export type { ElevenLabsProviderConfig, ElevenLabsVoiceSettings } from './voiceover/providers/elevenlabs.js'
 export type { PollyProviderConfig } from './voiceover/providers/polly.js'
+export { QwenTtsProvider, QwenSidecarError } from './voiceover/providers/qwen.js'
+export type {
+  QwenTtsProviderConfig,
+  QwenCloneModeConfig,
+  QwenDesignModeConfig,
+} from './voiceover/providers/qwen.js'
 
 // Voiceover post-processing
 export { normalizeLoudness } from './voiceover/normalize.js'

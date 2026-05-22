@@ -357,6 +357,79 @@ npm install @aws-sdk/client-polly
 
 Resolves credentials from `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` (and optional `AWS_SESSION_TOKEN`), shared config, or — preferred on AWS — an attached IAM role.
 
+### Qwen3-TTS (local, GPU)
+
+Local TTS backed by Alibaba's Qwen3-TTS models. Two modes:
+
+- **Clone** — synthesize text in the voice of a reference WAV/MP3.
+- **Design** — synthesize text in a voice described by a prompt.
+
+```typescript
+import { QwenTtsProvider } from 'playwright-recast/providers/qwen'
+
+// Clone an existing voice
+.voiceover(QwenTtsProvider({
+  mode: 'clone',
+  voiceSample: './my-voice.wav',
+  refText: 'Welcome! In this screencast we will walk through the key concepts.',
+  language: 'English',
+  cacheAudio: true,
+}))
+
+// Design a voice from a description
+.voiceover(QwenTtsProvider({
+  mode: 'design',
+  voiceDescription: 'A clear, steady male voice with a calm and even tone.',
+  refText: 'Welcome! In this screencast we will walk through the key concepts.',
+  language: 'English',
+  cacheAudio: true,
+  cacheVoiceDesign: true,
+}))
+```
+
+The provider spawns a Python sidecar (PyTorch + `qwen-tts` + `flash-attn`)
+once per pipeline run. The deps are heavy (~5–8 GB on disk for PyTorch +
+flash-attn), so the recommended setup is **one shared venv reused across
+projects**, pointed at via `pythonBin`:
+
+```bash
+python3 -m venv ~/.venvs/qwen-tts
+~/.venvs/qwen-tts/bin/pip install -r node_modules/playwright-recast/dist/voiceover/providers/qwen-sidecar/requirements.txt
+```
+
+```typescript
+.voiceover(QwenTtsProvider({
+  mode: 'clone',
+  voiceSample: './my-voice.wav',
+  refText: 'Welcome! In this screencast we will walk through the key concepts.',
+  pythonBin: `${process.env.HOME}/.venvs/qwen-tts/bin/python3`,
+}))
+```
+
+Absolute `pythonBin` means no shell activation required — works in CI,
+cron jobs, and IDE runners alike.
+
+**Alternatives:**
+
+- **`uv`** (Astral): `uv venv ~/.venvs/qwen-tts && uv pip install -p ~/.venvs/qwen-tts/bin/python -r .../requirements.txt`. `uv` hardlinks from a global wheel store, so even a per-project `.venv` is nearly free on disk.
+- **Per-project `.venv`**: `python3 -m venv .venv` and `pythonBin: '.venv/bin/python3'`. Cleanest isolation; costs ~5–8 GB per project unless you're using `uv`.
+- **Conda**: works the same way — point `pythonBin` at the env's interpreter.
+
+Requires a CUDA-capable GPU (~4–8 GB VRAM depending on model). `HF_TOKEN` in
+the environment if the chosen weights are gated.
+
+**Caching** — both flags default off:
+
+| Flag | What it caches | Hash includes |
+|---|---|---|
+| `cacheAudio` | Per-segment MP3s at `cacheDir/audio/<hash>.mp3` | target text, refText, ref-audio fingerprint, language, model, dtype |
+| `cacheVoiceDesign` (design mode only) | The design WAV at `cacheDir/design/<hash>.wav` | description, refText, language, designModel, dtype |
+
+`cacheDir` defaults to `./.recast-cache/voice/`. The cache grows unbounded;
+manage it yourself.
+
+**Defaults:** `cloneModel: 'Qwen/Qwen3-TTS-12Hz-0.6B-Base'`, `designModel: 'Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign'`, `device: 'cuda:0'`, `dtype: 'bfloat16'`, `language: 'English'`.
+
 ### Loudness normalization
 
 TTS providers (especially ElevenLabs on `eleven_multilingual_v2` + non-English languages) can deliver segments at wildly different levels — one line at −16 LUFS, the next at −32 LUFS. Enable opt-in per-segment normalization to fix it:

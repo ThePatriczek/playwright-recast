@@ -2,7 +2,7 @@ import type { SubtitleEntry, SubtitledTrace } from './subtitle.js'
 
 /** A chunk of synthesized audio */
 export interface AudioSegment {
-  data: Buffer
+  path: string
   durationMs: number
   format: {
     sampleRate: number
@@ -26,12 +26,19 @@ export interface TtsOptions {
   speed?: number
   /** Output audio format hint */
   format?: 'mp3' | 'wav' | 'opus' | 'pcm'
+  /** Directory the provider should write output files into. Caller owns cleanup. */
+  workDir?: string
 }
 
 /** The contract every TTS provider must implement */
 export interface TtsProvider {
   readonly name: string
-  synthesize(text: string, options?: TtsOptions): Promise<AudioSegment>
+  /**
+   * Synthesize speech for each text in `texts`. Returns one AudioSegment per
+   * input text, in order. Each segment's `path` points to a file on disk
+   * written by the provider (typically under `options.workDir`).
+   */
+  synthesize(texts: string[], options?: TtsOptions): Promise<AudioSegment[]>
   estimateDurationMs(text: string, options?: TtsOptions): number
   isAvailable(): Promise<boolean>
   dispose(): Promise<void>

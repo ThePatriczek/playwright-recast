@@ -1,4 +1,6 @@
 import type { TtsProvider, TtsOptions, AudioSegment } from '../../types/voiceover.js'
+import { resolveWorkDir } from './util/resolveWorkDir.js'
+import { writeAudioSegment } from './util/writeAudioSegment.js'
 
 export interface PollyProviderConfig {
   region?: string
@@ -75,34 +77,36 @@ export function PollyProvider(config: PollyProviderConfig = {}): TtsProvider {
   return {
     name: 'polly',
 
-    async synthesize(text: string, options?: TtsOptions): Promise<AudioSegment> {
+    async synthesize(texts: string[], options?: TtsOptions): Promise<AudioSegment[]> {
       const polly = await getClient()
       const Cmd = SynthesizeSpeechCommand!
-      const voice = options?.voice ?? defaults.voice
-      const languageCode = options?.languageCode ?? defaults.languageCode
+      const dir = resolveWorkDir(options?.workDir)
 
-      const input: Record<string, unknown> = {
-        Text: text,
-        OutputFormat: 'mp3',
-        VoiceId: voice,
-        Engine: defaults.engine,
-        SampleRate: defaults.sampleRate,
-        TextType: defaults.textType,
-      }
-      if (languageCode) input.LanguageCode = languageCode
+      return Promise.all(texts.map(async (text) => {
+        const voice = options?.voice ?? defaults.voice
+        const languageCode = options?.languageCode ?? defaults.languageCode
+        const input: Record<string, unknown> = {
+          Text: text,
+          OutputFormat: 'mp3',
+          VoiceId: voice,
+          Engine: defaults.engine,
+          SampleRate: defaults.sampleRate,
+          TextType: defaults.textType,
+        }
+        if (languageCode) input.LanguageCode = languageCode
 
-      const command = new Cmd(input)
-      const response = await polly.send(command)
-      if (!response.AudioStream) {
-        throw new Error('Amazon Polly returned no audio stream')
-      }
-      const data = Buffer.from(await response.AudioStream.transformToByteArray())
-
-      return {
-        data,
-        durationMs: 0,
-        format: { sampleRate: Number(defaults.sampleRate), channels: 1, codec: 'mp3' },
-      }
+        const command = new Cmd(input)
+        const response = await polly.send(command)
+        if (!response.AudioStream) {
+          throw new Error('Amazon Polly returned no audio stream')
+        }
+        const buf = Buffer.from(await response.AudioStream.transformToByteArray())
+        return writeAudioSegment(buf, {
+          dir,
+          prefix: 'polly',
+          sampleRate: Number(defaults.sampleRate),
+        })
+      }))
     },
 
     estimateDurationMs(text: string, options?: TtsOptions): number {

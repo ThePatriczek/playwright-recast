@@ -120,6 +120,50 @@ import { ElevenLabsProvider } from 'playwright-recast/providers/elevenlabs'
 ElevenLabsProvider({ voiceId: 'onwK4e9ZLuTAKqWW03F9', modelId: 'eleven_multilingual_v2' })
 ```
 
+**Qwen3-TTS** (local, CUDA GPU + Python sidecar):
+```typescript
+import { QwenTtsProvider } from 'playwright-recast/providers/qwen'
+
+// Clone an existing voice from a WAV/MP3 sample.
+QwenTtsProvider({
+  mode: 'clone',
+  voiceSample: './my-voice.wav',
+  refText: 'Transcript of the voice sample.',
+  language: 'English',
+  cacheAudio: true,
+})
+
+// Or design a voice from a prompt.
+QwenTtsProvider({
+  mode: 'design',
+  voiceDescription: 'Calm, steady male voice.',
+  refText: 'Sample line the model will speak in the designed voice.',
+  language: 'English',
+  cacheAudio: true,
+  cacheVoiceDesign: true,
+})
+```
+
+Setup — PyTorch + flash-attn is ~5–8 GB, so recommend **one shared venv reused across projects** pointed at via `pythonBin`:
+
+```bash
+python3 -m venv ~/.venvs/qwen-tts
+~/.venvs/qwen-tts/bin/pip install -r node_modules/playwright-recast/dist/voiceover/providers/qwen-sidecar/requirements.txt
+```
+
+```typescript
+QwenTtsProvider({
+  mode: 'clone',
+  voiceSample: './ref.wav',
+  refText: 'Sample transcript.',
+  pythonBin: `${process.env.HOME}/.venvs/qwen-tts/bin/python3`,
+})
+```
+
+Alternatives: `uv venv` + `uv pip install` (hardlinks from a global wheel store — per-project `.venv` becomes nearly free); or a per-project `.venv` for full isolation (costs ~5–8 GB/project without `uv`); or a conda env. Whichever you pick, pass the venv's `bin/python3` (absolute path) as `pythonBin` so no shell activation is needed.
+
+Needs a CUDA GPU (~4–8 GB VRAM) and `HF_TOKEN` if the chosen weights are gated. Failures surface as `QwenSidecarError` with a `stage` field (`init` / `design` / `clone`).
+
 ## playwright-bdd Integration
 
 Step helpers for BDD test definitions. Each helper (`narrate`, `highlight`, `zoom`) writes a marker-prefixed `test.step()` directly into the trace zip — `subtitlesFromTrace()` picks them all up automatically. No separate `report.json` or extra pipeline calls required.

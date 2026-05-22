@@ -93,7 +93,7 @@ describe('Pipeline (fluent chain)', () => {
   it('preserves voiceover provider', () => {
     const mockProvider = {
       name: 'mock',
-      synthesize: async () => ({ data: Buffer.from(''), durationMs: 0, format: { sampleRate: 24000, channels: 1, codec: 'mp3' } }),
+      synthesize: async (texts: string[]) => texts.map(() => ({ path: '', durationMs: 0, format: { sampleRate: 24000, channels: 1, codec: 'mp3' } })),
       estimateDurationMs: () => 1000,
       isAvailable: async () => true,
       dispose: async () => {},

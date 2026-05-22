@@ -11,3 +11,5 @@ reports/
 
 # npm auth
 .npmrc
+/.idea
+/.venv

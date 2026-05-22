@@ -3,6 +3,7 @@ import { execFileSync, spawnSync } from 'node:child_process'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import * as os from 'node:os'
+import * as crypto from 'node:crypto'
 import { generateVoiceover } from '../../../src/voiceover/voiceover-processor'
 import type { TtsProvider } from '../../../src/types/voiceover'
 import type { SubtitledTrace } from '../../../src/types/subtitle'
@@ -38,9 +39,19 @@ function levelAlternatingProvider(buffers: Buffer[]): TtsProvider {
   let i = 0
   return {
     name: 'fake-alt',
-    async synthesize() {
-      const data = buffers[i++ % buffers.length]!
-      return { data, durationMs: 0, format: { sampleRate: 44100, channels: 1, codec: 'mp3' } }
+    async synthesize(texts: string[], options) {
+      const dir = options?.workDir ?? TMP_ROOT
+      fs.mkdirSync(dir, { recursive: true })
+      return texts.map(() => {
+        const data = buffers[i++ % buffers.length]!
+        const filePath = path.join(dir, `fake-${crypto.randomUUID()}.mp3`)
+        fs.writeFileSync(filePath, data)
+        return {
+          path: filePath,
+          durationMs: 0,
+          format: { sampleRate: 44100, channels: 1, codec: 'mp3' },
+        }
+      })
     },
     estimateDurationMs() { return 0 },
     async isAvailable() { return true },
@@ -58,6 +69,32 @@ function makeTrace(subtitleCount: number): SubtitledTrace {
   }))
   return { subtitles: subs } as unknown as SubtitledTrace
 }
+
+describe('generateVoiceover provider length guard', () => {
+  beforeAll(() => { fs.mkdirSync(TMP_ROOT, { recursive: true }) })
+  afterAll(() => { fs.rmSync(TMP_ROOT, { recursive: true, force: true }) })
+
+  it('throws when provider returns fewer segments than texts', async () => {
+    const shortProvider: TtsProvider = {
+      name: 'short-provider',
+      async synthesize(_texts, options) {
+        const dir = options?.workDir ?? TMP_ROOT
+        fs.mkdirSync(dir, { recursive: true })
+        // Return only one item regardless of how many texts were requested
+        const filePath = path.join(dir, `fake-${crypto.randomUUID()}.mp3`)
+        fs.writeFileSync(filePath, Buffer.alloc(0))
+        return [{ path: filePath, durationMs: 0, format: { sampleRate: 24000, channels: 1, codec: 'mp3' } }]
+      },
+      estimateDurationMs() { return 0 },
+      async isAvailable() { return true },
+      async dispose() {},
+    }
+
+    const trace = makeTrace(3)
+    const tmp = path.join(TMP_ROOT, 'length-guard')
+    await expect(generateVoiceover(trace, shortProvider, tmp)).rejects.toThrow('returned')
+  })
+})
 
 describe('generateVoiceover with VoiceoverOptions.normalize', () => {
   beforeAll(() => { fs.mkdirSync(TMP_ROOT, { recursive: true }) })

@@ -1,6 +1,6 @@
 {
   "name": "playwright-recast",
-  "version": "0.16.0",
+  "version": "0.17.0",
   "type": "module",
   "description": "Fluent pipeline library for processing Playwright traces into polished demo videos — TTS voiceover, subtitles, speed control, and zoom.",
   "license": "MIT",
@@ -50,6 +50,10 @@
       "types": "./dist/voiceover/providers/polly.d.ts",
       "default": "./dist/voiceover/providers/polly.js"
     },
+    "./providers/qwen": {
+      "types": "./dist/voiceover/providers/qwen.d.ts",
+      "default": "./dist/voiceover/providers/qwen.js"
+    },
     "./studio": {
       "types": "./dist/studio/types.d.ts",
       "default": "./dist/studio/recorder.js"
@@ -69,7 +73,7 @@
     "test": "vitest run",
     "test:watch": "vitest watch",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build && cp -R src/voiceover/providers/qwen-sidecar dist/voiceover/providers/"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

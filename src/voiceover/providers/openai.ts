@@ -1,4 +1,6 @@
 import type { TtsProvider, TtsOptions, AudioSegment } from '../../types/voiceover.js'
+import { resolveWorkDir } from './util/resolveWorkDir.js'
+import { writeAudioSegment } from './util/writeAudioSegment.js'
 
 export interface OpenAIProviderConfig {
   apiKey?: string
@@ -51,25 +53,22 @@ export function OpenAIProvider(config: OpenAIProviderConfig = {}): TtsProvider {
   return {
     name: 'openai',
 
-    async synthesize(text: string, options?: TtsOptions): Promise<AudioSegment> {
+    async synthesize(texts: string[], options?: TtsOptions): Promise<AudioSegment[]> {
       const openai = await getClient()
-      const params: Record<string, unknown> = {
-        model: options?.model ?? defaults.model,
-        voice: options?.voice ?? defaults.voice,
-        speed: options?.speed ?? defaults.speed,
-        input: text,
-        response_format: 'mp3',
-      }
-      if (defaults.instructions) params.instructions = defaults.instructions
-
-      const response = await openai.audio.speech.create(params)
-      const data = Buffer.from(await response.arrayBuffer())
-
-      return {
-        data,
-        durationMs: 0,
-        format: { sampleRate: 24000, channels: 1, codec: 'mp3' },
-      }
+      const dir = resolveWorkDir(options?.workDir)
+      return Promise.all(texts.map(async (text) => {
+        const params: Record<string, unknown> = {
+          model: options?.model ?? defaults.model,
+          voice: options?.voice ?? defaults.voice,
+          speed: options?.speed ?? defaults.speed,
+          input: text,
+          response_format: 'mp3',
+        }
+        if (defaults.instructions) params.instructions = defaults.instructions
+        const response = await openai.audio.speech.create(params)
+        const buf = Buffer.from(await response.arrayBuffer())
+        return writeAudioSegment(buf, { dir, prefix: 'openai', sampleRate: 24000 })
+      }))
     },
 
     estimateDurationMs(text: string, options?: TtsOptions): number {

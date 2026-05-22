@@ -20,10 +20,11 @@ OPTIONS
       --no-speed       Disable speed processing
       --text-processing Enable built-in text sanitization for TTS
       --text-processing-config <path>  JSON config with text processing rules
-      --provider       TTS provider: openai | elevenlabs | polly | none (default: none)
-      --voice          Voice ID for TTS provider
-      --model          Model ID for TTS provider
-      --tts-speed      TTS speech speed multiplier
+      --provider       TTS provider: openai | elevenlabs | polly | qwen | none (default: none)
+      --voice          Voice ID for TTS provider (openai/elevenlabs/polly)
+      --model          Model ID for TTS provider (openai/elevenlabs)
+      --tts-speed      TTS speech speed multiplier (openai)
+      --qwen-config <path>  JSON config file for the Qwen provider (required when --provider qwen)
       --format         Output format: mp4 | webm (default: mp4)
       --resolution     Output resolution: 720p | 1080p (default: 1080p)
       --burn-subs      Burn subtitles into video
@@ -43,6 +44,7 @@ EXAMPLES
   playwright-recast -i ./test-results -o demo.mp4
   playwright-recast -i trace.zip --speed-idle 4 --burn-subs
   playwright-recast -i ./traces --srt narration.srt --provider openai --voice nova
+  playwright-recast -i ./traces --srt narration.srt --provider qwen --qwen-config qwen.json
 `.trim()
 
 function fatal(message: string): never {
@@ -64,6 +66,7 @@ async function main(): Promise<void> {
       voice: { type: 'string' },
       model: { type: 'string' },
       'tts-speed': { type: 'string' },
+      'qwen-config': { type: 'string' },
       format: { type: 'string' },
       resolution: { type: 'string' },
       'text-processing': { type: 'boolean', default: false },
@@ -219,8 +222,16 @@ async function main(): Promise<void> {
           voice: values.voice,
         }),
       )
+    } else if (providerName === 'qwen') {
+      const configPath = values['qwen-config']
+      if (!configPath) {
+        fatal('--qwen-config <path> is required when --provider qwen. The JSON must include `mode`, `refText`, and `voiceSample` (clone) or `voiceDescription` (design).')
+      }
+      const qwenConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'))
+      const { QwenTtsProvider } = await import('./voiceover/providers/qwen.js')
+      pipeline = pipeline.voiceover(QwenTtsProvider(qwenConfig))
     } else {
-      fatal(`Unknown provider: ${providerName}. Use openai, elevenlabs, polly, or none.`)
+      fatal(`Unknown provider: ${providerName}. Use openai, elevenlabs, polly, qwen, or none.`)
     }
   }
 

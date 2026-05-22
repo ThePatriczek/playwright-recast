@@ -1,4 +1,6 @@
 import type { TtsProvider, TtsOptions, AudioSegment } from '../../types/voiceover.js'
+import { resolveWorkDir } from './util/resolveWorkDir.js'
+import { writeAudioSegment } from './util/writeAudioSegment.js'
 
 export interface ElevenLabsVoiceSettings {
   stability?: number
@@ -57,36 +59,33 @@ export function ElevenLabsProvider(config: ElevenLabsProviderConfig = {}): TtsPr
   return {
     name: 'elevenlabs',
 
-    async synthesize(text: string, options?: TtsOptions): Promise<AudioSegment> {
+    async synthesize(texts: string[], options?: TtsOptions): Promise<AudioSegment[]> {
       const el = await getClient()
-      const voice = options?.voice ?? defaults.voice
-      const model = options?.model ?? defaults.model
-      const languageCode = options?.languageCode ?? defaults.languageCode
+      const dir = resolveWorkDir(options?.workDir)
+      return Promise.all(texts.map(async (text) => {
+        const voice = options?.voice ?? defaults.voice
+        const model = options?.model ?? defaults.model
+        const languageCode = options?.languageCode ?? defaults.languageCode
 
-      const params: Record<string, unknown> = {
-        text,
-        modelId: model,
-        outputFormat: 'mp3_44100_128',
-      }
-      if (languageCode) params.languageCode = languageCode
-      if (defaults.voiceSettings) params.voiceSettings = defaults.voiceSettings
+        const params: Record<string, unknown> = {
+          text,
+          modelId: model,
+          outputFormat: 'mp3_44100_128',
+        }
+        if (languageCode) params.languageCode = languageCode
+        if (defaults.voiceSettings) params.voiceSettings = defaults.voiceSettings
 
-      const audio = await el.textToSpeech.convert(voice, params)
-
-      const reader = audio.getReader()
-      const chunks: Uint8Array[] = []
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        chunks.push(value)
-      }
-
-      const data = Buffer.concat(chunks)
-      return {
-        data,
-        durationMs: 0,
-        format: { sampleRate: 44100, channels: 1, codec: 'mp3' },
-      }
+        const audio = await el.textToSpeech.convert(voice, params)
+        const reader = audio.getReader()
+        const chunks: Uint8Array[] = []
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          chunks.push(value)
+        }
+        const buf = Buffer.concat(chunks)
+        return writeAudioSegment(buf, { dir, prefix: 'elevenlabs', sampleRate: 44100 })
+      }))
     },
 
     estimateDurationMs(text: string): number {

@@ -4,7 +4,7 @@ import type { TtsProvider } from '../../../src/types/voiceover'
 
 const fakeProvider: TtsProvider = {
   name: 'fake',
-  async synthesize() { return { data: Buffer.alloc(0), durationMs: 0, format: { sampleRate: 44100, channels: 1, codec: 'mp3' } } },
+  async synthesize() { return [] },
   estimateDurationMs() { return 0 },
   async isAvailable() { return true },
   async dispose() {},
