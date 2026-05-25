@@ -398,8 +398,8 @@ flash-attn), so the recommended setup is **one shared venv reused across
 projects**, pointed at via `pythonBin`:
 
 ```bash
-python3 -m venv ~/.venvs/qwen-tts
-~/.venvs/qwen-tts/bin/pip install -r node_modules/playwright-recast/dist/voiceover/providers/qwen-sidecar/requirements.txt
+python3 -m venv ~/.venvs/playwright-recast
+~/.venvs/playwright-recast/bin/pip install -r node_modules/playwright-recast/dist/voiceover/providers/qwen-sidecar/requirements.txt
 ```
 
 ```typescript
@@ -407,18 +407,12 @@ python3 -m venv ~/.venvs/qwen-tts
   mode: 'clone',
   voiceSample: './my-voice.wav',
   refText: 'Welcome! In this screencast we will walk through the key concepts.',
-  pythonBin: `${process.env.HOME}/.venvs/qwen-tts/bin/python3`,
+  pythonBin: `${process.env.HOME}/.venvs/playwright-recast/bin/python3`,
 }))
 ```
 
 Absolute `pythonBin` means no shell activation required — works in CI,
 cron jobs, and IDE runners alike.
-
-**Alternatives:**
-
-- **`uv`** (Astral): `uv venv ~/.venvs/qwen-tts && uv pip install -p ~/.venvs/qwen-tts/bin/python -r .../requirements.txt`. `uv` hardlinks from a global wheel store, so even a per-project `.venv` is nearly free on disk.
-- **Per-project `.venv`**: `python3 -m venv .venv` and `pythonBin: '.venv/bin/python3'`. Cleanest isolation; costs ~5–8 GB per project unless you're using `uv`.
-- **Conda**: works the same way — point `pythonBin` at the env's interpreter.
 
 Requires a CUDA-capable GPU (~4–8 GB VRAM depending on model). `HF_TOKEN` in
 the environment if the chosen weights are gated.

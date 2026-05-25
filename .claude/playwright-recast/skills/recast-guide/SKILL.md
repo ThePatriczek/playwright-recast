@@ -147,8 +147,8 @@ QwenTtsProvider({
 Setup — PyTorch + flash-attn is ~5–8 GB, so recommend **one shared venv reused across projects** pointed at via `pythonBin`:
 
 ```bash
-python3 -m venv ~/.venvs/qwen-tts
-~/.venvs/qwen-tts/bin/pip install -r node_modules/playwright-recast/dist/voiceover/providers/qwen-sidecar/requirements.txt
+python3 -m venv ~/.venvs/playwright-recast
+~/.venvs/playwright-recast/bin/pip install -r node_modules/playwright-recast/dist/voiceover/providers/qwen-sidecar/requirements.txt
 ```
 
 ```typescript
@@ -156,11 +156,11 @@ QwenTtsProvider({
   mode: 'clone',
   voiceSample: './ref.wav',
   refText: 'Sample transcript.',
-  pythonBin: `${process.env.HOME}/.venvs/qwen-tts/bin/python3`,
+  pythonBin: `${process.env.HOME}/.venvs/playwright-recast/bin/python3`,
 })
 ```
 
-Alternatives: `uv venv` + `uv pip install` (hardlinks from a global wheel store — per-project `.venv` becomes nearly free); or a per-project `.venv` for full isolation (costs ~5–8 GB/project without `uv`); or a conda env. Whichever you pick, pass the venv's `bin/python3` (absolute path) as `pythonBin` so no shell activation is needed.
+Pass the venv's `bin/python3` as an absolute path so no shell activation is needed.
 
 Needs a CUDA GPU (~4–8 GB VRAM) and `HF_TOKEN` if the chosen weights are gated. Failures surface as `QwenSidecarError` with a `stage` field (`init` / `design` / `clone`).
 

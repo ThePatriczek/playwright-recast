@@ -22,11 +22,11 @@ No npm peer dependency is required — the provider talks to the sidecar over st
 
 The sidecar's stack (PyTorch + `flash-attn` + Qwen) is **~5–8 GB on disk**, so where you install it matters. pip caches *downloads* in `~/.cache/pip`, but *installs* are copied into each venv's `site-packages` — so a per-project venv with PyTorch costs ~5–8 GB **per project**.
 
-### Recommended: one shared venv reused across projects
+### Shared venv reused across projects
 
 ```bash
-python3 -m venv ~/.venvs/qwen-tts
-~/.venvs/qwen-tts/bin/pip install -r node_modules/playwright-recast/dist/voiceover/providers/qwen-sidecar/requirements.txt
+python3 -m venv ~/.venvs/playwright-recast
+~/.venvs/playwright-recast/bin/pip install -r node_modules/playwright-recast/dist/voiceover/providers/qwen-sidecar/requirements.txt
 ```
 
 ```typescript
@@ -34,35 +34,11 @@ QwenTtsProvider({
   mode: 'clone',
   voiceSample: './my-voice.wav',
   refText: 'Welcome! In this screencast we will walk through the key concepts.',
-  pythonBin: `${process.env.HOME}/.venvs/qwen-tts/bin/python3`,
+  pythonBin: `${process.env.HOME}/.venvs/playwright-recast/bin/python3`,
 })
 ```
 
 Absolute `pythonBin` works regardless of shell activation — useful for CI, cron, and IDE runners.
-
-### Alternative: `uv` (most disk-efficient)
-
-[`uv`](https://github.com/astral-sh/uv) hardlinks every venv from a global wheel store, so per-project `.venv`s cost almost nothing on disk:
-
-```bash
-uv venv ~/.venvs/qwen-tts
-uv pip install --python ~/.venvs/qwen-tts/bin/python -r node_modules/playwright-recast/dist/voiceover/providers/qwen-sidecar/requirements.txt
-```
-
-If you've got `uv` installed, even a per-project `.venv` is reasonable — the hardlinks deduplicate PyTorch automatically.
-
-### Alternative: per-project `.venv` (full isolation)
-
-```bash
-python3 -m venv .venv
-.venv/bin/pip install -r node_modules/playwright-recast/dist/voiceover/providers/qwen-sidecar/requirements.txt
-```
-
-Then `pythonBin: '.venv/bin/python3'`. Cleanest isolation; pay ~5–8 GB per project unless paired with `uv`.
-
-### Conda
-
-Works the same way — point `pythonBin` at the env's `bin/python3` (or `.../envs/<name>/bin/python3`).
 
 ### `flash-attn` build notes
 

@@ -17,8 +17,8 @@ The deps (PyTorch + flash-attn + Qwen) are ~5–8 GB. Recommended pattern is
 **one shared venv reused across projects**:
 
 ```bash
-python3 -m venv ~/.venvs/qwen-tts
-~/.venvs/qwen-tts/bin/pip install -r requirements.txt
+python3 -m venv ~/.venvs/playwright-recast
+~/.venvs/playwright-recast/bin/pip install -r requirements.txt
 ```
 
 When invoked from `QwenTtsProvider`, point `pythonBin` at it — absolute
@@ -29,15 +29,9 @@ QwenTtsProvider({
   mode: 'clone',
   voiceSample: './ref.wav',
   refText: 'Sample transcript.',
-  pythonBin: `${process.env.HOME}/.venvs/qwen-tts/bin/python3`,
+  pythonBin: `${process.env.HOME}/.venvs/playwright-recast/bin/python3`,
 })
 ```
-
-Alternatives:
-
-- **`uv`** — `uv venv ~/.venvs/qwen-tts && uv pip install -p ~/.venvs/qwen-tts/bin/python -r requirements.txt`. Hardlinks from a global store, so even per-project venvs are nearly free on disk.
-- **Per-project `.venv`** — `python3 -m venv .venv` for full isolation; costs ~5–8 GB/project without `uv`.
-- **Conda** — same idea; pass the env's `bin/python3` to `pythonBin`.
 
 `flash-attn` requires CUDA toolchain at build time. If the precompiled wheel
 is unavailable for your environment, follow the install instructions at
