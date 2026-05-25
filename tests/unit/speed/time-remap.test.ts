@@ -142,5 +142,33 @@ describe('Time Remap', () => {
       // 4000 at 2x = 2000 output. Time 5000 should clamp to 2000.
       expect(remap(toMonotonic(5000))).toBe(2000)
     })
+
+    it('snaps time inside a hidden gap to the next segment boundary', () => {
+      // Simulates hideSteps() removing [1000, 5000] — segments end at 1000
+      // and resume at 5000 with the gap collapsed in output time.
+      const segments = computeOutputTimes([
+        {
+          originalStart: toMonotonic(0),
+          originalEnd: toMonotonic(1000),
+          speed: 1.0,
+          outputStart: 0,
+          outputEnd: 0,
+        },
+        {
+          originalStart: toMonotonic(5000),
+          originalEnd: toMonotonic(9000),
+          speed: 1.0,
+          outputStart: 0,
+          outputEnd: 0,
+        },
+      ])
+      const remap = buildTimeRemap(segments)
+      // 3000 falls inside the gap [1000, 5000] — should snap to second
+      // segment's outputStart (1000), not to last.outputEnd (5000).
+      expect(remap(toMonotonic(3000))).toBe(1000)
+      // Boundaries still work.
+      expect(remap(toMonotonic(5000))).toBe(1000)
+      expect(remap(toMonotonic(7000))).toBe(3000)
+    })
   })
 })

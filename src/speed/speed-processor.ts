@@ -200,12 +200,19 @@ export function processSpeed(
     rawSegments.push({ start: t, end: segEnd, speed })
   }
 
-  // Apply minSegmentDuration: merge short segments into neighbors
+  // Apply minSegmentDuration: merge short segments into neighbors.
+  // Only merge into the previous segment when they are adjacent — merging
+  // across a gap (a hideSteps() hidden range) would extend the previous
+  // segment over the hidden span and pull the cut content back into the
+  // rendered output.
   const merged: typeof rawSegments = []
   for (const seg of rawSegments) {
     if (merged.length > 0) {
       const last = merged[merged.length - 1]!
-      if (seg.end - seg.start < c.minSegmentDuration) {
+      if (
+        seg.end - seg.start < c.minSegmentDuration &&
+        last.end === seg.start
+      ) {
         // Merge into previous segment (use slower speed to avoid jarring)
         last.end = seg.end
         last.speed = Math.min(last.speed, seg.speed)

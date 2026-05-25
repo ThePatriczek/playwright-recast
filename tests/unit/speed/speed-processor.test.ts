@@ -181,6 +181,41 @@ describe('processSpeed', () => {
     }
   })
 
+  it('does not merge short segments across a hideSteps() gap', () => {
+    // Reproduces the bug where a short pre-hidden segment + a short
+    // post-hidden segment of the same speed got merged into one segment
+    // that swallowed the hidden range — causing the renderer to slice
+    // the hidden content back into the output.
+    // Trace: short navigation before hidden range, short navigation after,
+    // both 2x; the hidden gap must remain a gap in segment coverage.
+    const actions = [
+      makeAction(1300, 1400, 'goto'),
+      makeAction(15000, 15100, 'goto'),
+    ]
+    const trace: FilteredTrace = {
+      ...makeTrace(actions, [], 1000, 17000),
+      hiddenRanges: [
+        { start: toMonotonic(1500) as MonotonicMs, end: toMonotonic(14800) as MonotonicMs },
+      ],
+    }
+    const result = processSpeed(trace, {
+      duringIdle: 3.0,
+      duringUserAction: 1.0,
+      duringNavigation: 2.0,
+      minSegmentDuration: 500,
+    })
+
+    // No segment may span across the hidden range.
+    const HIDDEN_START = 1500
+    const HIDDEN_END = 14800
+    for (const seg of result.speedSegments) {
+      const s = seg.originalStart as number
+      const e = seg.originalEnd as number
+      const spansGap = s < HIDDEN_START && e > HIDDEN_END
+      expect(spansGap, `segment [${s}, ${e}] spans hidden range`).toBe(false)
+    }
+  })
+
   it('provides a working timeRemap function', () => {
     const actions = [makeAction(0, 1000, 'click')]
     const trace = makeTrace(actions, [], 0, 3000)

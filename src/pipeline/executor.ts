@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process'
 import type { StageDescriptor } from './stages.js'
 import type { ParsedTrace, FilteredTrace, TraceAction } from '../types/trace.js'
 import { toMonotonic } from '../types/trace.js'
-import type { SpeedMappedTrace } from '../types/speed.js'
+import type { SpeedConfig, SpeedMappedTrace } from '../types/speed.js'
 import type { SubtitledTrace, SubtitleEntry } from '../types/subtitle.js'
 import {
   NARRATE_TITLE_PREFIX,
@@ -44,6 +44,7 @@ type PipelineState = {
   parsed?: ParsedTrace
   filtered?: FilteredTrace
   speedMapped?: SpeedMappedTrace
+  speedConfig?: SpeedConfig
   subtitled?: SubtitledTrace
   voiceovered?: VoiceoveredTrace
   sourceVideoPath?: string
@@ -301,11 +302,18 @@ export class PipelineExecutor {
         case 'hideSteps': {
           if (!state.parsed) throw new Error('hideSteps() requires parse() first')
           state.filtered = filterSteps(state.parsed, stage.predicate)
+          // If speedUp() already ran, its segments were built without the new
+          // hiddenRanges — rebuild so the renderer actually cuts the hidden
+          // portions out of the video.
+          if (state.speedMapped && state.speedConfig) {
+            state.speedMapped = processSpeed(state.filtered, state.speedConfig)
+          }
           break
         }
 
         case 'speedUp': {
           if (!state.filtered) throw new Error('speedUp() requires parse() first')
+          state.speedConfig = stage.config
           state.speedMapped = processSpeed(state.filtered, stage.config)
           const segs = state.speedMapped.speedSegments
           const uniqueSpeeds = [...new Set(segs.map(s => s.speed))]
@@ -712,7 +720,9 @@ export class PipelineExecutor {
           const recFramesCursor = recPageIdCursor
             ? state.parsed.frames.filter(f => f.pageId === recPageIdCursor) : state.parsed.frames
           const recStartCursor = recFramesCursor[0]?.timestamp as number ?? 0
-          const cursorActions = state.parsed.actions.filter(a => (a.startTime as number) >= recStartCursor)
+          // Use filtered actions so cursor positions from hidden steps are dropped.
+          const cursorSourceActions = state.filtered?.actions ?? state.parsed.actions
+          const cursorActions = cursorSourceActions.filter(a => (a.startTime as number) >= recStartCursor)
 
           const keyframes = buildTrajectory({
             actions: cursorActions as Array<{ point?: { x: number; y: number }; startTime: number }>,
@@ -744,8 +754,10 @@ export class PipelineExecutor {
             ? state.parsed.frames.filter(f => f.pageId === recPageIdClick) : state.parsed.frames
           const recStartClick = recFramesClick[0]?.timestamp as number ?? 0
 
-          // Only include actions from the recording context (after recording started)
-          let clickActions = state.parsed.actions.filter(
+          // Use filtered actions so clicks inside hideSteps() ranges are dropped —
+          // otherwise they get remapped onto video time 0 (or end) and pile up.
+          const sourceActions = state.filtered?.actions ?? state.parsed.actions
+          let clickActions = sourceActions.filter(
             (a) => CLICK_METHODS.has(a.method) && a.point && (a.startTime as number) >= recStartClick,
           )
 

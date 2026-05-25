@@ -94,6 +94,60 @@ describe('filterSteps', () => {
     expect(result.hiddenRanges).toHaveLength(2)
   })
 
+  it('drops child actions whose time falls inside a hidden parent step', () => {
+    const parent: TraceAction = {
+      callId: 'parent',
+      title: 'login',
+      class: 'test.step',
+      method: 'step',
+      params: {},
+      startTime: toMonotonic(1000),
+      endTime: toMonotonic(5000),
+    }
+    const childClickA: TraceAction = {
+      callId: 'child-a',
+      title: 'click submit',
+      class: 'Locator',
+      method: 'click',
+      params: {},
+      startTime: toMonotonic(1500),
+      endTime: toMonotonic(1600),
+      parentId: 'parent',
+      point: { x: 10, y: 20, timestamp: toMonotonic(1500) },
+    }
+    const childClickB: TraceAction = {
+      callId: 'child-b',
+      title: 'click next',
+      class: 'Locator',
+      method: 'click',
+      params: {},
+      startTime: toMonotonic(2500),
+      endTime: toMonotonic(2600),
+      parentId: 'parent',
+      point: { x: 30, y: 40, timestamp: toMonotonic(2500) },
+    }
+    const visibleClick: TraceAction = {
+      callId: 'visible',
+      title: 'click after',
+      class: 'Locator',
+      method: 'click',
+      params: {},
+      startTime: toMonotonic(6000),
+      endTime: toMonotonic(6100),
+      point: { x: 50, y: 60, timestamp: toMonotonic(6000) },
+    }
+    const trace = makeTrace([parent, childClickA, childClickB, visibleClick])
+
+    const result = filterSteps(trace, (a) => a.title === 'login')
+
+    expect(result.actions).toHaveLength(1)
+    expect(result.actions[0]!.callId).toBe('visible')
+    expect(result.hiddenRanges).toEqual([
+      { start: toMonotonic(1000), end: toMonotonic(5000) },
+    ])
+    expect(result.originalActions).toHaveLength(4)
+  })
+
   it('returns unchanged trace when no actions match', () => {
     const actions = [
       makeAction('When', 'step 1', 0, 5000),

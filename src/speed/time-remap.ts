@@ -20,7 +20,10 @@ export function computeOutputTimes(segments: SpeedSegment[]): SpeedSegment[] {
 
 /**
  * Build a function that maps original trace time to output video time.
- * Interpolates within speed segments.
+ * Interpolates within speed segments; times that fall inside a gap between
+ * segments (e.g. a hideSteps() hidden range) snap to the next segment's
+ * output start — gaps collapse to zero output duration, so the boundary
+ * shared with the previous segment's outputEnd is the right answer.
  */
 export function buildTimeRemap(segments: SpeedSegment[]): TimeRemapFn {
   return (originalTime: MonotonicMs): number => {
@@ -36,7 +39,8 @@ export function buildTimeRemap(segments: SpeedSegment[]): TimeRemapFn {
       const segStart = seg.originalStart as number
       const segEnd = seg.originalEnd as number
 
-      if (t < segStart) continue
+      // In a gap before this segment — snap forward to its start.
+      if (t < segStart) return seg.outputStart
       if (t > segEnd) continue
 
       const elapsed = t - segStart
