@@ -27,6 +27,39 @@ import { setupRecast } from 'playwright-recast'
 setupRecast(test)
 ```
 
+## Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `narrateAutoWait` | `boolean \| number \| object` | off | Default [`autoWait`](/docs/helpers/narrate#autowait--visual-time-without-tts) applied to every `narrate()` call that omits its own. |
+
+### narrateAutoWait — a global autoWait default
+
+Instead of repeating `{ autoWait: true }` on every `narrate()` call, set it once for the whole suite. Each `narrate()` that omits its own `autoWait` falls back to this default:
+
+```typescript
+import { test } from 'playwright-bdd'
+import { setupRecast } from 'playwright-recast'
+
+// Every narrate() pads the test with the estimated speak time…
+setupRecast(test, { narrateAutoWait: true })
+
+// …or tune the estimate globally, same shapes as narrate's per-call autoWait:
+setupRecast(test, {
+  narrateAutoWait: { charactersPerSecond: 16, minMs: 1500, maxMs: 6000 },
+})
+```
+
+A per-call `autoWait` always wins — including an explicit `false`, which disables the wait for that one call regardless of the global default:
+
+```typescript
+await narrate('This line uses the global default.')
+await narrate('This line waits 2s.', { autoWait: 2000 })   // overrides the default
+await narrate('This line never waits.', { autoWait: false }) // opts out
+```
+
+The default is off, so suites that never set `narrateAutoWait` behave exactly as before. Calling `setupRecast(test)` again without the option resets the default back to off.
+
 ## How it works
 
 `setupRecast` receives the `test` object and uses `test.info()` internally to access the current test's annotations. The helpers (`narrate`, `zoom`, `highlight`) then write structured data to these annotations, which the pipeline reads during video generation.

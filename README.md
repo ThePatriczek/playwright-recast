@@ -163,6 +163,8 @@ import { test } from 'playwright-bdd'
 import { setupRecast, narrate, highlight, zoom, pace } from 'playwright-recast'
 
 setupRecast(test)
+// Or set a global narrate autoWait default for the whole suite (off by default):
+// setupRecast(test, { narrateAutoWait: true })
 export { narrate, highlight, zoom, pace }
 
 // steps/my-steps.ts

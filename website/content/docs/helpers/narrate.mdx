@@ -31,7 +31,7 @@ await narrate(undefined)
 |-----------|------|-------------|
 | `text` | `string \| undefined` | Voiceover text for this step. Pass `undefined` to no-op. |
 | `opts.hidden` | `boolean` | Mark the step as hidden (excluded from subtitles). Detected automatically if `text` contains `@hidden`. |
-| `opts.autoWait` | `boolean \| number \| object` | Pause after recording the marker step for the approximate time the line takes to speak. See below. |
+| `opts.autoWait` | `boolean \| number \| object` | Pause after recording the marker step for the approximate time the line takes to speak. When omitted, the global default from [`setupRecast({ narrateAutoWait })`](/docs/helpers/setup-recast#narrateautowait--a-global-autowait-default) applies. See below. |
 
 ## autoWait — visual time without TTS
 
@@ -48,6 +48,10 @@ await narrate('Welcome to the new dashboard.', {
   autoWait: { charactersPerSecond: 16, minMs: 1500, maxMs: 6000 },
 })
 ```
+
+### Setting a global default
+
+To pad every line without repeating `autoWait` on each call, set it once via [`setupRecast({ narrateAutoWait })`](/docs/helpers/setup-recast#narrateautowait--a-global-autowait-default). Any `narrate()` that omits `autoWait` falls back to that default; a per-call `autoWait` still overrides it, and `autoWait: false` opts a single call out of the wait entirely.
 
 ## Voiceover-driven freezes
 
