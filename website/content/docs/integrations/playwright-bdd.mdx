@@ -134,6 +134,8 @@ When('the user opens the report', async ({ page }, docString?: string) => {
 
 Render with `.cursorOverlay()` and/or `.clickEffect()` so the marked clicks are drawn; tune the held approach with `.cursorOverlay({ approachMs: 600 })`.
 
+With a `.voiceover()` stage you don't need `autoWait` or `pace()` for timing: the rendered video freezes at each `waitForNarration()` for exactly as long as the line needs, so the test can run at full speed and the narration still stays in sync. See [Pacing narration without autoWait](/docs/helpers/wait-for-narration#pacing-narration-without-autowait).
+
 ## Generating the video
 
 Run your Playwright BDD tests with tracing enabled, then pipe the trace through the pipeline:

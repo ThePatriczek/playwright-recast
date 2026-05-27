@@ -37,6 +37,23 @@ It takes no arguments and emits one empty marker step (`__recast_wait_for_narrat
 
 So `waitForNarration()` draws a hard boundary, letting you put clicks and narrations next to each other without the renderer cutting a line short. When a trace has no `waitForNarration()` markers, subtitle assembly is byte-identical to before.
 
+## Pacing narration without autoWait
+
+With a [`.voiceover()`](/docs/pipeline/voiceover) stage you do **not** need [`autoWait`](/docs/helpers/narrate#autowait--visual-time-without-tts) (or [`pace()`](/docs/helpers/pace)) to give each line enough on-screen time. Run the test at full speed — keep only the small waits you actually want for the visuals — and put a `waitForNarration()` after each narration's actions. The rendered video then **freezes at each boundary for exactly as long as the audio needs**, and the line's subtitle is shown for its audio's duration.
+
+```typescript
+// No autoWait, no pace() — the test runs at full speed.
+await narrate('First, open the schema editor.')
+await click(editorButton)
+await waitForNarration()            // hold until line 1 finishes speaking
+
+await narrate('Then add a new column.')
+await click(addColumnButton)
+await waitForNarration()            // hold until line 2 finishes speaking
+```
+
+This is the lightest-weight way to keep narration in sync: a short test run, a rendered video that matches the voiceover. It works even when a `narrate()` is immediately followed by its `waitForNarration()` with no gap in between — the line is kept and sized from its audio rather than dropped. (`autoWait` is still the right tool when you render **without** TTS, where there is no audio to size the pause.)
+
 ## When the wait actually adds time
 
 The marker only adds time when time is actually needed:

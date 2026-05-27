@@ -37,6 +37,9 @@ await narrate(undefined)
 
 When running without TTS (e.g., live demos or local previews), the video needs enough visual time for each line. `autoWait` waits for an estimate based on `text` length:
 
+> **With TTS you usually don't need `autoWait`.** The [`voiceover()`](/docs/pipeline/voiceover) stage already stretches the video to fit each line — see [Voiceover-driven freezes](#voiceover-driven-freezes) and [`waitForNarration()`](/docs/helpers/wait-for-narration#pacing-narration-without-autowait). Reach for `autoWait` mainly when rendering without TTS, where there is no audio to size the pause.
+
+
 | Form | Behavior |
 |------|----------|
 | `true` | Estimate from non-whitespace characters / `NARRATE_DEFAULT_CPS` (14 ch/s ≈ 150 wpm). |

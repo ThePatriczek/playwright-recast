@@ -198,7 +198,7 @@ Then('the user opens the report', async ({ page }, docString?: string) => {
 
 **`click()` / `markClick()`:** mark a click in the trace. The renderer prefers markers over auto-detected clicks and plays a held cursor approach over the painted target (needs `cursorOverlay()` and/or `clickEffect()`; hold = `cursorOverlay({ approachMs })`, default 500ms). `click()` settles → marks → real click (forwards click options; settle = `setupRecast({ clickSettleMs })`, default 150ms). `markClick()` writes the marker only — use it when you drive the interaction yourself.
 
-**`waitForNarration()`:** marks a hard boundary so the preceding narration's subtitle window ends there; with voiceover the renderer holds the frame until that line finishes. Resolves instantly at test time (no real-time pause). Use before a click that must not be talked over, or at the end of a scenario.
+**`waitForNarration()`:** marks a hard boundary so the preceding narration's subtitle window ends there; with voiceover the renderer holds the frame until that line finishes. Resolves instantly at test time (no real-time pause). Use before a click that must not be talked over, or at the end of a scenario. With voiceover you can skip `narrateAutoWait`/`pace()` entirely — run the test at full speed and let the per-line freezes fit the audio (even a `narrate()` immediately followed by `waitForNarration()` is kept and sized from its audio, not dropped).
 
 **Voiceover-driven freezes:** when TTS audio is longer than its visual window the renderer holds the current frame until the audio finishes — overlays freeze with it, click sounds shift to match. Click approach-holds extend audio + subtitles the same way, so narration stays in sync. No config required.
 
