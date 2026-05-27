@@ -171,3 +171,51 @@ describe('narrate({ autoWait })', () => {
     expect(elapsed).toBeLessThan(500)
   })
 })
+
+describe('narrate({ autoWait }) — global default via setupRecast', () => {
+  let env: ReturnType<typeof makeFakeTest>
+
+  beforeEach(() => {
+    env = makeFakeTest()
+  })
+
+  it('applies the global narrateAutoWait when no per-call autoWait is given', async () => {
+    setupRecast(env.fakeTest, { narrateAutoWait: 120 })
+    const t0 = Date.now()
+    await narrate('hello')
+    const elapsed = Date.now() - t0
+    expect(elapsed).toBeGreaterThanOrEqual(110)
+    expect(elapsed).toBeLessThan(400)
+  })
+
+  it('lets a per-call autoWait override the global default', async () => {
+    setupRecast(env.fakeTest, { narrateAutoWait: 500 })
+    const t0 = Date.now()
+    await narrate('hello', { autoWait: 60 })
+    const elapsed = Date.now() - t0
+    expect(elapsed).toBeGreaterThanOrEqual(50)
+    expect(elapsed).toBeLessThan(300)
+  })
+
+  it('lets a per-call autoWait:false disable the wait even with a global default', async () => {
+    setupRecast(env.fakeTest, { narrateAutoWait: 500 })
+    const t0 = Date.now()
+    await narrate('hello', { autoWait: false })
+    expect(Date.now() - t0).toBeLessThan(50)
+  })
+
+  it('does not wait when neither global nor per-call autoWait is set', async () => {
+    setupRecast(env.fakeTest)
+    const t0 = Date.now()
+    await narrate('Hello world this is a longer line')
+    expect(Date.now() - t0).toBeLessThan(50)
+  })
+
+  it('resets the global default to off when setupRecast is called without it', async () => {
+    setupRecast(env.fakeTest, { narrateAutoWait: 500 })
+    setupRecast(env.fakeTest) // re-setup without the option clears it
+    const t0 = Date.now()
+    await narrate('hello')
+    expect(Date.now() - t0).toBeLessThan(50)
+  })
+})

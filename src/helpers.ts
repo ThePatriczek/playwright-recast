@@ -3,6 +3,12 @@ import type { Page, Locator, TestInfo } from '@playwright/test'
 type StepFn = <T>(title: string, body: () => T | Promise<T>) => Promise<T>
 type RecastTest = { info: () => TestInfo; step: StepFn }
 
+/** Accepted shapes for `narrate`'s autoWait — see `narrate()` for semantics. */
+type NarrateAutoWait =
+  | boolean
+  | number
+  | { charactersPerSecond?: number; minMs?: number; maxMs?: number }
+
 /**
  * Get current test info — works in both playwright-bdd and standard Playwright.
  * Must be called from within a test context.
@@ -15,6 +21,9 @@ function getTestInfo(): TestInfo {
 
 let _getTestInfo: () => TestInfo = getTestInfo
 let _step: StepFn | null = null
+/** Global default for `narrate`'s autoWait, applied when a call omits its own
+ *  `autoWait`. Set via setupRecast; undefined (off) by default. */
+let _narrateAutoWait: NarrateAutoWait | undefined = undefined
 
 /**
  * Title prefix written to a trace step by `narrate()`. The `subtitlesFromTrace`
@@ -54,10 +63,19 @@ function estimateNarrationMs(text: string, charsPerSecond: number): number {
  * import { setupRecast } from 'playwright-recast'
  * setupRecast(test)
  * ```
+ *
+ * @param options.narrateAutoWait Default `autoWait` applied to every `narrate()`
+ *   call that omits its own (default: off). Same shapes as `narrate`'s
+ *   per-call `autoWait`: `true`, a number of ms, or `{ charactersPerSecond,
+ *   minMs, maxMs }`. A per-call `autoWait` (including `false`) overrides this.
  */
-export function setupRecast(testInstance: RecastTest): void {
+export function setupRecast(
+  testInstance: RecastTest,
+  options?: { narrateAutoWait?: NarrateAutoWait },
+): void {
   _getTestInfo = () => testInstance.info()
   _step = testInstance.step.bind(testInstance)
+  _narrateAutoWait = options?.narrateAutoWait
 }
 
 /**
@@ -78,12 +96,15 @@ export function setupRecast(testInstance: RecastTest): void {
  *   - `true` — estimate via non-whitespace characters / `NARRATE_DEFAULT_CPS`.
  *   - `number` — wait exactly this many milliseconds.
  *   - `{ charactersPerSecond, minMs, maxMs }` — tune the estimate.
+ *   When omitted, the global default from `setupRecast({ narrateAutoWait })`
+ *   applies. Pass `false` to disable the wait for this call regardless of the
+ *   global default.
  */
 export async function narrate(
   text: string | undefined,
   opts?: {
     hidden?: boolean
-    autoWait?: boolean | number | { charactersPerSecond?: number; minMs?: number; maxMs?: number }
+    autoWait?: NarrateAutoWait
   },
 ): Promise<void> {
   const hidden = opts?.hidden ?? text?.includes('@hidden') ?? false
@@ -110,7 +131,10 @@ export async function narrate(
     await _step(`${prefix}${cleanText}`, async () => {})
   }
 
-  const waitMs = resolveAutoWait(cleanText, opts?.autoWait)
+  // A per-call autoWait (including an explicit `false`) overrides the global
+  // default; omitting it falls back to setupRecast's narrateAutoWait.
+  const autoWait = opts?.autoWait ?? _narrateAutoWait
+  const waitMs = resolveAutoWait(cleanText, autoWait)
   if (waitMs > 0) {
     await new Promise((resolve) => setTimeout(resolve, waitMs))
   }
@@ -118,11 +142,7 @@ export async function narrate(
 
 function resolveAutoWait(
   text: string,
-  autoWait:
-    | boolean
-    | number
-    | { charactersPerSecond?: number; minMs?: number; maxMs?: number }
-    | undefined,
+  autoWait: NarrateAutoWait | undefined,
 ): number {
   if (!autoWait) return 0
   if (typeof autoWait === 'number') return Math.max(0, autoWait)
