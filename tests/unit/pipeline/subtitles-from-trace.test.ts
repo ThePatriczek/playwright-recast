@@ -99,12 +99,19 @@ describe('buildNarrationSubtitles', () => {
     ])
   })
 
-  it('drops subtitles with non-positive duration', () => {
+  it('keeps zero-width narrations (voiceover/renderer size them downstream)', () => {
+    // On a fast trace (no autoWait), a narrate() immediately followed by another
+    // narrate()/waitForNarration() collapses the window to ~0. The line must be
+    // kept (clamped, never inverted) so voiceover can later stretch it to the
+    // audio length; the renderer drops any still-zero-duration line before burn-in.
     const actions = [
       mkNarrate(`${NARRATE_TITLE_PREFIX}A`, 5000),
       mkNarrate(`${NARRATE_TITLE_PREFIX}B`, 5000),
     ]
     const subs = buildNarrationSubtitles(actions, identity, 10_000)
-    expect(subs).toEqual([{ index: 1, startMs: 5000, endMs: 10_000, text: 'B' }])
+    expect(subs).toEqual([
+      { index: 1, startMs: 5000, endMs: 5000, text: 'A' },
+      { index: 2, startMs: 5000, endMs: 10_000, text: 'B' },
+    ])
   })
 })
