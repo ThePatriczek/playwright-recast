@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import type { TestInfo, Locator } from '@playwright/test'
 import { markClick, click, setupRecast, CLICK_TITLE_PREFIX } from '../../../src/helpers'
 
@@ -90,5 +90,36 @@ describe('click()', () => {
     await click(loc)
     expect(Date.now() - t0).toBeLessThan(50)
     expect(env.calls).toContain('click')
+  })
+})
+
+describe('click helpers without setupRecast()', () => {
+  beforeEach(() => {
+    vi.resetModules()
+  })
+
+  it('markClick no-ops before reading the locator box when setupRecast was not called', async () => {
+    const { markClick } = await import('../../../src/helpers')
+    const calls: string[] = []
+    const sink: { clickOptions?: unknown } = {}
+    const loc = makeLocator({ x: 10, y: 20, width: 30, height: 40 }, calls, sink)
+
+    await markClick(loc)
+
+    expect(calls).toEqual([])
+  })
+
+  it('click falls back to the real locator click without settle or marker work', async () => {
+    const { click } = await import('../../../src/helpers')
+    const calls: string[] = []
+    const sink: { clickOptions?: unknown } = {}
+    const loc = makeLocator({ x: 10, y: 20, width: 30, height: 40 }, calls, sink)
+    const t0 = Date.now()
+
+    await click(loc, { force: true })
+
+    expect(Date.now() - t0).toBeLessThan(50)
+    expect(calls).toEqual(['click'])
+    expect(sink.clickOptions).toEqual({ force: true })
   })
 })

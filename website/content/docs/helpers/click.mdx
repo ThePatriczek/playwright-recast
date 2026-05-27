@@ -11,7 +11,7 @@ This fixes the "the mouse moves before there's anything to click on" problem. Fo
 
 `markClick(locator)` is the low-level half: it writes the marker only — no real click, no wait. Use it when you already drive the click yourself (e.g. `page.mouse`, keyboard activation) but still want the polished approach.
 
-Both helpers need `setupRecast(test)` and a pipeline that renders clicks — [`.cursorOverlay()`](/docs/pipeline/cursor-overlay) and/or [`.clickEffect()`](/docs/pipeline/click-effect). Without either stage the marker is recorded but nothing draws it.
+Both helpers need `setupRecast(test)` to record markers and a pipeline that renders clicks — [`.cursorOverlay()`](/docs/pipeline/cursor-overlay) and/or [`.clickEffect()`](/docs/pipeline/click-effect). If setup is missing, `markClick()` no-ops and `click()` falls back to a plain `locator.click(options)` without settle/marker work. Without either render stage the marker is recorded but nothing draws it.
 
 ## Usage
 
@@ -55,7 +55,7 @@ Reads the element center via `locator.boundingBox()` and writes one `__recast_cl
 
 The renderer inserts a hold (freeze) at each marker-driven click for `approachMs` (default 500 ms, configured on [`.cursorOverlay({ approachMs })`](/docs/pipeline/cursor-overlay#approachms--held-cursor-approach)). The cursor plays its full glide over the held, painted target; the ripple fires at the end of the hold; the video then resumes into the click's result.
 
-Marker positions go through the same speed remapping as auto-detected clicks, and a marker that lands near an auto-detected click (within a small position tolerance and time window) **suppresses** that auto-detected click — so you never get a duplicate ripple. A plain `locator.click()` with no marker still renders exactly as before.
+Marker positions go through the same speed remapping as auto-detected clicks, and a marker that lands near an auto-detected click (within a small position tolerance and time window) **suppresses** that auto-detected click — so you never get a duplicate ripple. If multiple markers compete for the same auto-detected click, the nearest eligible marker wins and competing duplicates are ignored. A plain `locator.click()` with no marker still renders exactly as before.
 
 With a [`.voiceover()`](/docs/pipeline/voiceover) stage, the hold also extends the **audio and subtitles** in lockstep, so narration stays aligned with the visuals across held clicks.
 

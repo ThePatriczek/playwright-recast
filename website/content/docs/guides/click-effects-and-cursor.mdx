@@ -162,7 +162,7 @@ For each marked click, the renderer **holds the painted frame** at the click and
 .clickEffect({ sound: true })
 ```
 
-A marker that lands near an auto-detected click suppresses it, so you never get a duplicate ripple. With a `voiceover()` stage, the hold also extends the audio and subtitles so narration stays in sync across held clicks. See the [`click()` helper reference](/docs/helpers/click) for details.
+A marker that lands near an auto-detected click suppresses it, so you never get a duplicate ripple; if several markers compete for the same auto-detected click, the nearest eligible marker wins. With a `voiceover()` stage, the hold also extends the audio and subtitles so narration stays in sync across held clicks. See the [`click()` helper reference](/docs/helpers/click) for details.
 
 ## With speed processing
 

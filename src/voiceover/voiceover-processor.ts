@@ -100,7 +100,7 @@ export async function generateVoiceover(
     const subtitle = trace.subtitles[si]!
     const audio = audios[si]!
 
-    while (holdIndex < holds.length && holds[holdIndex]!.atVideoMs < originalStartsMs[si]!) {
+    while (holdIndex < holds.length && holds[holdIndex]!.atVideoMs <= originalStartsMs[si]!) {
       const h = holds[holdIndex]!
       freezes.push({ atVideoMs: h.atVideoMs, durationMs: h.durationMs })
       timeShift += h.durationMs

@@ -360,13 +360,12 @@ export async function waitForNarration(): Promise<void> {
  * clicks and gives them a held cursor approach in the rendered video.
  */
 export async function markClick(locator: Locator): Promise<void> {
+  if (!_step) return
   const box = await locator.boundingBox()
   if (!box) return
   const x = box.x + box.width / 2
   const y = box.y + box.height / 2
-  if (_step) {
-    await _step(`${CLICK_TITLE_PREFIX}${JSON.stringify({ x, y })}`, async () => {})
-  }
+  await _step(`${CLICK_TITLE_PREFIX}${JSON.stringify({ x, y })}`, async () => {})
 }
 
 /**
@@ -379,6 +378,10 @@ export async function click(
   locator: Locator,
   options?: Parameters<Locator['click']>[0],
 ): Promise<void> {
+  if (!_step) {
+    await locator.click(options)
+    return
+  }
   await locator.waitFor({ state: 'visible' })
   if (_clickSettleMs > 0) {
     await new Promise((resolve) => setTimeout(resolve, _clickSettleMs))

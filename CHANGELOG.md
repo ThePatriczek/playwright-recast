@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.19.0 (2026-05-27)
+
+### Features
+
+- **Explicit click markers** ([#15](https://github.com/ThePatriczek/playwright-recast/pull/15)) — Added `click()` and `markClick()` helpers. Marker-driven clicks suppress matching auto-detected clicks, render at the marked point, and can play a held cursor approach over the painted target via `cursorOverlay({ approachMs })`.
+- **`waitForNarration()` narration boundaries** ([#15](https://github.com/ThePatriczek/playwright-recast/pull/15)) — Added a trace marker helper that closes the previous `narrate()` line's subtitle window. With `.voiceover()`, the renderer freezes at that boundary until the line's audio finishes, so tests can run at full speed without `autoWait`/`pace()` just to fit speech.
+- **Audio-synced approach holds** ([#15](https://github.com/ThePatriczek/playwright-recast/pull/15)) — Click approach holds now extend audio and subtitles in lockstep with the video. Cursor/click overlays are rendered on the freeze-extended timeline so visuals, click sounds, narration, and subtitles stay aligned.
+
+### Bug fixes
+
+- **Fast-trace narrations are no longer dropped** — Tiny or zero-width `narrate() -> waitForNarration()` windows are kept through subtitle assembly so voiceover can size them from real audio. Degenerate subtitles that remain zero-duration without voiceover are filtered before burn/embed output.
+- **Click marker reconciliation is deterministic** — Multiple markers competing for the same auto-detected click now choose the nearest eligible marker and drop competing duplicates, avoiding duplicate ripples/keyframes.
+- **Setup/background click markers are ignored for approach holds** — Voiceover approach holds now use the same recording-context filter as click effects and cursor overlays, preventing setup/background markers from adding unintended freezes or silence.
+- **Marker helpers degrade safely without `setupRecast()`** — `markClick()` no-ops before reading locator geometry, and `click()` falls back to plain `locator.click(options)` without settle/marker overhead.
+
+### Docs
+
+- Updated README, website helper/pipeline docs, API reference, playwright-bdd integration docs, and the recast-guide skill for `click()`, `markClick()`, `waitForNarration()`, `clickSettleMs`, `approachMs`, and voiceover-driven pacing.
+
+### Internal
+
+- Test suite: **462 passed** (+4 — no-setup click helper fallback, recording-context click marker parsing, nearest-marker reconciliation, and exact-boundary approach-hold sync).
+
 ## 0.18.1 (2026-05-25)
 
 ### Bug fixes

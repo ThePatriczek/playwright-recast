@@ -191,7 +191,7 @@ Then('the user opens the report', async ({ page }, docString?: string) => {
 })
 ```
 
-Each helper writes a marker-prefixed `test.step()` into the trace zip — `subtitlesFromTrace()` picks them all up and the renderer applies overlays, zoom, clicks, and per-narration timing automatically. `click()` markers render with a held cursor approach when the pipeline includes `cursorOverlay()` and/or `clickEffect()`.
+Each helper writes a marker-prefixed `test.step()` into the trace zip after `setupRecast(test)` has connected the helpers to Playwright — `subtitlesFromTrace()` picks them all up and the renderer applies overlays, zoom, clicks, and per-narration timing automatically. `click()` markers render with a held cursor approach when the pipeline includes `cursorOverlay()` and/or `clickEffect()`.
 
 ```gherkin
 Feature: Dashboard demo
@@ -565,7 +565,7 @@ await Recast
 
 The click effect stage automatically detects `click` and `selectOption` actions from the Playwright trace. Timestamps are remapped through speed processing so ripples appear at the correct video time.
 
-To emphasise specific clicks, mark them in your test with the `click()` / `markClick()` helpers. A marker suppresses the matching auto-detected click (no duplicate ripple) and — with `cursorOverlay()` — gives it a held cursor approach over the painted target (`cursorOverlay({ approachMs })`, default 500ms).
+To emphasise specific clicks, mark them in your test with the `click()` / `markClick()` helpers. A marker suppresses the matching auto-detected click (no duplicate ripple; nearest marker wins if several compete) and — with `cursorOverlay()` — gives it a held cursor approach over the painted target (`cursorOverlay({ approachMs })`, default 500ms).
 
 **Filtering clicks:**
 

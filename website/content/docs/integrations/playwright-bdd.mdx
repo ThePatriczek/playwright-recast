@@ -26,7 +26,7 @@ setupRecast(test)
 export { narrate, pace }
 ```
 
-`setupRecast(test)` connects the step helpers to the Playwright test context. Call it once before defining any steps.
+`setupRecast(test)` connects the step helpers to the Playwright test context. Call it once before defining any steps that rely on narration, zoom, highlight, click, or narration-boundary markers.
 
 ## Using narrate in step definitions
 

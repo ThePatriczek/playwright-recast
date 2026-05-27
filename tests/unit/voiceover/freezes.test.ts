@@ -188,6 +188,25 @@ describe('generateVoiceover freeze emission (waitForNarration-narrowed windows)'
     expect(result.voiceover.entries[1]!.outputStartMs).toBe(5500)
   })
 
+  it('approach hold exactly at a subtitle start still shifts that subtitle', async () => {
+    const short = makeSineBuffer(1)
+    const provider = makeProvider([short, short])
+    const trace: SubtitledTrace = {
+      subtitles: [
+        { index: 1, startMs: 0, endMs: 2000, text: 'a', ttsText: undefined },
+        { index: 2, startMs: 5000, endMs: 7000, text: 'b', ttsText: undefined },
+      ],
+    } as unknown as SubtitledTrace
+    const tmp = path.join(TMP_ROOT, 'approach-at-subtitle-start')
+
+    const result = await generateVoiceover(trace, provider, tmp, undefined, [
+      { atVideoMs: 5000, durationMs: 500 },
+    ])
+
+    expect(result.voiceover.freezes).toContainEqual({ atVideoMs: 5000, durationMs: 500 })
+    expect(result.voiceover.entries[1]!.outputStartMs).toBe(5500)
+  })
+
   it('no approach holds: output is unchanged (regression guard)', async () => {
     const short = makeSineBuffer(1)
     const provider = makeProvider([short, short])

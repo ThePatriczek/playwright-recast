@@ -12,7 +12,11 @@ import {
   ZOOM_TITLE_PREFIX,
 } from '../helpers.js'
 import { buildNarrationSubtitles, isNarrationBoundaryTitle } from './narration-subtitles.js'
-import { parseClickMarkers, resolveClickMarkers, type AutoClick } from './click-markers.js'
+import {
+  parseClickMarkersFromRecordingContext,
+  resolveClickMarkers,
+  type AutoClick,
+} from './click-markers.js'
 import type { VoiceoveredTrace } from '../types/voiceover.js'
 import { parseTrace } from '../parse/trace-parser.js'
 import { filterSteps } from '../filter/step-filter.js'
@@ -721,7 +725,7 @@ export class PipelineExecutor {
 
           // Reconcile markers: drop auto-clicks a marker overrides; the marker
           // contributes its own keyframe below.
-          const cursorMarkers = parseClickMarkers(cursorActionsAll)
+          const cursorMarkers = parseClickMarkersFromRecordingContext(cursorSourceActions, recStartCursor)
           const CURSOR_CLICK_METHODS = new Set(['click', 'selectOption'])
           const autoClicksForCursor: AutoClick[] = cursorActionsAll
             .filter((a) => CURSOR_CLICK_METHODS.has(a.method) && a.point)
@@ -732,7 +736,7 @@ export class PipelineExecutor {
               startTime: a.startTime as number,
               endTime: a.endTime as number,
             }))
-          const { consumedCallIds } = resolveClickMarkers(autoClicksForCursor, cursorMarkers)
+          const { resolved: resolvedCursorClicks, consumedCallIds } = resolveClickMarkers(autoClicksForCursor, cursorMarkers)
           const cursorActions = cursorActionsAll.filter((a) => !consumedCallIds.has(a.callId))
 
           const keyframes = buildTrajectory({
@@ -745,10 +749,10 @@ export class PipelineExecutor {
           // Marker-driven keyframes: at the marker time, full glide (autoWaitSec 0),
           // flagged so the renderer holds the frame for the approach.
           const remapCursor = cursorTimeRemap ?? ((t: number) => t)
-          const markerKeyframes: CursorKeyframe[] = cursorMarkers.map((m) => ({
+          const markerKeyframes: CursorKeyframe[] = resolvedCursorClicks.filter((rc) => rc.marked).map((m) => ({
             x: m.x,
             y: m.y,
-            videoTimeSec: Math.max(0, (remapCursor(m.startTime) - cursorVideoStartOffset) / 1000),
+            videoTimeSec: Math.max(0, (remapCursor(m.traceTimeMs) - cursorVideoStartOffset) / 1000),
             autoWaitSec: 0,
             approach: true,
           }))
@@ -806,9 +810,7 @@ export class PipelineExecutor {
           // overrides (suppresses) the matching auto-click and renders at the
           // marker's time; unmatched markers still render; unmarked auto-clicks
           // render at their endTime exactly as before.
-          const clickMarkers = parseClickMarkers(
-            sourceActions.filter((a) => (a.startTime as number) >= recStartClick),
-          )
+          const clickMarkers = parseClickMarkersFromRecordingContext(sourceActions, recStartClick)
           const autoClicksForEffect: AutoClick[] = clickActions.map((a) => ({
             callId: a.callId,
             x: a.point!.x,
@@ -978,8 +980,13 @@ export class PipelineExecutor {
             const approachMs = state.cursorOverlayConfig.approachMs ?? 500
             const blankMs = state._blankLeadInMs ?? 0
             const remap = (t: number): number => state.subtitled!.timeRemap(toMonotonic(t))
+            const recPageId = state.parsed!.frames.length > 0
+              ? state.parsed!.frames[state.parsed!.frames.length - 1]!.pageId : undefined
+            const recFrames = recPageId
+              ? state.parsed!.frames.filter((f) => f.pageId === recPageId) : state.parsed!.frames
+            const recStart = recFrames[0]?.timestamp as number ?? 0
             const markerActions = state.filtered?.actions ?? state.parsed!.actions
-            for (const m of parseClickMarkers(markerActions)) {
+            for (const m of parseClickMarkersFromRecordingContext(markerActions, recStart)) {
               const at = Math.round(remap(m.startTime)) - blankMs - 2
               approachHolds.push({ atVideoMs: Math.max(0, at), durationMs: Math.round(approachMs) })
             }

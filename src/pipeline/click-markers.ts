@@ -44,6 +44,14 @@ export function parseClickMarkers(
   return markers
 }
 
+/** Parse click markers that belong to the recording context. */
+export function parseClickMarkersFromRecordingContext(
+  actions: ReadonlyArray<{ title?: unknown; startTime: number }>,
+  recordingStartMs: number,
+): ClickMarker[] {
+  return parseClickMarkers(actions.filter((a) => a.startTime >= recordingStartMs))
+}
+
 /**
  * Reconcile explicit click markers with auto-detected click actions.
  *
@@ -51,8 +59,10 @@ export function parseClickMarkers(
  * `posTolerancePx` and the marker time falls within the action's
  * [startTime - preWindowMs, endTime + postWindowMs] window (the convenience
  * `click()` emits the marker just before the action, which may auto-wait for
- * seconds). Matched auto-clicks are suppressed — the marker drives them.
- * Unmatched markers still render; unmatched auto-clicks render as before.
+ * seconds). Matched auto-clicks are suppressed — the marker drives them. When
+ * multiple markers compete for one auto-click, the closest eligible marker wins
+ * and the losing duplicates are dropped. Truly unmatched markers still render;
+ * unmatched auto-clicks render as before.
  */
 export function resolveClickMarkers(
   autoClicks: ReadonlyArray<AutoClick>,
@@ -65,25 +75,45 @@ export function resolveClickMarkers(
   const consumed = new Set<string>()
   const resolved: ResolvedClick[] = []
 
-  for (const m of markers) {
-    let best: AutoClick | undefined
-    let bestDelta = Infinity
-    for (const a of autoClicks) {
-      if (consumed.has(a.callId)) continue
+  const candidates: Array<{ markerIndex: number; autoIndex: number; delta: number }> = []
+  for (let markerIndex = 0; markerIndex < markers.length; markerIndex++) {
+    const m = markers[markerIndex]!
+    for (let autoIndex = 0; autoIndex < autoClicks.length; autoIndex++) {
+      const a = autoClicks[autoIndex]!
       if (Math.abs(a.x - m.x) > posTol || Math.abs(a.y - m.y) > posTol) continue
       if (m.startTime < a.startTime - pre || m.startTime > a.endTime + post) continue
       const delta = Math.abs(m.startTime - a.startTime)
-      if (delta < bestDelta) {
-        best = a
-        bestDelta = delta
-      }
+      candidates.push({ markerIndex, autoIndex, delta })
     }
-    if (best) consumed.add(best.callId)
+  }
+
+  candidates.sort((a, b) => {
+    if (a.delta !== b.delta) return a.delta - b.delta
+    const markerDelta = markers[a.markerIndex]!.startTime - markers[b.markerIndex]!.startTime
+    if (markerDelta !== 0) return markerDelta
+    return autoClicks[a.autoIndex]!.startTime - autoClicks[b.autoIndex]!.startTime
+  })
+
+  const markersWithCandidate = new Set(candidates.map((c) => c.markerIndex))
+  const assignedMarkers = new Set<number>()
+  const assignedAutos = new Set<number>()
+
+  for (const c of candidates) {
+    if (assignedMarkers.has(c.markerIndex) || assignedAutos.has(c.autoIndex)) continue
+    assignedMarkers.add(c.markerIndex)
+    assignedAutos.add(c.autoIndex)
+    consumed.add(autoClicks[c.autoIndex]!.callId)
+  }
+
+  for (let markerIndex = 0; markerIndex < markers.length; markerIndex++) {
+    if (!assignedMarkers.has(markerIndex) && markersWithCandidate.has(markerIndex)) continue
+    const m = markers[markerIndex]!
     resolved.push({ x: m.x, y: m.y, traceTimeMs: m.startTime, marked: true })
   }
 
-  for (const a of autoClicks) {
-    if (consumed.has(a.callId)) continue
+  for (let autoIndex = 0; autoIndex < autoClicks.length; autoIndex++) {
+    if (assignedAutos.has(autoIndex)) continue
+    const a = autoClicks[autoIndex]!
     resolved.push({ x: a.x, y: a.y, traceTimeMs: a.endTime, marked: false })
   }
 

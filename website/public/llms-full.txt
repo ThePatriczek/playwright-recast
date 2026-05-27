@@ -3052,7 +3052,7 @@ setupRecast(test)
 export { narrate, pace }
 ```
 
-`setupRecast(test)` connects the step helpers to the Playwright test context. Call it once before defining any steps.
+`setupRecast(test)` connects the step helpers to the Playwright test context. Call it once before defining any steps that rely on narration, zoom, highlight, click, or narration-boundary markers.
 
 ## Using narrate in step definitions
 
@@ -3581,9 +3581,9 @@ The video will show a yellow marker sweeping across "$42.99" during this step.
 
 ## What it does
 
-`setupRecast(test)` connects the playwright-recast step helpers (`narrate`, `zoom`, `pace`, `highlight`) to your Playwright test context. Without this call, the helpers cannot access the current test's annotation system and will throw an error.
+`setupRecast(test)` connects the playwright-recast step helpers to your Playwright test context. Helpers that write annotations (`narrate`, `zoom`, `highlight`) require this setup to access `test.info()`. Marker-only helpers degrade safely without it: `waitForNarration()` and `markClick()` no-op, and `click()` falls back to `locator.click(options)` without adding settle/marker work.
 
-Call it once in your fixtures file before using any other helper.
+Call it once in your fixtures file before relying on recorded narration, zoom, highlight, click, or narration-boundary markers.
 
 ## Usage
 
@@ -3605,7 +3605,7 @@ setupRecast(test)
 
 ## How it works
 
-`setupRecast` receives the `test` object and uses `test.info()` internally to access the current test's annotations. The helpers (`narrate`, `zoom`, `highlight`) then write structured data to these annotations, which the pipeline reads during video generation.
+`setupRecast` receives the `test` object and uses `test.info()` internally to access the current test's annotations. The annotation helpers (`narrate`, `zoom`, `highlight`) write structured data there, while marker helpers (`click`, `markClick`, `waitForNarration`) write marker-prefixed `test.step()` entries into the trace zip for the pipeline to read during video generation.
 
 ## Example with playwright-bdd
 
@@ -5217,4 +5217,3 @@ await Recast
 - [Full Pipeline example](/docs/examples/full-pipeline) -- see background music in a complete pipeline
 
 ---
-

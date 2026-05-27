@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   parseClickMarkers,
+  parseClickMarkersFromRecordingContext,
   resolveClickMarkers,
   type AutoClick,
   type ClickMarker,
@@ -22,6 +23,19 @@ describe('parseClickMarkers', () => {
       { title: `${CLICK_TITLE_PREFIX}not-json`, startTime: 1200 },
     ]
     expect(parseClickMarkers(actions)).toEqual([{ x: 12, y: 34, startTime: 1000 }])
+  })
+
+  it('can restrict marker parsing to the recording context', () => {
+    const actions = [
+      { title: `${CLICK_TITLE_PREFIX}${JSON.stringify({ x: 1, y: 2 })}`, startTime: 900 },
+      { title: `${CLICK_TITLE_PREFIX}${JSON.stringify({ x: 3, y: 4 })}`, startTime: 1000 },
+      { title: `${CLICK_TITLE_PREFIX}${JSON.stringify({ x: 5, y: 6 })}`, startTime: 1100 },
+    ]
+
+    expect(parseClickMarkersFromRecordingContext(actions, 1000)).toEqual([
+      { x: 3, y: 4, startTime: 1000 },
+      { x: 5, y: 6, startTime: 1100 },
+    ])
   })
 })
 
@@ -68,13 +82,14 @@ describe('resolveClickMarkers', () => {
     expect(consumedCallIds.size).toBe(0)
   })
 
-  it('matches each auto-click at most once; nearest marker wins', () => {
+  it('matches each auto-click at most once; the nearest eligible marker wins', () => {
     const autos = [auto('a', 100, 200, 5000, 5050)]
-    const markers = [marker(100, 200, 4995), marker(100, 200, 4900)]
+    const markers = [marker(100, 200, 4900), marker(100, 200, 4995)]
     const { resolved, consumedCallIds } = resolveClickMarkers(autos, markers)
     expect(consumedCallIds.has('a')).toBe(true)
-    expect(resolved.filter((r) => r.marked)).toHaveLength(2)
-    expect(resolved.every((r) => r.marked)).toBe(true)
+    expect(resolved).toEqual([
+      { x: 100, y: 200, traceTimeMs: 4995, marked: true },
+    ])
   })
 
   it('sorts the resolved list by traceTimeMs', () => {
