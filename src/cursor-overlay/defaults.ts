@@ -9,10 +9,11 @@ export const DEFAULT_CURSOR_OVERLAY = {
   easing: 'ease-in-out' as const,
   hideAfterMs: 500,
   shadow: true,
+  approachMs: 500,
 } as const
 
 export type ResolvedCursorOverlayConfig = Required<
-  Pick<CursorOverlayConfig, 'size' | 'color' | 'opacity' | 'easing' | 'hideAfterMs' | 'shadow'>
+  Pick<CursorOverlayConfig, 'size' | 'color' | 'opacity' | 'easing' | 'hideAfterMs' | 'shadow' | 'approachMs'>
 > & CursorOverlayConfig
 
 /** Merge user config with defaults */
@@ -27,6 +28,7 @@ export function resolveCursorOverlayConfig(
     easing: config.easing ?? DEFAULT_CURSOR_OVERLAY.easing,
     hideAfterMs: config.hideAfterMs ?? DEFAULT_CURSOR_OVERLAY.hideAfterMs,
     shadow: config.shadow ?? DEFAULT_CURSOR_OVERLAY.shadow,
+    approachMs: config.approachMs ?? DEFAULT_CURSOR_OVERLAY.approachMs,
   }
 }
 

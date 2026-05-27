@@ -5,13 +5,14 @@ import type { StageDescriptor } from './stages.js'
 import type { ParsedTrace, FilteredTrace, TraceAction } from '../types/trace.js'
 import { toMonotonic } from '../types/trace.js'
 import type { SpeedConfig, SpeedMappedTrace } from '../types/speed.js'
-import type { SubtitledTrace, SubtitleEntry } from '../types/subtitle.js'
+import type { SubtitledTrace } from '../types/subtitle.js'
 import {
   NARRATE_TITLE_PREFIX,
-  NARRATE_HIDDEN_TITLE_PREFIX,
   HIGHLIGHT_TITLE_PREFIX,
   ZOOM_TITLE_PREFIX,
 } from '../helpers.js'
+import { buildNarrationSubtitles, isNarrationBoundaryTitle } from './narration-subtitles.js'
+import { parseClickMarkers, resolveClickMarkers, type AutoClick } from './click-markers.js'
 import type { VoiceoveredTrace } from '../types/voiceover.js'
 import { parseTrace } from '../parse/trace-parser.js'
 import { filterSteps } from '../filter/step-filter.js'
@@ -49,6 +50,7 @@ type PipelineState = {
   voiceovered?: VoiceoveredTrace
   sourceVideoPath?: string
   _blankTrimApplied?: boolean
+  _blankLeadInMs?: number
   clickEvents?: ClickEvent[]
   clickEffectConfig?: ReturnType<typeof resolveClickEffectConfig>
   cursorKeyframes?: CursorKeyframe[]
@@ -440,33 +442,26 @@ export class PipelineExecutor {
           // If the test used narrate(), prefer the explicit narration spans.
           // narrate() emits a test.step with a marker-prefixed title; each
           // narrate's subtitle spans from its start until the next narrate
-          // (or the end of the trace).
-          const narrateActions = speedMapped.actions.filter(
+          // — or, if waitForNarration() is used, until that marker.
+          const boundaryActions = speedMapped.actions.filter(
             (a) =>
-              typeof a.title === 'string' &&
-              (a.title.startsWith(NARRATE_TITLE_PREFIX) ||
-                a.title.startsWith(NARRATE_HIDDEN_TITLE_PREFIX)),
+              typeof a.title === 'string' && isNarrationBoundaryTitle(a.title),
           )
 
-          if (narrateActions.length > 0) {
-            const subtitles: SubtitleEntry[] = []
+          const hasVisibleNarrate = boundaryActions.some(
+            (a) => typeof a.title === 'string' && a.title.startsWith(NARRATE_TITLE_PREFIX),
+          )
+
+          if (hasVisibleNarrate) {
             const traceEndMs = speedMapped.timeRemap(speedMapped.metadata.endTime)
-            for (let i = 0; i < narrateActions.length; i++) {
-              const current = narrateActions[i]!
-              const next = narrateActions[i + 1]
-              const hidden = current.title.startsWith(NARRATE_HIDDEN_TITLE_PREFIX)
-              if (hidden) continue
-              const text = current.title.slice(NARRATE_TITLE_PREFIX.length)
-              const startMs = speedMapped.timeRemap(current.startTime)
-              const endMs = next ? speedMapped.timeRemap(next.startTime) : traceEndMs
-              if (endMs <= startMs) continue
-              subtitles.push({
-                index: subtitles.length + 1,
-                startMs: Math.round(startMs),
-                endMs: Math.round(endMs),
-                text,
-              })
-            }
+            const subtitles = buildNarrationSubtitles(
+              boundaryActions.map((a) => ({
+                title: a.title as string,
+                startTime: a.startTime as number,
+              })),
+              (t) => speedMapped.timeRemap(toMonotonic(t)),
+              traceEndMs,
+            )
             state.subtitled = { ...speedMapped, subtitles }
           } else {
             // Fall back to BDD step text / titles.
@@ -722,19 +717,49 @@ export class PipelineExecutor {
           const recStartCursor = recFramesCursor[0]?.timestamp as number ?? 0
           // Use filtered actions so cursor positions from hidden steps are dropped.
           const cursorSourceActions = state.filtered?.actions ?? state.parsed.actions
-          const cursorActions = cursorSourceActions.filter(a => (a.startTime as number) >= recStartCursor)
+          const cursorActionsAll = cursorSourceActions.filter(a => (a.startTime as number) >= recStartCursor)
+
+          // Reconcile markers: drop auto-clicks a marker overrides; the marker
+          // contributes its own keyframe below.
+          const cursorMarkers = parseClickMarkers(cursorActionsAll)
+          const CURSOR_CLICK_METHODS = new Set(['click', 'selectOption'])
+          const autoClicksForCursor: AutoClick[] = cursorActionsAll
+            .filter((a) => CURSOR_CLICK_METHODS.has(a.method) && a.point)
+            .map((a) => ({
+              callId: a.callId,
+              x: a.point!.x,
+              y: a.point!.y,
+              startTime: a.startTime as number,
+              endTime: a.endTime as number,
+            }))
+          const { consumedCallIds } = resolveClickMarkers(autoClicksForCursor, cursorMarkers)
+          const cursorActions = cursorActionsAll.filter((a) => !consumedCallIds.has(a.callId))
 
           const keyframes = buildTrajectory({
-            actions: cursorActions as Array<{ point?: { x: number; y: number }; startTime: number }>,
+            actions: cursorActions as Array<{ point?: { x: number; y: number }; startTime: number; endTime?: number }>,
             filter: stage.config.filter as ((a: { point?: { x: number; y: number }; startTime: number }) => boolean) | undefined,
             timeRemap: cursorTimeRemap,
             videoStartOffsetMs: cursorVideoStartOffset,
           })
 
-          state.cursorKeyframes = keyframes
+          // Marker-driven keyframes: at the marker time, full glide (autoWaitSec 0),
+          // flagged so the renderer holds the frame for the approach.
+          const remapCursor = cursorTimeRemap ?? ((t: number) => t)
+          const markerKeyframes: CursorKeyframe[] = cursorMarkers.map((m) => ({
+            x: m.x,
+            y: m.y,
+            videoTimeSec: Math.max(0, (remapCursor(m.startTime) - cursorVideoStartOffset) / 1000),
+            autoWaitSec: 0,
+            approach: true,
+          }))
+
+          const allKeyframes: CursorKeyframe[] = [...keyframes, ...markerKeyframes].sort(
+            (a, b) => a.videoTimeSec - b.videoTimeSec,
+          )
+          state.cursorKeyframes = allKeyframes
           state.cursorOverlayConfig = cursorConfig
-          console.log(`  cursorOverlay: ${keyframes.length} keyframes detected`)
-          for (const kf of keyframes) {
+          console.log(`  cursorOverlay: ${allKeyframes.length} keyframes detected`)
+          for (const kf of allKeyframes) {
             console.log(`    kf: (${kf.x}, ${kf.y}) @ ${kf.videoTimeSec.toFixed(3)}s`)
           }
           break
@@ -771,30 +796,45 @@ export class PipelineExecutor {
             ? (state.parsed.frames[0]!.timestamp as number)
             : (state.parsed.metadata.startTime as number)
 
-          // Remap to video time
-          const clickEvents: ClickEvent[] = clickActions.map((action) => {
-            const traceTimeMs = action.startTime as number
-            let videoTimeMs: number
+          // Remap to video time. Use the action's END time: with Playwright
+          // auto-wait, a click on an element that is still loading only lands
+          // (and is visually meaningful) at endTime, which can be seconds
+          // after startTime. Positioning the ripple at startTime makes it
+          // fire on the loading screen, before the target is visible.
+          //
+          // Reconcile explicit markers with auto-detected clicks: a marker
+          // overrides (suppresses) the matching auto-click and renders at the
+          // marker's time; unmatched markers still render; unmarked auto-clicks
+          // render at their endTime exactly as before.
+          const clickMarkers = parseClickMarkers(
+            sourceActions.filter((a) => (a.startTime as number) >= recStartClick),
+          )
+          const autoClicksForEffect: AutoClick[] = clickActions.map((a) => ({
+            callId: a.callId,
+            x: a.point!.x,
+            y: a.point!.y,
+            startTime: a.startTime as number,
+            endTime: a.endTime as number,
+          }))
+          const { resolved: resolvedClicks } = resolveClickMarkers(autoClicksForEffect, clickMarkers)
 
+          let clickVideoStartOutput = 0
+          if (state.speedMapped && state.speedMapped.speedSegments.length > 0) {
+            const firstRecFrameMs = recFramesClick[0]?.timestamp as number ?? firstFrameTime
+            clickVideoStartOutput = state.speedMapped.timeRemap(toMonotonic(firstRecFrameMs))
+          }
+          const remapClickTime = (traceTimeMs: number): number => {
             if (state.speedMapped && state.speedMapped.speedSegments.length > 0) {
-              // Remap through speed processing
-              const recPageId = state.parsed!.frames.length > 0
-                ? state.parsed!.frames[state.parsed!.frames.length - 1]!.pageId : undefined
-              const recFrames = recPageId
-                ? state.parsed!.frames.filter(f => f.pageId === recPageId) : state.parsed!.frames
-              const firstRecFrameMs = recFrames[0]?.timestamp as number ?? firstFrameTime
-              const videoStartOutput = state.speedMapped.timeRemap(toMonotonic(firstRecFrameMs))
-              videoTimeMs = state.speedMapped.timeRemap(toMonotonic(traceTimeMs)) - videoStartOutput
-            } else {
-              videoTimeMs = traceTimeMs - firstFrameTime
+              return state.speedMapped.timeRemap(toMonotonic(traceTimeMs)) - clickVideoStartOutput
             }
+            return traceTimeMs - firstFrameTime
+          }
 
-            return {
-              x: action.point!.x,
-              y: action.point!.y,
-              videoTimeMs: Math.max(0, Math.round(videoTimeMs)),
-            }
-          })
+          const clickEvents: ClickEvent[] = resolvedClicks.map((rc) => ({
+            x: rc.x,
+            y: rc.y,
+            videoTimeMs: Math.max(0, Math.round(remapClickTime(rc.traceTimeMs))),
+          }))
 
           state.clickEvents = clickEvents
           state.clickEffectConfig = config
@@ -909,6 +949,7 @@ export class PipelineExecutor {
             const blankTmpDir = path.join(path.dirname(state.sourceVideoPath), '.recast-blank-tmp')
             fs.mkdirSync(blankTmpDir, { recursive: true })
             const blankLeadIn = detectBlankLeadIn(state.sourceVideoPath, blankTmpDir)
+            state._blankLeadInMs = blankLeadIn * 1000
             fs.rmSync(blankTmpDir, { recursive: true, force: true })
             if (blankLeadIn > 0) {
               const offsetMs = blankLeadIn * 1000
@@ -926,12 +967,31 @@ export class PipelineExecutor {
             state._blankTrimApplied = true
           }
 
+          // Approach holds: each click marker becomes a video hold so the cursor
+          // can glide over the painted target. Computed here (not in the renderer)
+          // so generateVoiceover inserts matching audio silence + shifts subtitles.
+          // Positions use the subtitle formula (timeRemap, minus blank lead-in,
+          // minus a 2ms margin so the click ripple/cursor reliably shift into the
+          // hold) — the same timeline the subtitles live in.
+          const approachHolds: Array<{ atVideoMs: number; durationMs: number }> = []
+          if (state.cursorOverlayConfig) {
+            const approachMs = state.cursorOverlayConfig.approachMs ?? 500
+            const blankMs = state._blankLeadInMs ?? 0
+            const remap = (t: number): number => state.subtitled!.timeRemap(toMonotonic(t))
+            const markerActions = state.filtered?.actions ?? state.parsed!.actions
+            for (const m of parseClickMarkers(markerActions)) {
+              const at = Math.round(remap(m.startTime)) - blankMs - 2
+              approachHolds.push({ atVideoMs: Math.max(0, at), durationMs: Math.round(approachMs) })
+            }
+          }
+
           const tmpDir = path.join(path.dirname(state.sourceVideoPath ?? '/tmp'), '.recast-vo-tmp')
           state.voiceovered = await generateVoiceover(
             state.subtitled,
             stage.provider,
             tmpDir,
             stage.options,
+            approachHolds,
           )
           break
         }
@@ -942,6 +1002,7 @@ export class PipelineExecutor {
             const blankTmpDir = path.join(path.dirname(state.sourceVideoPath), '.recast-blank-tmp')
             fs.mkdirSync(blankTmpDir, { recursive: true })
             const blankLeadIn = detectBlankLeadIn(state.sourceVideoPath, blankTmpDir)
+            state._blankLeadInMs = blankLeadIn * 1000
             fs.rmSync(blankTmpDir, { recursive: true, force: true })
             if (blankLeadIn > 0) {
               const offsetMs = blankLeadIn * 1000

@@ -30,6 +30,11 @@ describe('resolveCursorOverlayConfig', () => {
     const resolved = resolveCursorOverlayConfig({ image: '/path/to/cursor.png' })
     expect(resolved.image).toBe('/path/to/cursor.png')
   })
+
+  it('defaults approachMs to 500 and honors an override', () => {
+    expect(resolveCursorOverlayConfig({}).approachMs).toBe(500)
+    expect(resolveCursorOverlayConfig({ approachMs: 800 }).approachMs).toBe(800)
+  })
 })
 
 describe('DEFAULT_CURSOR_OVERLAY', () => {

@@ -24,6 +24,10 @@ let _step: StepFn | null = null
 /** Global default for `narrate`'s autoWait, applied when a call omits its own
  *  `autoWait`. Set via setupRecast; undefined (off) by default. */
 let _narrateAutoWait: NarrateAutoWait | undefined = undefined
+/** Real-time settle (ms) `click()` waits before marking, so the recorder
+ *  captures a painted frame of the target. Overridable via setupRecast. */
+const DEFAULT_CLICK_SETTLE_MS = 150
+let _clickSettleMs = DEFAULT_CLICK_SETTLE_MS
 
 /**
  * Title prefix written to a trace step by `narrate()`. The `subtitlesFromTrace`
@@ -39,6 +43,18 @@ export const HIGHLIGHT_TITLE_PREFIX = '__recast_highlight__: '
 /** Title prefix written to a trace step by `zoom()`. JSON payload carries
  *  the center as (x, y) viewport fractions and the zoom level. */
 export const ZOOM_TITLE_PREFIX = '__recast_zoom__: '
+/** Title prefix written to a trace step by `markClick()` / `click()`. JSON
+ *  payload carries the element-center {x, y} in viewport pixels. The renderer
+ *  prefers these markers over auto-detected clicks and gives them a held
+ *  cursor approach. */
+export const CLICK_TITLE_PREFIX = '__recast_click__: '
+
+/** Title prefix written to a trace step by `waitForNarration()`. The pipeline
+ *  uses this marker as a hard boundary for the preceding narration's subtitle
+ *  window — the rendered video will hold the last visible frame here until
+ *  the narration's TTS audio finishes (via existing audio-overflow freeze
+ *  logic in voiceover-processor.ts). */
+export const WAIT_FOR_NARRATION_TITLE_PREFIX = '__recast_wait_for_narration__'
 
 /** Characters-per-second used by `narrate({ autoWait: true })` to estimate
  *  how long the narration will take to speak. Character count is more
@@ -68,14 +84,17 @@ function estimateNarrationMs(text: string, charsPerSecond: number): number {
  *   call that omits its own (default: off). Same shapes as `narrate`'s
  *   per-call `autoWait`: `true`, a number of ms, or `{ charactersPerSecond,
  *   minMs, maxMs }`. A per-call `autoWait` (including `false`) overrides this.
+ * @param options.clickSettleMs Real-time settle delay for `click()` in ms
+ *   (default: 150). Pass 0 to disable.
  */
 export function setupRecast(
   testInstance: RecastTest,
-  options?: { narrateAutoWait?: NarrateAutoWait },
+  options?: { narrateAutoWait?: NarrateAutoWait, clickSettleMs?: number },
 ): void {
   _getTestInfo = () => testInstance.info()
   _step = testInstance.step.bind(testInstance)
   _narrateAutoWait = options?.narrateAutoWait
+  _clickSettleMs = options?.clickSettleMs ?? DEFAULT_CLICK_SETTLE_MS
 }
 
 /**
@@ -312,4 +331,58 @@ export async function highlight(
  */
 export async function pace(page: Page, ms: number): Promise<void> {
   await page.waitForTimeout(ms)
+}
+
+/**
+ * Mark a point in the trace where the rendered video should wait for the
+ * previous `narrate()` call's audio to finish before continuing.
+ *
+ * Resolves immediately at test time — there is no real-time pause. The wait
+ * is realised in the rendered video via the freeze mechanism in
+ * `voiceover-processor.ts`: the preceding narration's subtitle window ends
+ * here, and if its TTS audio is longer than that window, the renderer
+ * freezes the last frame for the overflow.
+ *
+ * Use this when narration would otherwise bleed across a deliberate beat —
+ * e.g., before a click that must not be talked over, or at the end of a
+ * scenario so the last line is heard before the video ends.
+ */
+export async function waitForNarration(): Promise<void> {
+  if (_step) {
+    await _step(WAIT_FOR_NARRATION_TITLE_PREFIX, async () => {})
+  }
+}
+
+/**
+ * Write a click marker into the trace at the element's center. Records a
+ * marker-prefixed `test.step` (like `highlight()`/`zoom()`); performs no real
+ * click and no wait. The pipeline prefers these markers over auto-detected
+ * clicks and gives them a held cursor approach in the rendered video.
+ */
+export async function markClick(locator: Locator): Promise<void> {
+  const box = await locator.boundingBox()
+  if (!box) return
+  const x = box.x + box.width / 2
+  const y = box.y + box.height / 2
+  if (_step) {
+    await _step(`${CLICK_TITLE_PREFIX}${JSON.stringify({ x, y })}`, async () => {})
+  }
+}
+
+/**
+ * Perform a click that renders with a polished cursor approach. Waits for the
+ * target to be visible, settles briefly (so the recorder captures the painted
+ * target), marks the click, then performs the real `locator.click(options)`.
+ * `options` is forwarded to Playwright unchanged.
+ */
+export async function click(
+  locator: Locator,
+  options?: Parameters<Locator['click']>[0],
+): Promise<void> {
+  await locator.waitFor({ state: 'visible' })
+  if (_clickSettleMs > 0) {
+    await new Promise((resolve) => setTimeout(resolve, _clickSettleMs))
+  }
+  await markClick(locator)
+  await locator.click(options)
 }

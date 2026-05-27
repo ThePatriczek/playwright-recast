@@ -63,4 +63,14 @@ describe('buildEnableExpression', () => {
     const windows = result.split('+')
     expect(windows).toHaveLength(2)
   })
+
+  it('shortens the pre-click lead when the target appeared after a long wait', () => {
+    // 2s of auto-wait means the target only became visible near the click, so
+    // the cursor should appear ~0.15s before (clamped MIN_LEAD) rather than
+    // the default 0.5s, to avoid showing on the still-loading screen.
+    const keyframes = [{ x: 100, y: 100, videoTimeSec: 5.0, autoWaitSec: 2.0 }]
+    const result = buildEnableExpression(keyframes)
+    expect(result).toContain('4.8500') // 5.0 - 0.15
+    expect(result).not.toContain('4.5000') // not the full 0.5 lead
+  })
 })

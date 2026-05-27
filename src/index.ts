@@ -2,7 +2,7 @@
 export { Pipeline as Recast } from './pipeline/pipeline.js'
 
 // Step helpers (narrate, zoom, pace)
-export { setupRecast, narrate, zoom, pace, highlight } from './helpers.js'
+export { setupRecast, narrate, zoom, pace, highlight, waitForNarration, markClick, click } from './helpers.js'
 
 // Providers
 export { OpenAIProvider } from './voiceover/providers/openai.js'

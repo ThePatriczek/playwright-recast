@@ -52,6 +52,7 @@ export async function generateVoiceover(
   provider: TtsProvider,
   tmpDir: string,
   options?: VoiceoverOptions,
+  approachHolds: VoiceoverFreeze[] = [],
 ): Promise<VoiceoveredTrace> {
   fs.mkdirSync(tmpDir, { recursive: true })
   const normalizeConfig = resolveNormalize(options?.normalize)
@@ -75,16 +76,36 @@ export async function generateVoiceover(
   const entries: VoiceoverEntry[] = []
   const segmentFiles: string[] = []
   const freezes: VoiceoverFreeze[] = []
-  // Capture each subtitle's pre-mutation startMs — these are the video
+  // Capture each subtitle's pre-mutation start/end — these are the video
   // positions (in the speed-mapped timeline) where we may need to freeze
-  // the frame so audio has time to finish.
+  // the frame so audio has time to finish. We freeze at the current
+  // subtitle's window END (e.g. a waitForNarration() marker), not the next
+  // subtitle's start: with waitForNarration() the window can close earlier
+  // than the next narration begins, and the frame must hold at that point so
+  // intervening visuals (clicks) don't play through before the audio ends.
   const originalStartsMs = trace.subtitles.map((s) => s.startMs)
+  const originalEndsMs = trace.subtitles.map((s) => s.endMs)
   let cursor = 0
   let timeShift = 0
+
+  // Approach holds (cursor-glide pauses at marked clicks) are interleaved with
+  // the subtitles by position: each one drained below adds its duration to
+  // timeShift — the subtitle's gap-fill silence then lengthens by exactly the
+  // hold, keeping narration aligned — and is recorded as a freeze for the
+  // renderer to apply to the video + click/cursor positions.
+  const holds = [...approachHolds].sort((a, b) => a.atVideoMs - b.atVideoMs)
+  let holdIndex = 0
 
   for (let si = 0; si < trace.subtitles.length; si++) {
     const subtitle = trace.subtitles[si]!
     const audio = audios[si]!
+
+    while (holdIndex < holds.length && holds[holdIndex]!.atVideoMs < originalStartsMs[si]!) {
+      const h = holds[holdIndex]!
+      freezes.push({ atVideoMs: h.atVideoMs, durationMs: h.durationMs })
+      timeShift += h.durationMs
+      holdIndex++
+    }
 
     subtitle.startMs += timeShift
     subtitle.endMs += timeShift
@@ -131,13 +152,16 @@ export async function generateVoiceover(
       segmentFiles.push(segPath)
       subtitle.endMs = subtitle.startMs + audioDuration
       // Freeze the video on the last frame of this segment's window so the
-      // narration finishes before the next visual action starts. The final
-      // segment has nothing to freeze against; the renderer's end-of-video
-      // tpad handles its overflow instead.
+      // narration finishes before the next visual action starts. Hold at the
+      // window END (originalEndsMs[si]) — for back-to-back narrations this
+      // equals the next subtitle's start, but when waitForNarration() narrows
+      // the window it closes earlier, and that earlier point is where the
+      // pause belongs. The final segment has nothing after it to freeze
+      // before; the renderer's end-of-video tpad handles its overflow instead.
       const nextOriginalStartMs = originalStartsMs[si + 1]
       if (nextOriginalStartMs !== undefined) {
         freezes.push({
-          atVideoMs: nextOriginalStartMs,
+          atVideoMs: originalEndsMs[si]!,
           durationMs: overflow,
         })
       }
@@ -151,6 +175,14 @@ export async function generateVoiceover(
       outputStartMs: subtitle.startMs,
       outputEndMs: subtitle.endMs,
     })
+  }
+
+  // Holds after the last subtitle have no following narration to extend the
+  // audio for; record them so the renderer still holds the video there.
+  while (holdIndex < holds.length) {
+    const h = holds[holdIndex]!
+    freezes.push({ atVideoMs: h.atVideoMs, durationMs: h.durationMs })
+    holdIndex++
   }
 
   const concatList = path.join(tmpDir, 'concat.txt')

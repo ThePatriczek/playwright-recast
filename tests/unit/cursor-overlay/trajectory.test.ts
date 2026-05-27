@@ -55,8 +55,30 @@ describe('buildTrajectory', () => {
       videoStartOffsetMs: 0,
     })
     expect(result).toHaveLength(2)
-    expect(result[0]).toEqual({ x: 100, y: 200, videoTimeSec: 1 })
-    expect(result[1]).toEqual({ x: 300, y: 400, videoTimeSec: 3 })
+    expect(result[0]).toEqual({ x: 100, y: 200, videoTimeSec: 1, autoWaitSec: 0 })
+    expect(result[1]).toEqual({ x: 300, y: 400, videoTimeSec: 3, autoWaitSec: 0 })
+  })
+
+  it('uses endTime when present (cursor lands when the action completes, not when it starts)', () => {
+    const result = buildTrajectory({
+      actions: [
+        // A click on a still-loading element: startTime 1000, but it only
+        // lands at endTime 4000 after auto-wait. The keyframe must use 4000.
+        { point: { x: 100, y: 200 }, startTime: 1000, endTime: 4000 },
+      ],
+      videoStartOffsetMs: 0,
+    })
+    // 3s of auto-wait (4000 - 1000) is recorded so the cursor's pre-click
+    // approach can be trimmed to avoid gliding over the loading screen.
+    expect(result[0]).toEqual({ x: 100, y: 200, videoTimeSec: 4, autoWaitSec: 3 })
+  })
+
+  it('falls back to startTime when endTime is absent', () => {
+    const result = buildTrajectory({
+      actions: [{ point: { x: 10, y: 20 }, startTime: 2000 }],
+      videoStartOffsetMs: 0,
+    })
+    expect(result[0]!.videoTimeSec).toBe(2)
   })
 
   it('applies video start offset', () => {

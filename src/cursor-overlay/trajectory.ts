@@ -31,6 +31,7 @@ export interface TrajectoryInput {
   actions: ReadonlyArray<{
     point?: { x: number; y: number }
     startTime: number
+    endTime?: number
   }>
   /** Optional filter for which actions to include */
   filter?: (action: { point?: { x: number; y: number }; startTime: number }) => boolean
@@ -52,17 +53,23 @@ export function buildTrajectory(input: TrajectoryInput): CursorKeyframe[] {
   }
 
   const keyframes: CursorKeyframe[] = actions.map(action => {
-    let videoTimeMs: number
-    if (input.timeRemap) {
-      videoTimeMs = input.timeRemap(action.startTime) - input.videoStartOffsetMs
-    } else {
-      videoTimeMs = action.startTime - input.videoStartOffsetMs
-    }
+    // Use the action's END time: with Playwright auto-wait, an action that
+    // targets an element still loading completes (and the cursor visually
+    // lands) at endTime, which can be seconds after startTime. Positioning
+    // the cursor at startTime makes it arrive before the target is visible.
+    const actionTime = action.endTime ?? action.startTime
+    const remap = input.timeRemap ?? ((t: number) => t)
+    const videoTimeMs = remap(actionTime) - input.videoStartOffsetMs
+    // The auto-wait span (in output video time) tells us how long the target
+    // was unavailable before this action landed — used to trim the cursor's
+    // pre-click approach so it doesn't appear during the wait.
+    const autoWaitMs = Math.max(0, remap(actionTime) - remap(action.startTime))
 
     return {
       x: action.point!.x,
       y: action.point!.y,
       videoTimeSec: Math.max(0, videoTimeMs / 1000),
+      autoWaitSec: autoWaitMs / 1000,
     }
   })
 

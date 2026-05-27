@@ -548,6 +548,29 @@ function applyVoiceoverFreezes(
 }
 
 /**
+ * Merge freeze entries at (near-)identical positions, summing durations.
+ * applyVoiceoverFreezes() skips freezes within 0.01s of the previous one, but
+ * shiftForFreezes() sums every entry — so coincident entries (e.g. a voiceover
+ * freeze and a cursor-approach hold landing together) would desync the video
+ * from the shifted overlays. Merging first keeps the two in agreement.
+ */
+function mergeFreezes(
+  freezes: Array<{ atVideoMs: number; durationMs: number }>,
+): Array<{ atVideoMs: number; durationMs: number }> {
+  const sorted = [...freezes].sort((a, b) => a.atVideoMs - b.atVideoMs)
+  const merged: Array<{ atVideoMs: number; durationMs: number }> = []
+  for (const f of sorted) {
+    const last = merged[merged.length - 1]
+    if (last && f.atVideoMs - last.atVideoMs <= 10) {
+      last.durationMs += f.durationMs
+    } else {
+      merged.push({ atVideoMs: f.atVideoMs, durationMs: f.durationMs })
+    }
+  }
+  return merged
+}
+
+/**
  * Shift a pre-freeze video time forward by the cumulative freeze duration
  * that comes before it.
  */
@@ -621,7 +644,61 @@ export function renderVideo(
     videoInput = interpolatedPath
   }
 
-  // Phase 3: Apply cursor overlay (before zoom so overlays follow content through crop)
+  // Phase 3.3: Apply text highlight overlays (pre-freeze; highlights freeze
+  // with the held frame, which is acceptable since their duration is
+  // configured independently).
+  if (trace.highlightEvents && trace.highlightEvents.length > 0) {
+    videoInput = renderWithHighlights(
+      videoInput,
+      trace.highlightEvents,
+      trace.metadata.viewport,
+      tmpDir,
+    )
+  }
+
+  // Phase 3.4: Voiceover-driven freezes. If a narration's audio is longer
+  // than its visual window, the voiceover stage records "freeze" points so
+  // the video holds the current frame until the audio finishes. We apply
+  // freezes BEFORE cursor + click overlays so those overlays see the
+  // freeze-extended timeline and stay in sync (cursor visibility is per-
+  // click and built from the same videoTimeMs the ripple uses).
+  const voiceoverFreezes = trace.voiceover?.freezes ?? []
+  // Approach holds (marker-driven cursor glides) are normally produced by the
+  // voiceover stage so the audio + subtitles stay in sync, arriving here inside
+  // trace.voiceover.freezes. Only when there is no voiceover do we compute them
+  // here — there's no audio to keep in sync, but the video still needs the hold.
+  const approachFreezes: Array<{ atVideoMs: number; durationMs: number }> = []
+  if (!trace.voiceover && trace.cursorKeyframes) {
+    const approachMs = trace.cursorOverlayConfig?.approachMs ?? 500
+    for (const kf of trace.cursorKeyframes) {
+      if (kf.approach) {
+        approachFreezes.push({
+          atVideoMs: Math.max(0, Math.round(kf.videoTimeSec * 1000) - 2), // -2ms: ripple + cursor shift into the hold
+          durationMs: Math.round(approachMs),
+        })
+      }
+    }
+  }
+  const allFreezes = mergeFreezes([...voiceoverFreezes, ...approachFreezes])
+  if (allFreezes.length > 0) {
+    videoInput = applyVoiceoverFreezes(videoInput, allFreezes, tmpDir)
+    if (trace.clickEvents) {
+      for (const ce of trace.clickEvents) {
+        ce.videoTimeMs = shiftForFreezes(ce.videoTimeMs, allFreezes)
+      }
+    }
+    if (trace.cursorKeyframes) {
+      for (const kf of trace.cursorKeyframes) {
+        kf.videoTimeSec =
+          shiftForFreezes(kf.videoTimeSec * 1000, allFreezes) / 1000
+      }
+    }
+  }
+
+  // Phase 3.45: Apply cursor overlay on the freeze-extended timeline. The
+  // per-click appear/move/disappear window references the same shifted
+  // videoTimeSec as the click ripple, so the cursor approaches and the
+  // ripple fires in sync — exactly as in the no-freeze case.
   if (trace.cursorKeyframes && trace.cursorKeyframes.length > 0 && trace.cursorOverlayConfig) {
     videoInput = renderWithCursorOverlay(
       videoInput,
@@ -632,7 +709,8 @@ export function renderVideo(
     )
   }
 
-  // Phase 3.25: Apply click effect overlays (before zoom so overlays follow content through crop)
+  // Phase 3.46: Apply click ripples on the freeze-extended timeline, using
+  // the already-shifted videoTimeMs.
   if (trace.clickEvents && trace.clickEvents.length > 0 && trace.clickEffectConfig) {
     videoInput = renderWithClickEffects(
       videoInput,
@@ -643,17 +721,8 @@ export function renderVideo(
     )
   }
 
-  // Phase 3.3: Apply text highlight overlays (after click effects, before zoom)
-  if (trace.highlightEvents && trace.highlightEvents.length > 0) {
-    videoInput = renderWithHighlights(
-      videoInput,
-      trace.highlightEvents,
-      trace.metadata.viewport,
-      tmpDir,
-    )
-  }
-
-  // Phase 3.5: Apply zoom if needed (operates on speed-adjusted video with baked-in overlays)
+  // Phase 3.5: Apply zoom if needed (operates on speed-adjusted video with
+  // baked-in overlays — same invariant as before the reorder).
   if (hasZoom && trace.subtitles) {
     videoInput = renderWithZoom(
       videoInput,
@@ -663,23 +732,6 @@ export function renderVideo(
       tmpDir,
       trace.zoomConfig,
     )
-  }
-
-  // Phase 3.6: Voiceover-driven freezes. If a narration's audio is longer
-  // than its visual window, the voiceover stage records "freeze" points so
-  // the video holds the current frame until the audio finishes. Visual
-  // overlays (cursor, click, highlight) are already baked into `videoInput`,
-  // so they freeze with the frame for free.
-  const voiceoverFreezes = trace.voiceover?.freezes ?? []
-  if (voiceoverFreezes.length > 0) {
-    videoInput = applyVoiceoverFreezes(videoInput, voiceoverFreezes, tmpDir)
-    // Shift click event times so the sound track lines up with the freeze-
-    // shifted visual ripples (which moved with the frozen frames).
-    if (trace.clickEvents) {
-      for (const ce of trace.clickEvents) {
-        ce.videoTimeMs = shiftForFreezes(ce.videoTimeMs, voiceoverFreezes)
-      }
-    }
   }
 
   // Phase 3.7: Generate click sound track if configured
