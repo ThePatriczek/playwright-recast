@@ -22,6 +22,7 @@ await Recast
 |---|---|---|---|
 | `image` | `string` | bundled arrow cursor | Path to a custom cursor image (PNG) |
 | `size` | `number` | `30` | Cursor width in pixels (relative to 1080p) |
+| `approachMs` | `number` | `500` | Hold (freeze) duration for marker-driven clicks — see [Held cursor approach](#approachms--held-cursor-approach) |
 
 ### Custom cursor image
 
@@ -33,6 +34,18 @@ await Recast
 ```
 
 The bundled default is a 30x44 arrow cursor PNG. Provide your own image for branded or stylized cursors.
+
+### approachMs — held cursor approach
+
+By default the cursor's approach is timed off each click action detected in the trace. For clicks that wait on a page load, that approach can glide over a still-loading screen before the target paints — "the mouse moves before there's anything to click on."
+
+The [`click()` / `markClick()`](/docs/helpers/click) test helpers fix this by writing an explicit click marker. For each marker, the renderer **holds (freezes) the painted frame** at the click for `approachMs` and lets the cursor play its full glide over it, then resumes into the click's result. `approachMs` defaults to 500 ms (it must be at least the cursor's pre-click span so the glide fits inside the hold).
+
+```typescript
+.cursorOverlay({ approachMs: 600 })
+```
+
+`approachMs` only affects marker-driven clicks; plain auto-detected clicks are unaffected. With a [`.voiceover()`](/docs/pipeline/voiceover) stage, the hold also extends the audio and subtitles in lockstep so narration stays in sync.
 
 ## How it works
 
@@ -57,6 +70,7 @@ npx playwright-recast -i ./traces --cursor-overlay-config cursor.json
 ## Tips
 
 - Cursor overlay works well combined with [Click Effect](/docs/pipeline/click-effect) — the cursor moves into position, then the ripple appears on click.
+- Use the [`click()` helper](/docs/helpers/click) in your test for the clicks you want to emphasise — the renderer gives those a held, deliberate approach (`approachMs`) over the painted target.
 - Cursor positions are remapped through speed processing, so the animation timing stays accurate after speed changes.
 - Only actions from the recording context are processed — setup/background actions are filtered out automatically.
 - The overlay is applied before zoom cropping, so cursor positions stay accurate during zoomed segments.

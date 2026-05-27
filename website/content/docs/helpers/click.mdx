@@ -1,0 +1,92 @@
+---
+title: click / markClick
+description: Mark a click in the trace so the rendered video plays a polished, held cursor approach over the painted target.
+---
+
+## What it does
+
+`click(locator)` performs a real Playwright click **and** records a click marker into the trace zip at the element's center. During video generation the renderer prefers these markers over auto-detected clicks and gives them a **held cursor approach** — it freezes the painted frame at the click and lets the cursor glide all the way in over it, then fires the ripple.
+
+This fixes the "the mouse moves before there's anything to click on" problem. For clicks that wait on a page load, the screencast lags Playwright's "actionable" moment, so an auto-detected cursor approach can glide over a still-loading screen. `click()` settles briefly so the recorder captures a painted frame of the target, marks that point, and the renderer synthesises the full approach in post over the real target.
+
+`markClick(locator)` is the low-level half: it writes the marker only — no real click, no wait. Use it when you already drive the click yourself (e.g. `page.mouse`, keyboard activation) but still want the polished approach.
+
+Both helpers need `setupRecast(test)` and a pipeline that renders clicks — [`.cursorOverlay()`](/docs/pipeline/cursor-overlay) and/or [`.clickEffect()`](/docs/pipeline/click-effect). Without either stage the marker is recorded but nothing draws it.
+
+## Usage
+
+```typescript
+import { click, markClick } from 'playwright-recast'
+
+// Settle → mark → real click. Options pass straight to Playwright.
+await click(page.locator('button[type=submit]'))
+await click(page.getByRole('link', { name: 'Next' }), { force: true })
+
+// Mark only — you perform the interaction yourself.
+await markClick(page.locator('.tile'))
+await page.locator('.tile').dblclick()
+```
+
+## `click(locator, options?)`
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `locator` | `Locator` | (required) | Playwright Locator to click |
+| `options` | `LocatorClickOptions` | `undefined` | Forwarded unchanged to `locator.click(options)` (e.g. `force`, `button`, `position`) |
+
+Order of operations:
+
+1. `await locator.waitFor({ state: 'visible' })` — the target must be on screen before the settle (the real click comes last, so its auto-wait can't be relied on here).
+2. Wait the **settle** (`clickSettleMs`, default 150 ms) so the recorder captures a painted frame.
+3. `markClick(locator)` — write the marker at the element center.
+4. `await locator.click(options)` — the real click.
+
+The settle is the only real-time cost added to the trace. Tune or disable it globally with [`setupRecast(test, { clickSettleMs })`](/docs/helpers/setup-recast#clicksettlems--the-click-settle); pass `0` to disable.
+
+## `markClick(locator)`
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `locator` | `Locator` | (required) | Playwright Locator whose center is marked |
+
+Reads the element center via `locator.boundingBox()` and writes one `__recast_click__` marker step (JSON `{ x, y }` in viewport pixels, exactly like [`highlight()`](/docs/helpers/highlight) / [`zoom()`](/docs/helpers/zoom)). It performs **no** real click and **no** settle — standalone callers own their timing. If the element is not visible (`boundingBox()` is `null`), it no-ops.
+
+## How the approach is rendered
+
+The renderer inserts a hold (freeze) at each marker-driven click for `approachMs` (default 500 ms, configured on [`.cursorOverlay({ approachMs })`](/docs/pipeline/cursor-overlay#approachms--held-cursor-approach)). The cursor plays its full glide over the held, painted target; the ripple fires at the end of the hold; the video then resumes into the click's result.
+
+Marker positions go through the same speed remapping as auto-detected clicks, and a marker that lands near an auto-detected click (within a small position tolerance and time window) **suppresses** that auto-detected click — so you never get a duplicate ripple. A plain `locator.click()` with no marker still renders exactly as before.
+
+With a [`.voiceover()`](/docs/pipeline/voiceover) stage, the hold also extends the **audio and subtitles** in lockstep, so narration stays aligned with the visuals across held clicks.
+
+## Example in a BDD step
+
+```typescript
+import { When } from './fixtures'
+import { narrate, click, waitForNarration } from 'playwright-recast'
+
+When('the user submits the form', async ({ page }, docString?: string) => {
+  await narrate(docString)
+  await click(page.getByRole('button', { name: 'Submit' }))
+  await waitForNarration()   // let the line finish before the next step
+})
+```
+
+```typescript
+// In the pipeline — clicks need a stage that draws them:
+await Recast
+  .from('./traces')
+  .parse()
+  .subtitlesFromTrace()
+  .cursorOverlay({ approachMs: 500 })
+  .clickEffect({ sound: true })
+  .voiceover(OpenAIProvider({ voice: 'nova' }))
+  .render({ format: 'mp4' })
+  .toFile('demo.mp4')
+```
+
+## When to use which
+
+- **`click()`** — the common case. Replace `await page.locator(...).click()` with `await click(page.locator(...))` wherever you want a clean, deliberate point-and-click.
+- **`markClick()`** — when the interaction isn't a plain click (double-click, keyboard activation, `page.mouse`) but you still want the held approach.
+- **plain `locator.click()`** — fine for clicks that don't wait on a page load; they render with the standard auto-detected approach.

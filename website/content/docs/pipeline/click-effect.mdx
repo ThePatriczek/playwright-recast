@@ -41,6 +41,10 @@ await Recast
 })
 ```
 
+## Explicit click markers
+
+By default the stage auto-detects every `click` / `selectOption` action in the trace. The [`click()` / `markClick()`](/docs/helpers/click) test helpers let you mark specific clicks instead: a marker that lands near an auto-detected click **suppresses** that auto-detected click (no duplicate ripple) and drives the ripple from the marker's recorded position. Combined with [Cursor Overlay](/docs/pipeline/cursor-overlay), marker-driven clicks also get a held cursor approach over the painted target. Plain `locator.click()` calls with no marker render exactly as before.
+
 ## Filtering clicks
 
 By default, both `click` and `selectOption` actions receive the ripple effect. Use the `filter` option to restrict which actions are highlighted:

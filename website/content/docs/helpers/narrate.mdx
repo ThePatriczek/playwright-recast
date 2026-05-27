@@ -57,6 +57,8 @@ To pad every line without repeating `autoWait` on each call, set it once via [`s
 
 When the pipeline runs `voiceover()` and the synthesized audio for a narration is longer than the visual window between this narrate and the next, the renderer **holds the current frame** until the audio finishes. The frozen frame includes any active highlight/zoom overlay, and `clickEffect` sounds shift along with the timeline. You get audio-perfect sync without having to hand-tune `pace()` calls.
 
+To force a hold at a deliberate point — e.g. before a click that must not be talked over, or at the end of a scenario — call [`waitForNarration()`](/docs/helpers/wait-for-narration). It ends the preceding narration's window there so the renderer holds until that line is fully spoken.
+
 ## Hiding steps
 
 Steps that should not appear in the final video (e.g., login, setup) can be marked as hidden:

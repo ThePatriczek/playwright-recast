@@ -142,6 +142,28 @@ await Recast
 
 The cursor animates to the click position, then the ripple effect plays at that position. This creates a natural "point and click" visual pattern.
 
+## Polished click approach with the `click()` helper
+
+Auto-detected clicks time the cursor approach off the trace. For clicks that wait on a page load, the cursor can start gliding before the target paints — it appears to move over a still-loading screen. The [`click()` / `markClick()`](/docs/helpers/click) test helpers fix this by marking the click explicitly.
+
+In your test, swap `locator.click()` for the helper:
+
+```typescript
+import { click } from 'playwright-recast'
+
+// Settle → mark → real click. Click options pass through to Playwright.
+await click(page.getByRole('button', { name: 'Get started' }))
+```
+
+For each marked click, the renderer **holds the painted frame** at the click and lets the cursor play its full approach over it, then fires the ripple — a deliberate "point and click" beat instead of a glide over a loading screen. The hold duration is `approachMs` on `cursorOverlay`:
+
+```typescript
+.cursorOverlay({ approachMs: 600 })   // default 500ms
+.clickEffect({ sound: true })
+```
+
+A marker that lands near an auto-detected click suppresses it, so you never get a duplicate ripple. With a `voiceover()` stage, the hold also extends the audio and subtitles so narration stays in sync across held clicks. See the [`click()` helper reference](/docs/helpers/click) for details.
+
 ## With speed processing
 
 Click effects and cursor overlays automatically remap their timestamps through speed processing. Add `.speedUp()` before them and timing stays correct:
@@ -182,3 +204,4 @@ npx playwright-recast -i ./traces --cursor-overlay-config config.json
 - [Speed Control](/docs/guides/speed-control) -- compress idle periods between interactions
 - [Click Effect reference](/docs/pipeline/click-effect) -- full pipeline stage documentation
 - [Cursor Overlay reference](/docs/pipeline/cursor-overlay) -- full pipeline stage documentation
+- [`click()` / `markClick()` helpers](/docs/helpers/click) -- mark clicks for a polished, held cursor approach

@@ -5,7 +5,7 @@ description: Initialize playwright-recast helpers with your Playwright test inst
 
 ## What it does
 
-`setupRecast(test)` connects the playwright-recast step helpers (`narrate`, `zoom`, `pace`, `highlight`) to your Playwright test context. Without this call, the helpers cannot access the current test's annotation system and will throw an error.
+`setupRecast(test)` connects the playwright-recast step helpers (`narrate`, `zoom`, `pace`, `highlight`, `click`, `markClick`, `waitForNarration`) to your Playwright test context. Without this call, the helpers cannot access the current test's annotation system and will throw an error.
 
 Call it once in your fixtures file before using any other helper.
 
@@ -32,6 +32,7 @@ setupRecast(test)
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `narrateAutoWait` | `boolean \| number \| object` | off | Default [`autoWait`](/docs/helpers/narrate#autowait--visual-time-without-tts) applied to every `narrate()` call that omits its own. |
+| `clickSettleMs` | `number` | `150` | Real-time settle delay the [`click()`](/docs/helpers/click) helper waits before marking, so the recorder captures a painted frame of the target. Pass `0` to disable. |
 
 ### narrateAutoWait — a global autoWait default
 
@@ -59,6 +60,17 @@ await narrate('This line never waits.', { autoWait: false }) // opts out
 ```
 
 The default is off, so suites that never set `narrateAutoWait` behave exactly as before. Calling `setupRecast(test)` again without the option resets the default back to off.
+
+### clickSettleMs — the click settle
+
+The [`click()`](/docs/helpers/click) helper waits a short, fixed settle before marking the click, so the screencast captures a *painted* frame of the target (rather than a still-loading screen) for the rendered cursor approach. The default is 150 ms. Tune or disable it for the whole suite:
+
+```typescript
+setupRecast(test, { clickSettleMs: 250 }) // slower targets need more settle
+setupRecast(test, { clickSettleMs: 0 })   // disable the settle entirely
+```
+
+This is the only real-time cost `click()` adds to the test run. `markClick()` does not settle — standalone callers own their own timing.
 
 ## How it works
 

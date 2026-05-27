@@ -46,6 +46,10 @@ Auto-generate subtitles from marker steps and BDD step titles found in the trace
 
 If no `narrate()` steps are present, it falls back to using BDD step titles (e.g., `Given the user opens the dashboard`) — useful for [playwright-bdd](https://github.com/nickkuprin/playwright-bdd) projects that don't use the helpers.
 
+### waitForNarration() boundaries
+
+A [`waitForNarration()`](/docs/helpers/wait-for-narration) marker draws a hard boundary for the preceding narration. When the trace contains any such markers, each narration's subtitle window ends at the **earliest** of the next `narrate()` marker, the next `waitForNarration()` marker, or the end of the trace. This lets you put clicks and narrations next to each other without a line being cut short, and — with [voiceover](/docs/pipeline/voiceover) — tells the renderer where to hold until a line finishes speaking. Traces with no `waitForNarration()` markers are unaffected.
+
 ## Generate from actions
 
 Create subtitles from trace actions with a custom text function:

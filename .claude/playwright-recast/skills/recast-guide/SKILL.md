@@ -79,7 +79,8 @@ npx playwright-recast -i ./traces --srt narration.srt --burn-subs
 | `.textProcessing(config)` | Sanitize subtitle text for TTS (strip quotes, normalize dashes, custom rules) |
 | `.autoZoom(config)` | Auto-zoom to user interaction targets from trace |
 | `.enrichZoomFromReport(steps)` | Apply zoom coordinates from external report data (legacy — prefer the `zoom()` helper which writes directly into the trace) |
-| `.clickEffect(config)` | Visual ripple + optional click sound at click positions |
+| `.cursorOverlay(config)` | Animated cursor that moves to each click; `approachMs` holds the frame for `click()`-marked clicks so the cursor glides over the painted target |
+| `.clickEffect(config)` | Visual ripple + optional click sound at click positions (prefers `click()`/`markClick()` markers over auto-detected clicks) |
 | `.voiceover(provider)` | Generate TTS from subtitle text |
 | `.render(config)` | Configure output format/resolution/fps/subtitle styling |
 | `.toFile(path)` | Execute pipeline and save output |
@@ -166,13 +167,14 @@ Needs a CUDA GPU (~4–8 GB VRAM) and `HF_TOKEN` if the chosen weights are gated
 
 ## playwright-bdd Integration
 
-Step helpers for BDD test definitions. Each helper (`narrate`, `highlight`, `zoom`) writes a marker-prefixed `test.step()` directly into the trace zip — `subtitlesFromTrace()` picks them all up automatically. No separate `report.json` or extra pipeline calls required.
+Step helpers for BDD test definitions. Each marker helper (`narrate`, `highlight`, `zoom`, `click`/`markClick`) writes a marker-prefixed `test.step()` directly into the trace zip — `subtitlesFromTrace()` picks them all up automatically. No separate `report.json` or extra pipeline calls required.
 
 ```typescript
-import { setupRecast, narrate, highlight, zoom, pace } from 'playwright-recast'
+import { setupRecast, narrate, highlight, zoom, pace, click, waitForNarration } from 'playwright-recast'
 
 // In fixtures.ts — initialize once:
 setupRecast(test)
+// Optional global defaults: setupRecast(test, { narrateAutoWait: true, clickSettleMs: 200 })
 
 // In step definitions:
 Given('the user opens dashboard', async ({ page }, docString?: string) => {
@@ -186,9 +188,19 @@ When('the user reviews KPI', async ({ page }, docString?: string) => {
   await highlight(page.locator('h2'), { text: 'Revenue' })
   await zoom(page.locator('.kpi-card'), 1.3)
 })
+
+Then('the user opens the report', async ({ page }, docString?: string) => {
+  await narrate(docString)
+  await click(page.getByRole('link', { name: 'Reports' })) // held cursor approach
+  await waitForNarration()                                 // hold until the line finishes
+})
 ```
 
-**Voiceover-driven freezes:** when TTS audio is longer than its visual window the renderer holds the current frame until the audio finishes — overlays freeze with it, click sounds shift to match. No config required.
+**`click()` / `markClick()`:** mark a click in the trace. The renderer prefers markers over auto-detected clicks and plays a held cursor approach over the painted target (needs `cursorOverlay()` and/or `clickEffect()`; hold = `cursorOverlay({ approachMs })`, default 500ms). `click()` settles → marks → real click (forwards click options; settle = `setupRecast({ clickSettleMs })`, default 150ms). `markClick()` writes the marker only — use it when you drive the interaction yourself.
+
+**`waitForNarration()`:** marks a hard boundary so the preceding narration's subtitle window ends there; with voiceover the renderer holds the frame until that line finishes. Resolves instantly at test time (no real-time pause). Use before a click that must not be talked over, or at the end of a scenario.
+
+**Voiceover-driven freezes:** when TTS audio is longer than its visual window the renderer holds the current frame until the audio finishes — overlays freeze with it, click sounds shift to match. Click approach-holds extend audio + subtitles the same way, so narration stays in sync. No config required.
 
 Feature file with voiceover text:
 ```gherkin

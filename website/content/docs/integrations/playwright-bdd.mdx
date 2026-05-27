@@ -118,6 +118,22 @@ When('the user fills in the search', async ({ page }, docString?: string) => {
 })
 ```
 
+## Polished clicks and narration beats
+
+Swap `page.click()` for the [`click()` helper](/docs/helpers/click) on the interactions you want to emphasise — the renderer gives those a deliberate, held cursor approach. Use [`waitForNarration()`](/docs/helpers/wait-for-narration) to hold the video until a line finishes speaking before the next step runs:
+
+```typescript
+import { narrate, click, waitForNarration, pace } from 'playwright-recast'
+
+When('the user opens the report', async ({ page }, docString?: string) => {
+  await narrate(docString)
+  await click(page.getByRole('link', { name: 'Reports' }))
+  await waitForNarration()   // let this line finish before moving on
+})
+```
+
+Render with `.cursorOverlay()` and/or `.clickEffect()` so the marked clicks are drawn; tune the held approach with `.cursorOverlay({ approachMs: 600 })`.
+
 ## Generating the video
 
 Run your Playwright BDD tests with tracing enabled, then pipe the trace through the pipeline:

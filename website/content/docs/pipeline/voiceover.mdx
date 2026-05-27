@@ -72,6 +72,11 @@ See the [Providers](/docs/providers) section for full provider documentation.
 
 Each subtitle entry generates a separate TTS audio clip. Clips are placed at the subtitle's start time with silence padding between them. When TTS audio is shorter than the subtitle duration, the remaining time is silence. When TTS audio would run longer, the speed processor can fast-forward to accommodate.
 
+Two kinds of **hold** can stretch the timeline, and both extend the audio, subtitles, and video together so narration never drifts out of sync:
+
+- **Audio-overflow freezes** — when a narration's audio is longer than its visual window (often at a [`waitForNarration()`](/docs/helpers/wait-for-narration) boundary), the renderer holds the last frame until the line finishes.
+- **Click approach holds** — the [`click()` helper](/docs/helpers/click) freezes the painted frame so the cursor can glide in (`approachMs`). When voiceover is present these holds are folded into the same audio/subtitle shift, so spoken lines after a held click stay aligned.
+
 ## Text processing
 
 For best TTS results, add [Text Processing](/docs/pipeline/text-processing) before voiceover:

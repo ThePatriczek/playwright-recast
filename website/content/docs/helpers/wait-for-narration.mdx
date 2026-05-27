@@ -1,0 +1,59 @@
+---
+title: waitForNarration
+description: Mark a point where the rendered video should hold until the previous narration's audio finishes.
+---
+
+## What it does
+
+`waitForNarration()` marks a point in the trace where the rendered video should **wait for the previous [`narrate()`](/docs/helpers/narrate) call's audio to finish** before continuing.
+
+It resolves immediately at test time — there is **no real-time pause** and no `setTimeout`. The wait is realised only in the rendered video: the preceding narration's subtitle window ends here, and if its TTS audio is longer than that window, the renderer holds the last visible frame for the overflow (the same audio-overflow freeze that [`narrate()`](/docs/helpers/narrate#voiceover-driven-freezes) already uses).
+
+Use it when narration would otherwise bleed across a deliberate beat:
+
+- before a click that must not be talked over,
+- at the end of a scenario, so the last line is fully heard before the video ends.
+
+## Usage
+
+```typescript
+import { narrate, waitForNarration, click } from 'playwright-recast'
+
+await narrate('Click the submit button.')
+await click(page.locator('button[type=submit]'))
+await waitForNarration()   // hold here until the line above is done speaking
+await click(page.locator('a.next-step'))
+```
+
+It takes no arguments and emits one empty marker step (`__recast_wait_for_narration__`) into the trace zip. It pushes no voiceover annotations, and no-ops cleanly when `setupRecast(test)` has not been called.
+
+## How it affects subtitle windows
+
+[`subtitlesFromTrace()`](/docs/pipeline/subtitles) normally runs each `narrate()` line's subtitle until the next `narrate()` call. When a trace contains `waitForNarration()` markers, each narration's window ends at the **earliest** of:
+
+1. the next `narrate()` marker,
+2. the next `waitForNarration()` marker, or
+3. the end of the trace.
+
+So `waitForNarration()` draws a hard boundary, letting you put clicks and narrations next to each other without the renderer cutting a line short. When a trace has no `waitForNarration()` markers, subtitle assembly is byte-identical to before.
+
+## When the wait actually adds time
+
+The marker only adds time when time is actually needed:
+
+- **With [`.voiceover()`](/docs/pipeline/voiceover):** if the narration's audio overruns its (now narrowed) window, the renderer freezes the last frame for the overflow. The cursor and click ripples keep animating naturally through the freeze — the beat looks deliberate, not like a hang. If the audio fits, the marker is a no-op for that line.
+- **Without voiceover:** there is no audio to wait on, so the marker simply bounds the subtitle window. Pad visual time with [`pace()`](/docs/helpers/pace) or [`narrate(text, { autoWait })`](/docs/helpers/narrate#autowait--visual-time-without-tts) instead.
+
+## Example in a BDD step
+
+```typescript
+import { Then } from './fixtures'
+import { narrate, waitForNarration, pace } from 'playwright-recast'
+
+Then('the order is confirmed', async ({ page }, docString?: string) => {
+  await narrate(docString)
+  await page.locator('[data-testid="confirmation"]').waitFor()
+  await pace(page, 1000)
+  await waitForNarration()   // last line of the scenario — let it finish
+})
+```
