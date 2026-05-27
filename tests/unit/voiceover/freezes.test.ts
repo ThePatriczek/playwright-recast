@@ -85,6 +85,56 @@ describe('generateVoiceover freeze emission (waitForNarration-narrowed windows)'
     expect(freeze.durationMs).toBeLessThan(2300)
   })
 
+  it('zero/sub-100ms window with overflow still plays audio and freezes (no-autoWait pattern)', async () => {
+    // narrate() immediately followed by waitForNarration() on a fast trace:
+    // the window is ~0 (here 40ms). The line must NOT be dropped — its audio
+    // plays, the subtitle stretches to the audio length, and the video freezes
+    // at the boundary. Previously the windowDuration<100 guard dropped it.
+    const longAudio = makeSineBuffer(4)
+    const shortAudio = makeSineBuffer(1)
+    const provider = makeProvider([longAudio, shortAudio])
+    const trace: SubtitledTrace = {
+      subtitles: [
+        { index: 1, startMs: 0, endMs: 40, text: 'first', ttsText: undefined },
+        { index: 2, startMs: 100, endMs: 2100, text: 'second', ttsText: undefined },
+      ],
+    } as unknown as SubtitledTrace
+    const tmp = path.join(TMP_ROOT, 'tiny-window-overflow')
+
+    const result = await generateVoiceover(trace, provider, tmp)
+
+    // A freeze is recorded at the boundary (40ms) — previously: none.
+    expect(result.voiceover.freezes).toHaveLength(1)
+    expect(result.voiceover.freezes![0]!.atVideoMs).toBe(40)
+    expect(result.voiceover.freezes![0]!.durationMs).toBeGreaterThan(3500)
+    // First subtitle is stretched to ~the audio length, not the 40ms window.
+    expect(result.voiceover.entries[0]!.outputEndMs).toBeGreaterThan(3500)
+    // Second line is pushed back by the overflow.
+    expect(result.voiceover.entries[1]!.outputStartMs).toBeGreaterThan(3500)
+  })
+
+  it('exact-zero window (startMs === endMs) still plays audio and freezes', async () => {
+    // narrate() with an immediate waitForNarration() and no gap: window is 0.
+    const longAudio = makeSineBuffer(3)
+    const shortAudio = makeSineBuffer(1)
+    const provider = makeProvider([longAudio, shortAudio])
+    const trace: SubtitledTrace = {
+      subtitles: [
+        { index: 1, startMs: 1000, endMs: 1000, text: 'first', ttsText: undefined },
+        { index: 2, startMs: 1000, endMs: 3000, text: 'second', ttsText: undefined },
+      ],
+    } as unknown as SubtitledTrace
+    const tmp = path.join(TMP_ROOT, 'zero-window-overflow')
+
+    const result = await generateVoiceover(trace, provider, tmp)
+
+    expect(result.voiceover.freezes).toHaveLength(1)
+    expect(result.voiceover.freezes![0]!.atVideoMs).toBe(1000)
+    expect(result.voiceover.freezes![0]!.durationMs).toBeGreaterThan(2500)
+    expect(result.voiceover.entries[0]!.outputEndMs).toBeGreaterThan(2500)
+    expect(result.voiceover.entries[1]!.outputStartMs).toBeGreaterThan(2500)
+  })
+
   it('audio that fits in the narrowed window emits no freeze', async () => {
     const shortAudio = makeSineBuffer(1)
     const provider = makeProvider([shortAudio, shortAudio])

@@ -136,9 +136,12 @@ export async function generateVoiceover(
     const audioDuration = getAudioDurationMs(segPath)
     const windowDuration = subtitle.endMs - subtitle.startMs
 
-    if (windowDuration < 100) {
-      cursor = subtitle.endMs
-    } else if (audioDuration <= windowDuration) {
+    // A tiny/zero window (fast trace + waitForNarration, no autoWait) falls
+    // through to the overflow branch below: the audio plays, the subtitle
+    // stretches to the audio length, and a freeze is recorded at the window
+    // end (the waitForNarration position). windowDuration is always >= 0 —
+    // the builder clamps it and the loop shifts start/end by the same amount.
+    if (audioDuration <= windowDuration) {
       segmentFiles.push(segPath)
       const pad = windowDuration - audioDuration
       if (pad > 50) {
