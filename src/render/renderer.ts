@@ -20,6 +20,7 @@ import { generateClickSoundTrack, getAudioDurationMs as getClickAudioDurationMs 
 import { writeSrt } from '../subtitles/srt-writer.js'
 import { writeAss } from '../subtitles/ass-writer.js'
 import { chunkSubtitles } from '../subtitles/subtitle-chunker.js'
+import { filterRenderableSubtitles } from '../subtitles/renderable.js'
 import { interpolateVideo } from '../interpolate/interpolator.js'
 
 /**
@@ -824,13 +825,19 @@ export function renderVideo(
   // toggle this on/off in their player (independent of any burned-in style).
   // All `-i` inputs MUST be pushed before any output options like `-vf` or
   // `-map`, otherwise ffmpeg attributes those options to the wrong file.
+  // Drop narration lines still at zero duration (no voiceover sized them) so we
+  // never write a degenerate SRT/ASS cue. NOTE: the zoom reads on
+  // `trace.subtitles` above (the `hasZoom` check and the zoom application block)
+  // are intentionally left on the full list.
+  const renderableSubtitles = filterRenderableSubtitles(trace.subtitles ?? [])
+
   const embedOpt = config.embedSubtitles
-  const wantEmbed = !!embedOpt && trace.subtitles && trace.subtitles.length > 0
+  const wantEmbed = !!embedOpt && renderableSubtitles.length > 0
   let subInputIndex = -1
   if (wantEmbed) {
     const embedEntries = config.subtitleStyle?.chunkOptions
-      ? chunkSubtitles(trace.subtitles!, config.subtitleStyle.chunkOptions)
-      : trace.subtitles!
+      ? chunkSubtitles(renderableSubtitles, config.subtitleStyle.chunkOptions)
+      : renderableSubtitles
     const embedSrtPath = path.join(tmpDir, 'embed-subtitles.srt')
     fs.writeFileSync(embedSrtPath, writeSrt(embedEntries))
     subInputIndex = finalAudioPath ? 2 : 1
@@ -849,10 +856,10 @@ export function renderVideo(
     vFilters.push(`scale=${resolution.width}:${resolution.height}`)
   }
 
-  if (config.burnSubtitles && trace.subtitles && trace.subtitles.length > 0) {
+  if (config.burnSubtitles && renderableSubtitles.length > 0) {
     if (config.subtitleStyle) {
       // Styled subtitles via ASS format (background box, custom font, etc.)
-      let burnEntries = trace.subtitles
+      let burnEntries = renderableSubtitles
       if (config.subtitleStyle.chunkOptions) {
         burnEntries = chunkSubtitles(burnEntries, config.subtitleStyle.chunkOptions)
       }
@@ -863,7 +870,7 @@ export function renderVideo(
     } else {
       // Plain SRT subtitles (default ffmpeg styling)
       const srtPath = path.join(tmpDir, 'burn-subtitles.srt')
-      fs.writeFileSync(srtPath, writeSrt(trace.subtitles))
+      fs.writeFileSync(srtPath, writeSrt(renderableSubtitles))
       const escapedPath = srtPath.replace(/'/g, "'\\''").replace(/:/g, '\\:')
       vFilters.push(`subtitles='${escapedPath}'`)
     }
