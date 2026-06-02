@@ -747,17 +747,13 @@ export function renderVideo(
       soundPath = trace.clickEffectConfig.sound
     }
 
-    const soundDurationMs = getClickAudioDurationMs(soundPath)
-
     clickSoundTrackPath = generateClickSoundTrack(
       {
         clicks: trace.clickEvents,
         soundPath,
-        soundDurationMs,
         outputPath: path.join(tmpDir, 'click-sound-track.mp3'),
         volume: trace.clickEffectConfig.soundVolume,
       },
-      tmpDir,
     )
     if (clickSoundTrackPath) {
       console.log(`  Click sound: ${trace.clickEvents.length} sounds mixed`)

@@ -3,7 +3,6 @@ import { execFileSync } from 'node:child_process'
 export interface ClickSoundInput {
   clicks: Array<{ videoTimeMs: number }>
   soundPath: string
-  soundDurationMs: number
   outputPath: string
   volume: number
 }
@@ -40,10 +39,7 @@ export function buildClickSoundPlan(
  * together (`adelay` + `amix`), so overlapping clicks both sound. `normalize=0`
  * keeps each click at full volume; coincident clicks sum.
  */
-export function generateClickSoundTrack(
-  input: ClickSoundInput,
-  _tmpDir: string,
-): string {
+export function generateClickSoundTrack(input: ClickSoundInput): string {
   const { delaysMs } = buildClickSoundPlan(input.clicks)
   if (delaysMs.length === 0) return ''
 
