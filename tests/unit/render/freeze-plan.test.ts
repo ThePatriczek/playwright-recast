@@ -47,6 +47,18 @@ describe('planVoiceoverFreezes', () => {
     expect(segments[segments.length - 1]!.endSec).toBeNull()
   })
 
+  it('keeps small (sub-10ms) freezes so the hold matches the overlay shift', () => {
+    // shiftForFreezes() shifts overlays by the full ms freeze list; the planner
+    // must not drop small holds or the video would hold less than the overlays
+    // shift. (Regression: a <= 0.01s threshold dropped these.)
+    const { segments, totalHoldSec } = planVoiceoverFreezes(
+      [{ atVideoMs: 5000, durationMs: 4 }],
+      19.7,
+    )
+    expect(totalHoldSec).toBeCloseTo(0.004, 4)
+    expect(segments.reduce((a, s) => a + s.startHoldSec + s.stopHoldSec, 0)).toBeCloseTo(0.004, 4)
+  })
+
   it('ignores freezes at/after the end of the video (handled by end tpad)', () => {
     const { segments, totalHoldSec } = planVoiceoverFreezes(
       [{ atVideoMs: 19700, durationMs: 3000 }],

@@ -142,6 +142,7 @@ export function probeResolution(videoPath: string): { width: number; height: num
   return { width: w!, height: h! }
 }
 
+
 /**
  * Render with smooth zoom transitions in a single ffmpeg pass.
  * Uses dynamic crop expressions with easing for animated zoom in/out/pan.
@@ -512,11 +513,14 @@ export function planVoiceoverFreezes(
   // durations that land together. Keep atSec === 0 entries — those are leading
   // holds, applied as a start-pad. Holds at/after the end are left to the
   // renderer's end-of-video tpad.
+  // Keep every freeze with a positive hold: shiftForFreezes() shifts the
+  // overlays by the full ms-resolution list, so dropping a small hold here
+  // would hold the video less than the overlays shift and desync them.
   const byPos = new Map<number, number>()
   for (const f of freezes) {
     const atSec = Math.max(0, Math.min(videoDur, f.atVideoMs / 1000))
     const durSec = Math.max(0, f.durationMs / 1000)
-    if (durSec <= 0.01) continue
+    if (durSec <= 0) continue
     if (atSec >= videoDur - 0.01) continue
     const key = Math.round(atSec * 1000)
     byPos.set(key, (byPos.get(key) ?? 0) + durSec)
@@ -573,8 +577,8 @@ function applyVoiceoverFreezes(
     const seg = segments[i]!
     const segPath = path.join(tmpDir, `vo-freeze-seg-${i}.mp4`)
     const pad: string[] = []
-    if (seg.startHoldSec > 0.01) pad.push(`start_mode=clone:start_duration=${seg.startHoldSec.toFixed(3)}`)
-    if (seg.stopHoldSec > 0.01) pad.push(`stop_mode=clone:stop_duration=${seg.stopHoldSec.toFixed(3)}`)
+    if (seg.startHoldSec > 0) pad.push(`start_mode=clone:start_duration=${seg.startHoldSec.toFixed(3)}`)
+    if (seg.stopHoldSec > 0) pad.push(`stop_mode=clone:stop_duration=${seg.stopHoldSec.toFixed(3)}`)
     ffmpeg([
       '-y', '-ss', String(seg.startSec),
       ...(seg.endSec !== null ? ['-to', String(seg.endSec)] : []),
