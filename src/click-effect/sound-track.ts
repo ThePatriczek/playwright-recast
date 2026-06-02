@@ -1,5 +1,3 @@
-import * as fs from 'node:fs'
-import * as path from 'node:path'
 import { execFileSync } from 'node:child_process'
 
 export interface ClickSoundInput {
@@ -11,85 +9,67 @@ export interface ClickSoundInput {
 }
 
 export interface ClickSoundPlan {
-  /** Silence duration (ms) before each click sound */
-  silenceDurations: number[]
-  /** Filtered clicks (overlapping ones removed) */
-  filteredClicks: Array<{ videoTimeMs: number }>
+  /** Absolute start time (ms) for each click sound, sorted ascending. */
+  delaysMs: number[]
 }
 
 /**
- * Plan the click sound track: compute silence durations between clicks,
- * remove overlapping clicks.
+ * Plan the click sound track: one sound per click, placed at the click's exact
+ * video time.
+ *
+ * Unlike a sequential silence+sound concatenation, this keeps EVERY click —
+ * including ones spaced closer than the sound's duration. Those simply overlap
+ * (mixed by {@link generateClickSoundTrack}), matching the ripple overlays,
+ * which are likewise drawn for every click regardless of spacing. Dropping
+ * close clicks here is what left rapid clicks (e.g. focus-then-type) with a
+ * visible ripple but no audible click.
  */
-export function buildClickSoundArgs(input: ClickSoundInput): ClickSoundPlan {
-  const sorted = [...input.clicks].sort((a, b) => a.videoTimeMs - b.videoTimeMs)
-
-  const filtered: Array<{ videoTimeMs: number }> = []
-  const silenceDurations: number[] = []
-  let cursor = 0
-
-  for (const click of sorted) {
-    // Skip if this click overlaps with the previous sound
-    if (filtered.length > 0 && click.videoTimeMs < cursor) {
-      continue
-    }
-
-    const silenceMs = Math.max(0, click.videoTimeMs - cursor)
-    silenceDurations.push(silenceMs)
-    filtered.push(click)
-    cursor = click.videoTimeMs + input.soundDurationMs
-  }
-
-  return { silenceDurations, filteredClicks: filtered }
+export function buildClickSoundPlan(
+  clicks: Array<{ videoTimeMs: number }>,
+): ClickSoundPlan {
+  const delaysMs = clicks
+    .map((c) => Math.max(0, Math.round(c.videoTimeMs)))
+    .sort((a, b) => a - b)
+  return { delaysMs }
 }
 
 /**
  * Generate the click sound audio track.
- * Concatenates silence + click sound segments using ffmpeg concat demuxer.
+ *
+ * Delays a copy of the click sound to each click's video time and mixes them
+ * together (`adelay` + `amix`), so overlapping clicks both sound. `normalize=0`
+ * keeps each click at full volume; coincident clicks sum.
  */
 export function generateClickSoundTrack(
   input: ClickSoundInput,
-  tmpDir: string,
+  _tmpDir: string,
 ): string {
-  const plan = buildClickSoundArgs(input)
-  if (plan.filteredClicks.length === 0) return ''
+  const { delaysMs } = buildClickSoundPlan(input.clicks)
+  if (delaysMs.length === 0) return ''
 
-  const segmentFiles: string[] = []
+  const n = delaysMs.length
+  const vol = Math.abs(input.volume - 1.0) > 0.01 ? `,volume=${input.volume}` : ''
 
-  for (let i = 0; i < plan.filteredClicks.length; i++) {
-    const silenceMs = plan.silenceDurations[i]!
-
-    // Add silence before this click
-    if (silenceMs > 0) {
-      const silencePath = path.join(tmpDir, `click-silence-${i}.mp3`)
-      execFileSync('ffmpeg', [
-        '-y', '-f', 'lavfi', '-i',
-        `anullsrc=r=44100:cl=mono,atrim=0:${(silenceMs / 1000).toFixed(3)}`,
-        '-c:a', 'libmp3lame', '-q:a', '2', silencePath,
-      ], { stdio: 'pipe' })
-      segmentFiles.push(silencePath)
+  let filterComplex: string
+  if (n === 1) {
+    filterComplex = `[0:a]adelay=${delaysMs[0]}:all=1${vol}[out]`
+  } else {
+    const labels = Array.from({ length: n }, (_, i) => `[s${i}]`).join('')
+    const parts: string[] = [`[0:a]asplit=${n}${labels}`]
+    for (let i = 0; i < n; i++) {
+      parts.push(`[s${i}]adelay=${delaysMs[i]}:all=1${vol}[d${i}]`)
     }
-
-    // Add click sound (with volume adjustment)
-    if (Math.abs(input.volume - 1.0) > 0.01) {
-      const volPath = path.join(tmpDir, `click-vol-${i}.mp3`)
-      execFileSync('ffmpeg', [
-        '-y', '-i', input.soundPath,
-        '-af', `volume=${input.volume}`,
-        '-c:a', 'libmp3lame', '-q:a', '2', volPath,
-      ], { stdio: 'pipe' })
-      segmentFiles.push(volPath)
-    } else {
-      segmentFiles.push(input.soundPath)
-    }
+    const mixIn = Array.from({ length: n }, (_, i) => `[d${i}]`).join('')
+    parts.push(
+      `${mixIn}amix=inputs=${n}:duration=longest:normalize=0:dropout_transition=0[out]`,
+    )
+    filterComplex = parts.join(';')
   }
 
-  // Concat all segments
-  const concatList = path.join(tmpDir, 'click-concat.txt')
-  fs.writeFileSync(concatList, segmentFiles.map(f => `file '${path.basename(f)}'`).join('\n'))
-
   execFileSync('ffmpeg', [
-    '-y', '-f', 'concat', '-safe', '0', '-i', concatList,
+    '-y', '-i', input.soundPath,
+    '-filter_complex', filterComplex,
+    '-map', '[out]',
     '-c:a', 'libmp3lame', '-q:a', '2',
     input.outputPath,
   ], { stdio: 'pipe' })
