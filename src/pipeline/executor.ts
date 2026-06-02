@@ -443,6 +443,27 @@ export class PipelineExecutor {
             }
           }
 
+          // Output video time = timeRemap(trace) minus the output time of the
+          // recording's first frame. The renderer drops any visible segment
+          // that falls before that frame (negative source time), so raw
+          // timeRemap values sit `videoStartOutput` ms ahead of the rendered
+          // video. The SRT, cursor, and click paths all subtract this offset;
+          // narration subtitles, highlights, and zoom must do the same, or the
+          // freezes and click ripples derived from them drift behind the video.
+          let subVideoStartOutput = 0
+          if (state.speedMapped && state.speedMapped.speedSegments.length > 0 && state.parsed) {
+            const subFrames = state.parsed.frames
+            const subRecPageId = subFrames.length > 0
+              ? subFrames[subFrames.length - 1]!.pageId : undefined
+            const subRecFrames = subRecPageId
+              ? subFrames.filter((f) => f.pageId === subRecPageId) : subFrames
+            const subFirstRecFrameMs = subRecFrames[0]?.timestamp as number ??
+              (state.parsed.metadata.startTime as number)
+            subVideoStartOutput = state.speedMapped.timeRemap(toMonotonic(subFirstRecFrameMs))
+          }
+          const toVideoMs = (traceMs: number): number =>
+            Math.max(0, speedMapped.timeRemap(toMonotonic(traceMs)) - subVideoStartOutput)
+
           // If the test used narrate(), prefer the explicit narration spans.
           // narrate() emits a test.step with a marker-prefixed title; each
           // narrate's subtitle spans from its start until the next narrate
@@ -457,13 +478,13 @@ export class PipelineExecutor {
           )
 
           if (hasVisibleNarrate) {
-            const traceEndMs = speedMapped.timeRemap(speedMapped.metadata.endTime)
+            const traceEndMs = toVideoMs(speedMapped.metadata.endTime as number)
             const subtitles = buildNarrationSubtitles(
               boundaryActions.map((a) => ({
                 title: a.title as string,
                 startTime: a.startTime as number,
               })),
-              (t) => speedMapped.timeRemap(toMonotonic(t)),
+              (t) => toVideoMs(t),
               traceEndMs,
             )
             state.subtitled = { ...speedMapped, subtitles }
@@ -488,7 +509,7 @@ export class PipelineExecutor {
                 color?: string; opacity?: number; duration?: number
                 fadeOut?: number; swipeDuration?: number
               }
-              const videoTimeMs = Math.max(0, Math.round(speedMapped.timeRemap(action.startTime)))
+              const videoTimeMs = Math.round(toVideoMs(action.startTime as number))
               const duration = data.duration ?? hlDefaults.duration
               const fadeOut = data.fadeOut ?? hlDefaults.fadeOut
               traceHighlights.push({
@@ -521,7 +542,7 @@ export class PipelineExecutor {
                 const data = JSON.parse(action.title.slice(ZOOM_TITLE_PREFIX.length)) as {
                   x: number; y: number; level: number
                 }
-                const tMs = speedMapped.timeRemap(action.startTime)
+                const tMs = toVideoMs(action.startTime as number)
                 const sub = state.subtitled.subtitles.find(
                   (s) => tMs >= s.startMs && tMs < s.endMs,
                 )
@@ -972,9 +993,10 @@ export class PipelineExecutor {
           // Approach holds: each click marker becomes a video hold so the cursor
           // can glide over the painted target. Computed here (not in the renderer)
           // so generateVoiceover inserts matching audio silence + shifts subtitles.
-          // Positions use the subtitle formula (timeRemap, minus blank lead-in,
-          // minus a 2ms margin so the click ripple/cursor reliably shift into the
-          // hold) — the same timeline the subtitles live in.
+          // Positions use the click/cursor formula (timeRemap, minus the
+          // recording's first-frame output offset, minus blank lead-in, minus a
+          // 2ms margin so the click ripple/cursor reliably shift into the hold)
+          // — the same video timeline the clicks and cursor keyframes live in.
           const approachHolds: Array<{ atVideoMs: number; durationMs: number }> = []
           if (state.cursorOverlayConfig) {
             const approachMs = state.cursorOverlayConfig.approachMs ?? 500
@@ -985,9 +1007,15 @@ export class PipelineExecutor {
             const recFrames = recPageId
               ? state.parsed!.frames.filter((f) => f.pageId === recPageId) : state.parsed!.frames
             const recStart = recFrames[0]?.timestamp as number ?? 0
+            // Output time of the recording's first frame — same offset the click
+            // and cursor stages subtract. Only meaningful once speed segments exist.
+            const holdVideoStartOutput =
+              state.speedMapped && state.speedMapped.speedSegments.length > 0
+                ? remap(recStart)
+                : 0
             const markerActions = state.filtered?.actions ?? state.parsed!.actions
             for (const m of parseClickMarkersFromRecordingContext(markerActions, recStart)) {
-              const at = Math.round(remap(m.startTime)) - blankMs - 2
+              const at = Math.round(remap(m.startTime) - holdVideoStartOutput) - blankMs - 2
               approachHolds.push({ atVideoMs: Math.max(0, at), durationMs: Math.round(approachMs) })
             }
           }

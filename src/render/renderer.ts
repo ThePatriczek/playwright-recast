@@ -476,11 +476,84 @@ function renderWithSpeed(
   return concatOutput
 }
 
+/** One video slice to encode when applying voiceover freezes. */
+export interface FreezeSegmentPlan {
+  /** Source-video start (seconds), inclusive. */
+  startSec: number
+  /** Source-video end (seconds), exclusive; null means "to end of video". */
+  endSec: number | null
+  /** Clone-pad held before the slice's first frame (a leading hold). */
+  startHoldSec: number
+  /** Clone-pad held after the slice's last frame. */
+  stopHoldSec: number
+}
+
 /**
- * Hold the last frame at each freeze point so the narration audio has time to
- * finish before the next visual action. Splits the video at each freeze
- * position, holds the last frame of the preceding segment for the requested
- * duration, then concatenates everything back together.
+ * Pure planner for {@link applyVoiceoverFreezes}: turn freeze points into the
+ * list of video slices (with clone-pad holds) to encode and concatenate.
+ *
+ * A freeze at (or coinciding with) the start of the current slice — most
+ * commonly the leading intro narration whose visual window collapsed to ~0 —
+ * cannot be realised as a stop-pad on an empty preceding slice. Such holds are
+ * folded into a *start*-pad on the first frame of the next emitted slice
+ * (`start_mode=clone`), so the opening frame is held while the intro plays.
+ * This is critical: shiftForFreezes() shifts every click/cursor by the full set
+ * of freezes, so dropping any hold here (the previous behaviour) desynced the
+ * overlays from the video by that hold's duration.
+ *
+ * The total held time always equals the sum of all in-range freeze durations,
+ * which is exactly what shiftForFreezes() applies to the overlays.
+ */
+export function planVoiceoverFreezes(
+  freezes: Array<{ atVideoMs: number; durationMs: number }>,
+  videoDur: number,
+): { segments: FreezeSegmentPlan[]; totalHoldSec: number } {
+  // Collapse freezes onto distinct cut positions (rounded to the ms), summing
+  // durations that land together. Keep atSec === 0 entries — those are leading
+  // holds, applied as a start-pad. Holds at/after the end are left to the
+  // renderer's end-of-video tpad.
+  const byPos = new Map<number, number>()
+  for (const f of freezes) {
+    const atSec = Math.max(0, Math.min(videoDur, f.atVideoMs / 1000))
+    const durSec = Math.max(0, f.durationMs / 1000)
+    if (durSec <= 0.01) continue
+    if (atSec >= videoDur - 0.01) continue
+    const key = Math.round(atSec * 1000)
+    byPos.set(key, (byPos.get(key) ?? 0) + durSec)
+  }
+  const cuts = [...byPos.entries()]
+    .map(([ms, durSec]) => ({ atSec: ms / 1000, durSec }))
+    .sort((a, b) => a.atSec - b.atSec)
+
+  const totalHoldSec = cuts.reduce((a, b) => a + b.durSec, 0)
+  if (cuts.length === 0) return { segments: [], totalHoldSec: 0 }
+
+  const segments: FreezeSegmentPlan[] = []
+  let prevEnd = 0
+  let pendingStartHold = 0 // holds at prevEnd that must start-pad the next slice
+  for (const c of cuts) {
+    if (c.atSec <= prevEnd + 0.01) {
+      // Coincides with the current slice's start (e.g. a leading freeze at 0).
+      // Hold the same frame by start-padding the next emitted slice.
+      pendingStartHold += c.durSec
+      continue
+    }
+    segments.push({ startSec: prevEnd, endSec: c.atSec, startHoldSec: pendingStartHold, stopHoldSec: c.durSec })
+    prevEnd = c.atSec
+    pendingStartHold = 0
+  }
+
+  if (prevEnd < videoDur - 0.01 || pendingStartHold > 0.01) {
+    segments.push({ startSec: prevEnd, endSec: null, startHoldSec: pendingStartHold, stopHoldSec: 0 })
+  }
+
+  return { segments, totalHoldSec }
+}
+
+/**
+ * Hold a frame at each freeze point so the narration audio has time to finish
+ * before the next visual action. Splits the video per {@link planVoiceoverFreezes},
+ * clone-pads the held frames, then concatenates everything back together.
  *
  * Freeze positions are in the speed-mapped (pre-freeze) video timeline.
  */
@@ -492,47 +565,29 @@ function applyVoiceoverFreezes(
   if (freezes.length === 0) return videoPath
 
   const videoDur = getVideoDuration(videoPath)
-  const sorted = [...freezes]
-    .map((f) => ({
-      atSec: Math.max(0, Math.min(videoDur, f.atVideoMs / 1000)),
-      durSec: Math.max(0, f.durationMs / 1000),
-    }))
-    .filter((f) => f.durSec > 0.01 && f.atSec < videoDur - 0.01)
-    .sort((a, b) => a.atSec - b.atSec)
-
-  if (sorted.length === 0) return videoPath
+  const { segments, totalHoldSec } = planVoiceoverFreezes(freezes, videoDur)
+  if (segments.length === 0) return videoPath
 
   const segPaths: string[] = []
-  let prevEnd = 0
-  for (let i = 0; i < sorted.length; i++) {
-    const f = sorted[i]!
-    if (f.atSec <= prevEnd + 0.01) continue
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i]!
     const segPath = path.join(tmpDir, `vo-freeze-seg-${i}.mp4`)
+    const pad: string[] = []
+    if (seg.startHoldSec > 0.01) pad.push(`start_mode=clone:start_duration=${seg.startHoldSec.toFixed(3)}`)
+    if (seg.stopHoldSec > 0.01) pad.push(`stop_mode=clone:stop_duration=${seg.stopHoldSec.toFixed(3)}`)
     ffmpeg([
-      '-y', '-ss', String(prevEnd), '-to', String(f.atSec),
+      '-y', '-ss', String(seg.startSec),
+      ...(seg.endSec !== null ? ['-to', String(seg.endSec)] : []),
       '-i', videoPath,
-      '-vf', `tpad=stop_mode=clone:stop_duration=${f.durSec.toFixed(3)}`,
+      ...(pad.length > 0 ? ['-vf', `tpad=${pad.join(':')}`] : []),
       '-c:v', 'libx264', '-preset', 'fast', '-crf', '18', '-an',
       segPath,
     ])
     segPaths.push(segPath)
-    prevEnd = f.atSec
   }
 
-  if (prevEnd < videoDur - 0.01) {
-    const tailPath = path.join(tmpDir, 'vo-freeze-seg-tail.mp4')
-    ffmpeg([
-      '-y', '-ss', String(prevEnd),
-      '-i', videoPath,
-      '-c:v', 'libx264', '-preset', 'fast', '-crf', '18', '-an',
-      tailPath,
-    ])
-    segPaths.push(tailPath)
-  }
-
-  const totalFreezeSec = sorted.reduce((a, b) => a + b.durSec, 0)
   console.log(
-    `  Voiceover freeze: ${sorted.length} hold(s), +${totalFreezeSec.toFixed(1)}s`,
+    `  Voiceover freeze: ${segments.length} slice(s), +${totalHoldSec.toFixed(1)}s held`,
   )
 
   const concatList = path.join(tmpDir, 'vo-freeze-concat.txt')
