@@ -2320,6 +2320,32 @@ import type { SpeedConfig, RenderConfig, SubtitleStyle } from 'playwright-recast
 
 ---
 
+## Helper Types
+
+### `SetupRecastOptions`
+
+```typescript
+interface SetupRecastOptions {
+  narrateAutoWait?: boolean | number | {
+    charactersPerSecond?: number
+    minMs?: number
+    maxMs?: number
+  }
+  clickSettleMs?: number  // Default: 150
+  typingDelayMs?: number  // Default average: 100
+}
+```
+
+### `TypeTextOptions`
+
+```typescript
+interface TypeTextOptions {
+  delayMs?: number // Average delay; defaults to setupRecast typingDelayMs
+}
+```
+
+---
+
 ## Trace Types
 
 ### `ParsedTrace`
@@ -3054,13 +3080,13 @@ Initialize the helpers in your fixtures file:
 ```typescript
 // steps/fixtures.ts
 import { test } from 'playwright-bdd'
-import { setupRecast, narrate, pace } from 'playwright-recast'
+import { setupRecast, narrate, pace, typeText } from 'playwright-recast'
 
-setupRecast(test)
-export { narrate, pace }
+setupRecast(test, { typingDelayMs: 100 })
+export { narrate, pace, typeText }
 ```
 
-`setupRecast(test)` connects the step helpers to the Playwright test context. Call it once before defining any steps that rely on narration, zoom, highlight, click, or narration-boundary markers.
+`setupRecast(test)` connects the step helpers to the Playwright test context. Its optional `typingDelayMs` sets the suite-wide average speed for `typeText()`.
 
 ## Using narrate in step definitions
 
@@ -3142,11 +3168,13 @@ Given the admin is logged in
 Combine `zoom` and `highlight` with `narrate` for richer demos:
 
 ```typescript
+import { narrate, zoom, typeText, highlight, pace } from 'playwright-recast'
+
 When('the user fills in the search', async ({ page }, docString?: string) => {
   narrate(docString)
   const searchInput = page.locator('[data-testid="search"]')
   await zoom(searchInput, 1.4)
-  await searchInput.fill('quarterly report')
+  await typeText(searchInput, 'quarterly report')
   await highlight(searchInput, { text: 'quarterly report' })
   await pace(page, 4000)
 })
@@ -3501,6 +3529,49 @@ When('the user clicks the settings icon', async ({ page }, docString?: string) =
 
 ---
 
+## typeText
+
+
+## What it does
+
+`typeText(locator, text)` replaces a field's current value and enters the new text one character at a time. Each keystroke uses a slightly different delay, so the recording looks like a person typing instead of an instantaneous `locator.fill()`.
+
+The helper performs real Playwright keyboard actions. The trace and video capture every intermediate value, and existing speed processing treats the typing interval as a user action. It needs no marker, render option, or pipeline stage.
+
+## Usage
+
+```typescript
+import { typeText } from 'playwright-recast'
+
+await typeText(page.getByLabel('Email'), 'user@example.com')
+await typeText(page.getByLabel('Search'), 'quarterly revenue', { delayMs: 60 })
+```
+
+## Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `locator` | `Locator` | required | Input, textarea, or contenteditable element whose value will be replaced. |
+| `text` | `string` | required | Final text to enter, iterated by Unicode code point. An empty string only clears the field. |
+| `options.delayMs` | `number` | `100` or suite default | Average delay between keystrokes in milliseconds. Must be finite and non-negative. |
+
+## Natural timing
+
+Every character receives an independently sampled delay from 65% through 135% of `delayMs`. With the default of 100 ms, individual delays range from 65 to 135 ms. The helper does not introduce spelling mistakes or Backspace corrections. Pass `delayMs: 0` for immediate sequential input.
+
+## Suite-wide speed
+
+```typescript
+setupRecast(test, { typingDelayMs: 80 })
+
+await typeText(page.getByLabel('Email'), 'user@example.com')
+await typeText(page.getByLabel('Search'), 'revenue', { delayMs: 40 })
+```
+
+A per-call `delayMs` always takes precedence. Calling `setupRecast(test)` again without `typingDelayMs` restores the 100 ms default. `typeText()` also works without `setupRecast()`.
+
+---
+
 ## highlight
 
 
@@ -3589,7 +3660,7 @@ The video will show a yellow marker sweeping across "$42.99" during this step.
 
 ## What it does
 
-`setupRecast(test)` connects the playwright-recast step helpers to your Playwright test context. Helpers that write annotations (`narrate`, `zoom`, `highlight`) require this setup to access `test.info()`. Marker-only helpers degrade safely without it: `waitForNarration()` and `markClick()` no-op, and `click()` falls back to `locator.click(options)` without adding settle/marker work.
+`setupRecast(test)` connects the playwright-recast step helpers to your Playwright test context and sets their suite-wide defaults. Helpers that write annotations (`narrate`, `zoom`, `highlight`) require this setup to access `test.info()`. Marker-only helpers degrade safely without it. `typeText()` works with or without setup; setup only supplies its default typing speed.
 
 Call it once in your fixtures file before relying on recorded narration, zoom, highlight, click, or narration-boundary markers.
 
@@ -3601,6 +3672,27 @@ import { setupRecast } from 'playwright-recast'
 
 setupRecast(test)
 ```
+
+## Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `narrateAutoWait` | `boolean \| number \| object` | off | Default narration auto-wait behavior. |
+| `clickSettleMs` | `number` | `150` | Real-time settle delay used by `click()`. Pass `0` to disable. |
+| `typingDelayMs` | `number` | `100` | Average delay between `typeText()` keystrokes. A per-call `delayMs` overrides it. |
+
+### typingDelayMs — the typing speed
+
+Each actual typing delay varies from 65% through 135% of this suite-wide average:
+
+```typescript
+setupRecast(test, { typingDelayMs: 80 })
+
+await typeText(page.getByLabel('Email'), 'user@example.com')
+await typeText(page.getByLabel('Search'), 'revenue', { delayMs: 40 })
+```
+
+Pass `0` for immediate sequential input. Calling `setupRecast(test)` again without `typingDelayMs` restores the built-in 100 ms average.
 
 Or with standard Playwright:
 
@@ -3620,18 +3712,19 @@ setupRecast(test)
 ```typescript
 // steps/fixtures.ts
 import { test } from 'playwright-bdd'
-import { setupRecast, narrate, pace } from 'playwright-recast'
+import { setupRecast, narrate, pace, typeText } from 'playwright-recast'
 
-setupRecast(test)
-export { narrate, pace }
+setupRecast(test, { typingDelayMs: 80 })
+export { narrate, pace, typeText }
 
 // steps/dashboard.ts
 import { Given } from './fixtures'
-import { narrate, pace } from 'playwright-recast'
+import { narrate, pace, typeText } from 'playwright-recast'
 
 Given('the user opens the dashboard', async ({ page }, docString?: string) => {
   narrate(docString)
   await page.goto('/dashboard')
+  await typeText(page.getByLabel('Search'), 'quarterly revenue')
   await pace(page, 4000)
 })
 ```

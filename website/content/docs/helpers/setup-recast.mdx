@@ -5,7 +5,7 @@ description: Initialize playwright-recast helpers with your Playwright test inst
 
 ## What it does
 
-`setupRecast(test)` connects the playwright-recast step helpers to your Playwright test context. Helpers that write annotations (`narrate`, `zoom`, `highlight`) require this setup to access `test.info()`. Marker-only helpers degrade safely without it: `waitForNarration()` and `markClick()` no-op, and `click()` falls back to `locator.click(options)` without adding settle/marker work.
+`setupRecast(test)` connects the playwright-recast step helpers to your Playwright test context and sets their suite-wide defaults. Helpers that write annotations (`narrate`, `zoom`, `highlight`) require this setup to access `test.info()`. Marker-only helpers degrade safely without it: `waitForNarration()` and `markClick()` no-op, and `click()` falls back to `locator.click(options)` without adding settle/marker work. [`typeText()`](/docs/helpers/type-text) works with or without setup; setup only supplies its default typing speed.
 
 Call it once in your fixtures file before relying on recorded narration, zoom, highlight, click, or narration-boundary markers.
 
@@ -33,6 +33,7 @@ setupRecast(test)
 |--------|------|---------|-------------|
 | `narrateAutoWait` | `boolean \| number \| object` | off | Default [`autoWait`](/docs/helpers/narrate#autowait--visual-time-without-tts) applied to every `narrate()` call that omits its own. |
 | `clickSettleMs` | `number` | `150` | Real-time settle delay the [`click()`](/docs/helpers/click) helper waits before marking, so the recorder captures a painted frame of the target. Pass `0` to disable. |
+| `typingDelayMs` | `number` | `100` | Average delay between [`typeText()`](/docs/helpers/type-text) keystrokes. A per-call `delayMs` overrides it. |
 
 ### narrateAutoWait — a global autoWait default
 
@@ -72,6 +73,19 @@ setupRecast(test, { clickSettleMs: 0 })   // disable the settle entirely
 
 This is the only real-time cost `click()` adds to the test run. `markClick()` does not settle — standalone callers own their own timing.
 
+### typingDelayMs — the typing speed
+
+Set the average delay between [`typeText()`](/docs/helpers/type-text) keystrokes for the whole suite. Each actual delay varies from 65% through 135% of the configured average, producing a natural cadence while keeping duration bounded:
+
+```typescript
+setupRecast(test, { typingDelayMs: 80 })
+
+await typeText(page.getByLabel('Email'), 'user@example.com')
+await typeText(page.getByLabel('Search'), 'revenue', { delayMs: 40 })
+```
+
+The per-call `delayMs` wins when supplied. Pass `0` globally or per call for immediate sequential input. Calling `setupRecast(test)` again without `typingDelayMs` restores the built-in 100 ms average.
+
 ## How it works
 
 `setupRecast` receives the `test` object and uses `test.info()` internally to access the current test's annotations. The annotation helpers (`narrate`, `zoom`, `highlight`) write structured data there, while marker helpers (`click`, `markClick`, `waitForNarration`) write marker-prefixed `test.step()` entries into the trace zip for the pipeline to read during video generation.
@@ -81,18 +95,19 @@ This is the only real-time cost `click()` adds to the test run. `markClick()` do
 ```typescript
 // steps/fixtures.ts
 import { test } from 'playwright-bdd'
-import { setupRecast, narrate, pace } from 'playwright-recast'
+import { setupRecast, narrate, pace, typeText } from 'playwright-recast'
 
-setupRecast(test)
-export { narrate, pace }
+setupRecast(test, { typingDelayMs: 80 })
+export { narrate, pace, typeText }
 
 // steps/dashboard.ts
 import { Given } from './fixtures'
-import { narrate, pace } from 'playwright-recast'
+import { narrate, pace, typeText } from 'playwright-recast'
 
 Given('the user opens the dashboard', async ({ page }, docString?: string) => {
   narrate(docString)
   await page.goto('/dashboard')
+  await typeText(page.getByLabel('Search'), 'quarterly revenue')
   await pace(page, 4000)
 })
 ```

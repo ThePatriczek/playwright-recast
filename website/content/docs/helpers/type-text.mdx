@@ -1,0 +1,73 @@
+---
+title: typeText
+description: Type into a field with naturally varied, configurable keystroke timing.
+---
+
+## What it does
+
+`typeText(locator, text)` replaces a field's current value and enters the new text one character at a time. Each keystroke uses a slightly different delay, so the recording looks like a person typing instead of an instantaneous `locator.fill()`.
+
+The helper performs real Playwright keyboard actions. The trace and video therefore capture every intermediate value, and existing speed processing treats the typing interval as a user action. It needs no marker, render option, or pipeline stage.
+
+## Usage
+
+```typescript
+import { typeText } from 'playwright-recast'
+
+await typeText(page.getByLabel('Email'), 'user@example.com')
+await typeText(page.getByLabel('Search'), 'quarterly revenue', {
+  delayMs: 60,
+})
+```
+
+## Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `locator` | `Locator` | required | Input, textarea, or contenteditable element whose value will be replaced. |
+| `text` | `string` | required | Final text to enter, iterated by Unicode code point. An empty string only clears the field. |
+| `options.delayMs` | `number` | `100` or suite default | Average delay between keystrokes in milliseconds. Must be finite and non-negative. |
+
+## Natural timing
+
+`delayMs` is an average rather than an exact cadence. Every character receives an independently sampled delay from 65% through 135% of that value. With the default of 100 ms, individual delays range from 65 to 135 ms.
+
+The variation is intentionally bounded: recordings look less mechanical while test duration remains predictable. The helper does not introduce spelling mistakes or Backspace corrections.
+
+Pass `delayMs: 0` to keep character-by-character input but remove all delay:
+
+```typescript
+await typeText(page.getByLabel('Name'), 'Ada Lovelace', { delayMs: 0 })
+```
+
+## Suite-wide speed
+
+Set a default once with [`setupRecast()`](/docs/helpers/setup-recast#typingdelayms--the-typing-speed):
+
+```typescript
+setupRecast(test, { typingDelayMs: 80 })
+
+await typeText(page.getByLabel('Email'), 'user@example.com')       // average 80 ms
+await typeText(page.getByLabel('Search'), 'revenue', { delayMs: 40 }) // average 40 ms
+```
+
+A per-call `delayMs` always takes precedence. Calling `setupRecast(test)` again without `typingDelayMs` restores the 100 ms default. Unlike marker helpers, `typeText()` also works without `setupRecast()` and uses that built-in default.
+
+## Replacement and failure behavior
+
+`typeText()` first calls `locator.fill('')`, then types the requested value at the field's current caret position. This gives it replacement semantics rather than appending to an existing value.
+
+Playwright errors are not hidden or retried by the helper. If an error occurs after some characters were entered, the partial value remains in the field for normal Playwright diagnostics.
+
+## Example in a BDD step
+
+```typescript
+import { When } from './fixtures'
+import { narrate, typeText, waitForNarration } from 'playwright-recast'
+
+When('the user searches for a report', async ({ page }, docString?: string) => {
+  await narrate(docString)
+  await typeText(page.getByLabel('Search'), 'quarterly revenue')
+  await waitForNarration()
+})
+```

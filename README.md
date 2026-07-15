@@ -54,7 +54,7 @@ await Recast
 - **Cursor overlay** — Animated cursor travels between click positions with configurable duration, easing, and post-arrival visibility. Bundled arrow cursor or custom image.
 - **Animated zoom with easing** — Auto-zoom uses customizable easing functions (ease-in-out, ease-out, cubic-bezier, or custom JS functions) with smooth zoom-to-zoom panning.
 - **Frame interpolation** — Smooth out choppy browser recordings with ffmpeg minterpolate. Blend, duplicate, or motion-compensated modes with multi-pass support.
-- **Step helpers** — `narrate()`, `highlight()`, `zoom()`, `pace()`, `click()`, `markClick()`, `waitForNarration()` — importable helpers for Playwright step definitions. `narrate/highlight/zoom/click` write marker steps directly into the trace zip, so the pipeline picks them up automatically via `subtitlesFromTrace()` (no `report.json` or extra pipeline calls needed).
+- **Step helpers** — `narrate()`, `highlight()`, `zoom()`, `pace()`, `typeText()`, `click()`, `markClick()`, `waitForNarration()` — importable helpers for Playwright step definitions. `typeText()` replaces instant fills with visible, naturally varied keystrokes; marker helpers write directly into the trace zip so the pipeline picks them up automatically via `subtitlesFromTrace()`.
 - **Polished click markers** — `click()` / `markClick()` mark a click in the trace; the renderer prefers these over auto-detected clicks and plays a deliberate, held cursor approach over the painted target (configurable via `cursorOverlay({ approachMs })`) — no more "the mouse moves before there's anything to click on."
 - **Voiceover-driven freezes** — When a TTS narration is longer than its visual window, the renderer holds the current frame until the audio finishes; overlays freeze with it, click sounds shift to match. `waitForNarration()` marks an explicit beat to hold on until a line is fully spoken — so with TTS you can skip `autoWait` entirely and run the test at full speed while the rendered video stays in sync.
 - **Soft (embedded) subtitle track** — `render({ embedSubtitles: true })` muxes a toggleable subtitle track into the container (`mov_text` for mp4, `webvtt` for webm).
@@ -156,21 +156,21 @@ await Recast
 
 ### playwright-bdd Integration
 
-Use `narrate()`, `highlight()`, `zoom()`, `pace()`, `click()`, and `waitForNarration()` in your BDD step definitions:
+Use `narrate()`, `highlight()`, `zoom()`, `pace()`, `typeText()`, `click()`, and `waitForNarration()` in your BDD step definitions:
 
 ```typescript
 // steps/fixtures.ts
 import { test } from 'playwright-bdd'
-import { setupRecast, narrate, highlight, zoom, pace, click, waitForNarration } from 'playwright-recast'
+import { setupRecast, narrate, highlight, zoom, pace, typeText, click, waitForNarration } from 'playwright-recast'
 
 setupRecast(test)
 // Optional global defaults:
-// setupRecast(test, { narrateAutoWait: true, clickSettleMs: 200 })
-export { narrate, highlight, zoom, pace, click, waitForNarration }
+// setupRecast(test, { narrateAutoWait: true, clickSettleMs: 200, typingDelayMs: 100 })
+export { narrate, highlight, zoom, pace, typeText, click, waitForNarration }
 
 // steps/my-steps.ts
 import { Given, When, Then } from './fixtures'
-import { narrate, highlight, zoom, pace, click, waitForNarration } from 'playwright-recast'
+import { narrate, highlight, zoom, pace, typeText, click, waitForNarration } from 'playwright-recast'
 
 Given('the user opens the dashboard', async ({ page }, docString?: string) => {
   await narrate(docString)
@@ -180,6 +180,7 @@ Given('the user opens the dashboard', async ({ page }, docString?: string) => {
 
 When('the user highlights revenue', async ({ page }, docString?: string) => {
   await narrate(docString, { autoWait: true })  // pad test with estimated speak time
+  await typeText(page.getByLabel('Search'), 'quarterly revenue')
   await highlight(page.locator('h2'), { text: 'Revenue' })
   await zoom(page.locator('.kpi-card'), 1.3)
 })
@@ -191,7 +192,7 @@ Then('the user opens the report', async ({ page }, docString?: string) => {
 })
 ```
 
-Each helper writes a marker-prefixed `test.step()` into the trace zip after `setupRecast(test)` has connected the helpers to Playwright — `subtitlesFromTrace()` picks them all up and the renderer applies overlays, zoom, clicks, and per-narration timing automatically. `click()` markers render with a held cursor approach when the pipeline includes `cursorOverlay()` and/or `clickEffect()`.
+Marker helpers write marker-prefixed `test.step()` entries into the trace zip after `setupRecast(test)` has connected them to Playwright — `subtitlesFromTrace()` picks them up and the renderer applies overlays, zoom, clicks, and per-narration timing automatically. `typeText()` performs real Playwright keyboard actions, so the trace and video capture each character without a marker or pipeline stage. `click()` markers render with a held cursor approach when the pipeline includes `cursorOverlay()` and/or `clickEffect()`.
 
 ```gherkin
 Feature: Dashboard demo

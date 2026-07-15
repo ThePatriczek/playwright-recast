@@ -31,11 +31,12 @@ playwright-recast is a fluent pipeline library that turns Playwright trace files
 - [Recast Class API](https://thepatriczek.github.io/playwright-recast/docs/api-reference/recast-class): Complete pipeline API reference
 - [Types](https://thepatriczek.github.io/playwright-recast/docs/api-reference/types): TypeScript type definitions
 - [Subtitle Utilities](https://thepatriczek.github.io/playwright-recast/docs/api-reference/subtitle-utilities): SRT/VTT/ASS writer utilities
-- [playwright-bdd Integration](https://thepatriczek.github.io/playwright-recast/docs/integrations/playwright-bdd): BDD step definitions with narrate/zoom/pace helpers
+- [playwright-bdd Integration](https://thepatriczek.github.io/playwright-recast/docs/integrations/playwright-bdd): BDD step definitions with narration, organic typing, zoom, and pacing helpers
 - [recast-studio Integration](https://thepatriczek.github.io/playwright-recast/docs/integrations/recast-studio): Record and generate via Claude Code
 - [narrate() Helper](https://thepatriczek.github.io/playwright-recast/docs/helpers/narrate): Add voiceover narration to steps
 - [zoom() Helper](https://thepatriczek.github.io/playwright-recast/docs/helpers/zoom): Capture zoom targets during tests
 - [pace() Helper](https://thepatriczek.github.io/playwright-recast/docs/helpers/pace): Control pacing in step definitions
+- [typeText() Helper](https://thepatriczek.github.io/playwright-recast/docs/helpers/type-text): Type visible text with naturally varied, configurable timing
 - [highlight() Helper](https://thepatriczek.github.io/playwright-recast/docs/helpers/highlight): Mark text for highlight overlay
 - [setupRecast() Helper](https://thepatriczek.github.io/playwright-recast/docs/helpers/setup-recast): Register recast fixtures with Playwright
 - [Minimal Pipeline Example](https://thepatriczek.github.io/playwright-recast/docs/examples/minimal-pipeline): Simplest possible pipeline

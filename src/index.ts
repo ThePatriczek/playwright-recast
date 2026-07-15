@@ -1,8 +1,9 @@
 // Public API
 export { Pipeline as Recast } from './pipeline/pipeline.js'
 
-// Step helpers (narrate, zoom, pace)
-export { setupRecast, narrate, zoom, pace, highlight, waitForNarration, markClick, click } from './helpers.js'
+// Step helpers
+export { setupRecast, narrate, zoom, pace, typeText, highlight, waitForNarration, markClick, click } from './helpers.js'
+export type { SetupRecastOptions, TypeTextOptions } from './helpers.js'
 
 // Providers
 export { OpenAIProvider } from './voiceover/providers/openai.js'

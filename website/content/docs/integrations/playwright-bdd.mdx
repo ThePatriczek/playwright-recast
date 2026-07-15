@@ -20,13 +20,13 @@ Initialize the helpers in your fixtures file:
 ```typescript
 // steps/fixtures.ts
 import { test } from 'playwright-bdd'
-import { setupRecast, narrate, pace } from 'playwright-recast'
+import { setupRecast, narrate, pace, typeText } from 'playwright-recast'
 
-setupRecast(test)
-export { narrate, pace }
+setupRecast(test, { typingDelayMs: 100 })
+export { narrate, pace, typeText }
 ```
 
-`setupRecast(test)` connects the step helpers to the Playwright test context. Call it once before defining any steps that rely on narration, zoom, highlight, click, or narration-boundary markers.
+`setupRecast(test)` connects the step helpers to the Playwright test context. Call it once before defining any steps that rely on narration, zoom, highlight, click, or narration-boundary markers. Its optional `typingDelayMs` sets the suite-wide average speed for [`typeText()`](/docs/helpers/type-text).
 
 ## Using narrate in step definitions
 
@@ -108,11 +108,13 @@ Given the admin is logged in
 Combine `zoom` and `highlight` with `narrate` for richer demos:
 
 ```typescript
+import { narrate, zoom, typeText, highlight, pace } from 'playwright-recast'
+
 When('the user fills in the search', async ({ page }, docString?: string) => {
   narrate(docString)
   const searchInput = page.locator('[data-testid="search"]')
   await zoom(searchInput, 1.4)
-  await searchInput.fill('quarterly report')
+  await typeText(searchInput, 'quarterly report')
   await highlight(searchInput, { text: 'quarterly report' })
   await pace(page, 4000)
 })

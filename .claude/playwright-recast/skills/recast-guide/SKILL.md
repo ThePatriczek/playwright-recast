@@ -167,14 +167,14 @@ Needs a CUDA GPU (~4–8 GB VRAM) and `HF_TOKEN` if the chosen weights are gated
 
 ## playwright-bdd Integration
 
-Step helpers for BDD test definitions. Each marker helper (`narrate`, `highlight`, `zoom`, `click`/`markClick`) writes a marker-prefixed `test.step()` directly into the trace zip — `subtitlesFromTrace()` picks them all up automatically. No separate `report.json` or extra pipeline calls required.
+Step helpers for BDD test definitions. Each marker helper (`narrate`, `highlight`, `zoom`, `click`/`markClick`) writes a marker-prefixed `test.step()` directly into the trace zip — `subtitlesFromTrace()` picks them all up automatically. `typeText()` performs real, naturally paced keyboard input so every intermediate value appears in the recording. No separate `report.json` or extra pipeline calls required.
 
 ```typescript
-import { setupRecast, narrate, highlight, zoom, pace, click, waitForNarration } from 'playwright-recast'
+import { setupRecast, narrate, highlight, zoom, pace, typeText, click, waitForNarration } from 'playwright-recast'
 
 // In fixtures.ts — initialize once:
 setupRecast(test)
-// Optional global defaults: setupRecast(test, { narrateAutoWait: true, clickSettleMs: 200 })
+// Optional global defaults: setupRecast(test, { narrateAutoWait: true, clickSettleMs: 200, typingDelayMs: 100 })
 
 // In step definitions:
 Given('the user opens dashboard', async ({ page }, docString?: string) => {
@@ -185,6 +185,7 @@ Given('the user opens dashboard', async ({ page }, docString?: string) => {
 
 When('the user reviews KPI', async ({ page }, docString?: string) => {
   await narrate(docString, { autoWait: true }) // pad test by estimated speak time
+  await typeText(page.getByLabel('Search'), 'quarterly revenue')
   await highlight(page.locator('h2'), { text: 'Revenue' })
   await zoom(page.locator('.kpi-card'), 1.3)
 })
@@ -195,6 +196,8 @@ Then('the user opens the report', async ({ page }, docString?: string) => {
   await waitForNarration()                                 // hold until the line finishes
 })
 ```
+
+**`typeText()`:** prefer this over `locator.fill()` when text entry should be visible in the demo. It clears the field, then enters each Unicode code point through Playwright with a bounded ±35% variation around the average delay. Configure the suite default with `setupRecast({ typingDelayMs })` (default 100ms) or override one call with `{ delayMs }`. No setup, trace marker, or render stage is required.
 
 **`click()` / `markClick()`:** mark a click in the trace. The renderer prefers markers over auto-detected clicks and plays a held cursor approach over the painted target (needs `cursorOverlay()` and/or `clickEffect()`; hold = `cursorOverlay({ approachMs })`, default 500ms). A marker suppresses the matching auto-click; if several markers compete, the nearest eligible marker wins. `click()` settles → marks → real click (forwards click options; settle = `setupRecast({ clickSettleMs })`, default 150ms). `markClick()` writes the marker only — use it when you drive the interaction yourself. Without `setupRecast(test)`, `markClick()` no-ops and `click()` falls back to plain `locator.click(options)`.
 

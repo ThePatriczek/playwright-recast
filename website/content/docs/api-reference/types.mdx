@@ -12,6 +12,36 @@ import type { SpeedConfig, RenderConfig, SubtitleStyle } from 'playwright-recast
 
 ---
 
+## Helper Types
+
+### `SetupRecastOptions`
+
+Suite-wide defaults accepted by [`setupRecast()`](/docs/helpers/setup-recast).
+
+```typescript
+interface SetupRecastOptions {
+  narrateAutoWait?: boolean | number | {
+    charactersPerSecond?: number
+    minMs?: number
+    maxMs?: number
+  }
+  clickSettleMs?: number  // Default: 150
+  typingDelayMs?: number  // Default average: 100
+}
+```
+
+### `TypeTextOptions`
+
+Per-call options accepted by [`typeText()`](/docs/helpers/type-text).
+
+```typescript
+interface TypeTextOptions {
+  delayMs?: number // Average delay; defaults to setupRecast typingDelayMs
+}
+```
+
+---
+
 ## Trace Types
 
 ### `ParsedTrace`

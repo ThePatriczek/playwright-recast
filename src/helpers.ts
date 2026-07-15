@@ -9,6 +9,20 @@ type NarrateAutoWait =
   | number
   | { charactersPerSecond?: number; minMs?: number; maxMs?: number }
 
+/** Global defaults applied to playwright-recast recording helpers. */
+export interface SetupRecastOptions {
+  narrateAutoWait?: NarrateAutoWait
+  clickSettleMs?: number
+  /** Average delay between `typeText()` keystrokes in ms (default: 100). */
+  typingDelayMs?: number
+}
+
+/** Per-call options for `typeText()`. */
+export interface TypeTextOptions {
+  /** Average delay between keystrokes in ms. */
+  delayMs?: number
+}
+
 /**
  * Get current test info — works in both playwright-bdd and standard Playwright.
  * Must be called from within a test context.
@@ -28,6 +42,10 @@ let _narrateAutoWait: NarrateAutoWait | undefined = undefined
  *  captures a painted frame of the target. Overridable via setupRecast. */
 const DEFAULT_CLICK_SETTLE_MS = 150
 let _clickSettleMs = DEFAULT_CLICK_SETTLE_MS
+/** Average delay between `typeText()` keystrokes. Each actual delay varies
+ *  by +/- 35% to avoid a mechanical cadence. */
+const DEFAULT_TYPING_DELAY_MS = 100
+let _typingDelayMs = DEFAULT_TYPING_DELAY_MS
 
 /**
  * Title prefix written to a trace step by `narrate()`. The `subtitlesFromTrace`
@@ -86,15 +104,18 @@ function estimateNarrationMs(text: string, charsPerSecond: number): number {
  *   minMs, maxMs }`. A per-call `autoWait` (including `false`) overrides this.
  * @param options.clickSettleMs Real-time settle delay for `click()` in ms
  *   (default: 150). Pass 0 to disable.
+ * @param options.typingDelayMs Default average delay between `typeText()`
+ *   keystrokes in ms (default: 100). A per-call `delayMs` overrides this.
  */
 export function setupRecast(
   testInstance: RecastTest,
-  options?: { narrateAutoWait?: NarrateAutoWait, clickSettleMs?: number },
+  options?: SetupRecastOptions,
 ): void {
   _getTestInfo = () => testInstance.info()
   _step = testInstance.step.bind(testInstance)
   _narrateAutoWait = options?.narrateAutoWait
   _clickSettleMs = options?.clickSettleMs ?? DEFAULT_CLICK_SETTLE_MS
+  _typingDelayMs = options?.typingDelayMs ?? DEFAULT_TYPING_DELAY_MS
 }
 
 /**
@@ -331,6 +352,34 @@ export async function highlight(
  */
 export async function pace(page: Page, ms: number): Promise<void> {
   await page.waitForTimeout(ms)
+}
+
+/**
+ * Replace a field's value by typing it one character at a time with a
+ * human-like cadence. The configured delay is an average: each keystroke
+ * varies uniformly between 65% and 135% of it.
+ *
+ * Delays are passed to Playwright's `pressSequentially()` action rather than
+ * implemented as external waits. This keeps the whole typing interval
+ * classified as a user action when the rendered video is speed-processed.
+ */
+export async function typeText(
+  locator: Locator,
+  text: string,
+  options?: TypeTextOptions,
+): Promise<void> {
+  const averageDelayMs = options?.delayMs ?? _typingDelayMs
+  if (!Number.isFinite(averageDelayMs) || averageDelayMs < 0) {
+    throw new RangeError('typeText delayMs must be a finite, non-negative number')
+  }
+
+  await locator.fill('')
+  for (const character of text) {
+    const delay = Math.round(
+      averageDelayMs * (0.65 + Math.random() * 0.70),
+    )
+    await locator.pressSequentially(character, { delay })
+  }
 }
 
 /**
