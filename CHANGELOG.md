@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.19.2 (2026-07-15)
+
+### Features
+
+- **`typeText()` organic typing helper** ([#19](https://github.com/ThePatriczek/playwright-recast/pull/19)) — New step helper that replaces a field's value by typing it one Unicode code point at a time with a human-like cadence, so recordings show visible text entry instead of an instantaneous `fill()`. Each keystroke's delay varies ±35 % around a configurable average (`delayMs`, default 100 ms); the suite-wide default is set via `setupRecast(test, { typingDelayMs })`. Delays run inside Playwright's `pressSequentially()`, so speed processing keeps classifying the typing interval as user activity. Works with or without `setupRecast()`; invalid delays are rejected before the field is touched. Exports `TypeTextOptions` and `SetupRecastOptions`. Thanks to [@LukaHummel](https://github.com/LukaHummel).
+
+### Docs
+
+- New `typeText()` page, `setupRecast({ typingDelayMs })` option docs, helper-type API reference, and updated README/BDD-integration examples and LLM indexes.
+
+### Internal
+
+- Test suite: **496 passed** (+15 — `typeText` delay bounds, suite/per-call precedence, Unicode code-point iteration, validation-before-mutation, and failure-propagation coverage).
+
 ## 0.19.1 (2026-07-15)
 
 ### Features
