@@ -3,6 +3,8 @@ import * as fs from 'node:fs'
 import { parseArgs } from 'node:util'
 import { Pipeline as Recast } from './pipeline/pipeline.js'
 import type { TextProcessingConfig } from './types/text-processing.js'
+import { splitCommand } from './suite/cli-args.js'
+import { runRenderSuite, runTest, suiteHelp } from './suite/cli-commands.js'
 
 const help = `
 playwright-recast — Convert Playwright traces to polished demo videos
@@ -45,6 +47,8 @@ EXAMPLES
   playwright-recast -i trace.zip --speed-idle 4 --burn-subs
   playwright-recast -i ./traces --srt narration.srt --provider openai --voice nova
   playwright-recast -i ./traces --srt narration.srt --provider qwen --qwen-config qwen.json
+
+${suiteHelp}
 `.trim()
 
 function fatal(message: string): never {
@@ -52,8 +56,9 @@ function fatal(message: string): never {
   process.exit(1)
 }
 
-async function main(): Promise<void> {
+async function renderSingleTrace(argv: readonly string[]): Promise<void> {
   const { values } = parseArgs({
+    args: [...argv],
     options: {
       input: { type: 'string', short: 'i' },
       output: { type: 'string', short: 'o' },
@@ -251,8 +256,27 @@ async function main(): Promise<void> {
   console.log(`Done! Video saved to: ${output}`)
 }
 
-main().catch((error: unknown) => {
-  const message = error instanceof Error ? error.message : String(error)
-  console.error(`Fatal error: ${message}`)
-  process.exit(1)
-})
+async function main(): Promise<number> {
+  const { command, rest } = splitCommand(process.argv.slice(2))
+
+  switch (command) {
+    case 'render-suite':
+      return runRenderSuite(rest)
+    case 'test':
+      return runTest(rest)
+    default:
+      await renderSingleTrace(rest)
+      return 0
+  }
+}
+
+main()
+  .then(exitCode => {
+    // An explicit exit keeps a non-zero code from a suite run intact.
+    if (exitCode !== 0) process.exit(exitCode)
+  })
+  .catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error)
+    console.error(`Fatal error: ${message}`)
+    process.exit(1)
+  })

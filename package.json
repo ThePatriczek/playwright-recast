@@ -38,6 +38,14 @@
       "types": "./dist/helpers.d.ts",
       "default": "./dist/helpers.js"
     },
+    "./reporter": {
+      "types": "./dist/suite/reporter.d.ts",
+      "default": "./dist/suite/reporter.js"
+    },
+    "./suite": {
+      "types": "./dist/suite/config.d.ts",
+      "default": "./dist/suite/config.js"
+    },
     "./providers/openai": {
       "types": "./dist/voiceover/providers/openai.d.ts",
       "default": "./dist/voiceover/providers/openai.js"

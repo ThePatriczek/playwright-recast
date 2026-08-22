@@ -5,6 +5,30 @@ export { Pipeline as Recast } from './pipeline/pipeline.js'
 export { setupRecast, narrate, zoom, pace, typeText, highlight, waitForNarration, markClick, click } from './helpers.js'
 export type { SetupRecastOptions, TypeTextOptions } from './helpers.js'
 
+// Suite orchestration
+export { defineSuite, loadSuiteConfig, findConfigFile } from './suite/config.js'
+export type { SuiteConfig, ClipTest } from './suite/config.js'
+export { renderSuite } from './suite/orchestrator.js'
+export type { RenderSuiteOptions, RenderSuiteResult } from './suite/orchestrator.js'
+export { readManifest, writeManifest, parseManifest, filterTests, computeSummary } from './suite/manifest.js'
+export { planSuite, resolveResultPolicy } from './suite/plan.js'
+export type { PlanItem, ClipPlanItem, CardPlanItem } from './suite/plan.js'
+
+export type {
+  RunManifest,
+  SuiteTest,
+  SuiteTestStatus,
+  SuiteSummary,
+  SuiteResultPolicy,
+  ResolvedSuiteResultPolicy,
+  SuiteCardConfig,
+  SuiteTransition,
+  CardContent,
+  FailurePolicy,
+  SkippedPolicy,
+  MissingTracePolicy,
+} from './types/suite.js'
+
 // Providers
 export { OpenAIProvider } from './voiceover/providers/openai.js'
 export { ElevenLabsProvider } from './voiceover/providers/elevenlabs.js'

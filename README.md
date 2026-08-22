@@ -60,6 +60,7 @@ await Recast
 - **Soft (embedded) subtitle track** — `render({ embedSubtitles: true })` muxes a toggleable subtitle track into the container (`mov_text` for mp4, `webvtt` for webm).
 - **Background music** — Add background music with auto-ducking during voiceover, looping, and fade-out. Covers intro/outro.
 - **Intro/outro** — Prepend/append branded video clips with smooth crossfade transitions. Audio preserved.
+- **Suite videos** — One Playwright run, one video. A reporter records the run, each test becomes a clip in declaration order, and failures, skips and the final tally become cards. Exits with Playwright's own status.
 - **MCP server** — AI-assisted video creation via Model Context Protocol. Record, analyze, and render through any MCP-compatible client (Claude Code, etc.).
 - **recast-studio** — Record browser sessions via Playwright Codegen, then generate videos with a Claude Code skill. No code required.
 - **CLI included** — `npx playwright-recast -i trace.zip -o demo.mp4` — no code needed.
@@ -669,6 +670,141 @@ await base.subtitlesFromSrt('./en.srt').voiceover(openai).render().toFile('demo-
 // Branch B: subtitles only
 await base.subtitlesFromSrt('./cs.srt').render({ burnSubtitles: true }).toFile('demo-cs.mp4')
 ```
+
+---
+
+## Suite Videos
+
+One Playwright run, one video. Each test becomes a clip, clips are joined in **declaration order**, and the suite result is reflected in the output — failed tests get a card with the error, skipped tests get a card, and the video closes on a summary.
+
+### 1. Register the reporter
+
+```typescript
+// playwright.config.ts
+import { defineConfig } from '@playwright/test'
+
+export default defineConfig({
+  reporter: [
+    ['list'],
+    ['playwright-recast/reporter', { outputFile: '.recast/run.json' }],
+  ],
+  use: {
+    trace: 'on',   // required — `retain-on-failure` leaves passing tests with no trace
+    video: 'on',   // recommended — gives the renderer a full-rate source
+  },
+})
+```
+
+The reporter writes a run manifest and nothing else: which tests exist, in what order they are declared, how each one ended, and where its trace landed.
+
+### 2. Describe the suite
+
+```typescript
+// recast.config.ts
+import { defineSuite, Recast, OpenAIProvider } from 'playwright-recast'
+
+export default defineSuite({
+  name: 'Product walkthrough',
+  output: 'videos/walkthrough.mp4',
+  grep: /@video/,
+
+  // Called once per test. Return a Pipeline — recast runs it for you.
+  clip: test => Recast
+    .from(test.tracePath)
+    .parse()
+    .speedUp({ duringIdle: 3.0, duringUserAction: 1.0 })
+    .subtitlesFromTrace()
+    .voiceover(OpenAIProvider({ voice: 'nova' }))
+    .cursorOverlay()
+    .render({ resolution: '1080p' }),
+})
+```
+
+`clip` is the full fluent API, not a config subset — branch on `test.status`, `test.tags`, or `test.title` however you like, and return `null` to leave a test out.
+
+### 3. Render
+
+```bash
+# run the tests, then render — exits with Playwright's own exit code
+npx playwright-recast test -- --project=chromium --grep=@video
+
+# or render from a run you already have
+npx playwright-recast render-suite --manifest .recast/run.json -o videos/demo.mp4
+```
+
+A red suite stays red: the video is rendered whatever the tests did, but the process still exits with Playwright's status, so CI is not misled by a successful render.
+
+### Test authoring
+
+Nothing new to learn — the existing step helpers are the authoring API:
+
+```typescript
+import { test } from '@playwright/test'
+import { setupRecast, narrate, click, waitForNarration } from 'playwright-recast'
+
+setupRecast(test)
+
+test('creates a project', { tag: '@video' }, async ({ page }) => {
+  await narrate('The user starts by creating a new project.')
+  await click(page.getByRole('button', { name: 'New Project' }))
+  await waitForNarration()
+})
+```
+
+### Result behavior
+
+| Playwright result | Video behavior |
+| --- | --- |
+| Passed | The final attempt is rendered as a clip |
+| Failed | A card with the test name and first error line (configurable) |
+| Skipped | A short skipped card |
+| Retried | Only the final attempt is used |
+| No trace | A placeholder card, so the suite video still completes |
+| Clip render throws | Degrades to a card — one bad trace does not cost you the rest of the run |
+
+Tune it with `results`:
+
+```typescript
+export default defineSuite({
+  // ...
+  results: {
+    failures: 'clip+card',  // 'card' (default) | 'clip' | 'clip+card' | 'omit'
+    skipped: 'card',        // 'card' (default) | 'omit'
+    missingTrace: 'card',   // 'card' (default) | 'omit'
+    summary: true,          // closing summary card (default)
+  },
+})
+```
+
+A failure with nothing renderable always gets a card, whatever the policy — silently dropping a failed test would misrepresent the run.
+
+### Cards
+
+Cards are HTML screenshotted by headless Chromium, so they theme cleanly and inherit the resolution and frame rate of the rendered clips:
+
+```typescript
+cards: {
+  durationMs: 2500,
+  background: '#0f1115',
+  color: '#f5f7fa',
+  accent: '#ff5f56',
+  template: card => `<html>...${card.title}...</html>`,  // full override
+}
+```
+
+Chromium launches only if at least one card is actually needed.
+
+### Suite CLI options
+
+| Flag | Meaning |
+| --- | --- |
+| `-c, --config <path>` | Suite config (default: `./recast.config.ts`) |
+| `--manifest <path>` | Run manifest (default: `.recast/run.json`) |
+| `-o, --output <path>` | Output video (default: the config's `output`) |
+| `--keep-clips` | Keep the per-test clips for inspection |
+| `--inject-reporter` | Append the reporter to the `playwright test` command. Quick-start only — it replaces the reporters in `playwright.config.ts`. |
+
+> **TypeScript configs** need Node 22.18+ (native type stripping) or a loader such as `tsx`. A `recast.config.mjs` works everywhere.
 
 ---
 
