@@ -487,12 +487,13 @@ await Recast
     inputLevel: 1.4,    // zoom level for fill/type actions
     clickLevel: 1.0,    // 1.0 = no zoom on clicks (default)
     centerBias: 0.3,    // blend coordinates toward center (0–1)
+    containInCue: false, // keep transitions inside the cue window
   })
   .render({ format: 'mp4' })
   .toFile('demo.mp4')
 ```
 
-`autoZoom()` finds click/fill/type actions in the trace, extracts their cursor coordinates, and applies crop-and-scale zoom during the matching subtitle's time window.
+`autoZoom()` finds click/fill/type actions in the trace, extracts their cursor coordinates, and applies crop-and-scale zoom during the matching subtitle's time window. By default a cue's zoom-in starts `transitionMs` before the cue and its zoom-out ends `transitionMs` after it, which can overlap an adjacent cue. Set `containInCue: true` to keep both transitions inside the cue's own window; a cue shorter than twice `transitionMs` splits its time evenly between zoom-in and zoom-out with no hold. Off by default, because it changes how existing demos look.
 
 ### Zoom from report data
 
@@ -644,8 +645,11 @@ The speed processor classifies every moment of the trace:
   duringNavigation: 2.0,
   minSegmentDuration: 500,  // Avoid jarring speed changes
   maxSpeed: 8.0,            // Safety cap
+  exactBoundaries: false,   // sample at exact narration/hidden boundaries too
 })
 ```
+
+`exactBoundaries` adds every narration-boundary and hidden-range timestamp to the fixed 100 ms sampling grid, so a narration scene shorter than one sample interval keeps its own segment instead of being swallowed by the surrounding grid cell. Off by default, because turning it on shifts segment boundaries for existing pipelines.
 
 ---
 
