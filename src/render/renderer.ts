@@ -132,6 +132,26 @@ export function getVideoDuration(videoPath: string): number {
 }
 
 /**
+ * Probe a video's frame rate, rounded to the nearest integer.
+ * Handles fractional `r_frame_rate` values like "25/1" or "30000/1001".
+ * Falls back to 25 when ffprobe fails or reports a non-positive rate.
+ */
+export function probeVideoFps(videoPath: string): number {
+  try {
+    const fpsStr = execFileSync('ffprobe', [
+      '-v', 'quiet', '-select_streams', 'v:0',
+      '-show_entries', 'stream=r_frame_rate', '-of', 'csv=p=0', videoPath,
+    ]).toString().trim()
+    const parts = fpsStr.split('/')
+    const probedFps = parts.length === 2
+      ? Number(parts[0]) / Number(parts[1])
+      : Number(fpsStr)
+    if (probedFps > 0) return Math.round(probedFps)
+  } catch { /* use default */ }
+  return 25
+}
+
+/**
  * Probe the actual resolution of a video file.
  */
 export function probeResolution(videoPath: string): { width: number; height: number } {
@@ -409,6 +429,62 @@ function renderWithHighlights(
   ])
 
   return outputPath
+}
+
+/** One speed segment to encode, with its exact output frame count. */
+export interface SpeedSegmentPlan {
+  /** Source-video seek start (seconds), inclusive. */
+  startSec: number
+  /** Source-video seek end (seconds). */
+  endSec: number
+  /** Speed multiplier applied via setpts. */
+  speed: number
+  /** Exact number of output frames to encode. Always > 0. */
+  frames: number
+}
+
+/**
+ * Pure planner for {@link renderWithSpeed}: assign each segment the exact
+ * output frame count implied by the speed map.
+ *
+ * ffmpeg rounds each independently encoded segment up to a whole frame, so a
+ * 2s @ 2x segment on a 25fps source came out 27 frames (1.08s) instead of 25
+ * (1.00s). Subtitle remapping uses the ideal continuous durations from
+ * computeOutputTimes(), so that overshoot accumulated across cut boundaries —
+ * roughly 0.32s after four segments — and pushed cues onto the wrong scene.
+ *
+ * Frame counts are derived from a running cumulative output position rather
+ * than from each segment's duration in isolation, so any rounding error is
+ * absorbed by the following segment and the total always equals
+ * round(totalOutputSec * fps).
+ *
+ * Segments that round to zero frames are dropped: `-frames:v 0` writes an
+ * empty file and the concat demuxer fails on it. Because cumFrames only
+ * advances by frames actually emitted, dropping one does not shift the frame
+ * budget of the segments after it.
+ */
+export function planSpeedSegments(
+  segments: Array<{ startSec: number; endSec: number; speed: number }>,
+  fps: number,
+): SpeedSegmentPlan[] {
+  const plan: SpeedSegmentPlan[] = []
+  let cumOutSec = 0
+  let cumFrames = 0
+
+  for (const seg of segments) {
+    cumOutSec += (seg.endSec - seg.startSec) / seg.speed
+    const frames = Math.round(cumOutSec * fps) - cumFrames
+    if (frames <= 0) continue
+    cumFrames += frames
+    plan.push({
+      startSec: seg.startSec,
+      endSec: seg.endSec,
+      speed: seg.speed,
+      frames,
+    })
+  }
+
+  return plan
 }
 
 /**
