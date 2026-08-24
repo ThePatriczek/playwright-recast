@@ -24,11 +24,11 @@ function getAudioDurationMs(filePath: string): number {
   return Math.round(Number(output) * 1000)
 }
 
-function generateSilence(durationMs: number, outputPath: string, sampleRate = 24000): void {
+function generateSilence(durationMs: number, outputPath: string, sampleRate = 24000, channels = 1): void {
   const durationSec = Math.max(0.01, durationMs / 1000)
   execFileSync('ffmpeg', [
     '-y', '-f', 'lavfi',
-    '-i', `anullsrc=r=${sampleRate}:cl=mono`,
+    '-i', `anullsrc=r=${sampleRate}:cl=${channels}c`,
     '-t', String(durationSec),
     '-c:a', 'libmp3lame', '-q:a', '9',
     outputPath,
@@ -81,6 +81,16 @@ export async function generateVoiceover(
     )
   }
 
+  // Generated silence must match the TTS segments' format, not a hardcoded
+  // rate: planAudioConcat takes a majority vote across every segment
+  // (up to two silence pads per subtitle), so a fixed rate that disagrees
+  // with the provider's could win the vote and normalise the whole
+  // narration down to it. Probing the first real segment keeps silence
+  // agreeing with TTS, so formats match and concat stays on -c copy.
+  const firstTtsFormat = audios.length > 0 ? probeAudioFormat(audios[0]!.path) : null
+  const silenceSampleRate = firstTtsFormat?.sampleRate ?? 24000
+  const silenceChannels = firstTtsFormat?.channels ?? 1
+
   const entries: VoiceoverEntry[] = []
   const segmentFiles: string[] = []
   const freezes: VoiceoverFreeze[] = []
@@ -123,7 +133,7 @@ export async function generateVoiceover(
 
     if (subtitle.startMs > cursor) {
       const silencePath = path.join(tmpDir, `silence-${subtitle.index}.mp3`)
-      generateSilence(subtitle.startMs - cursor, silencePath)
+      generateSilence(subtitle.startMs - cursor, silencePath, silenceSampleRate, silenceChannels)
       segmentFiles.push(silencePath)
     }
 
@@ -155,7 +165,7 @@ export async function generateVoiceover(
       const pad = windowDuration - audioDuration
       if (pad > 50) {
         const padPath = path.join(tmpDir, `pad-${subtitle.index}.mp3`)
-        generateSilence(pad, padPath)
+        generateSilence(pad, padPath, silenceSampleRate, silenceChannels)
         segmentFiles.push(padPath)
       }
       cursor = subtitle.endMs
@@ -207,7 +217,7 @@ export async function generateVoiceover(
   if (segmentFiles.length > 0) {
     const plan = planAudioConcat(segmentFiles.map(probeAudioFormat))
     const codecArgs = plan.normalise
-      ? ['-c:a', 'libmp3lame', '-ar', String(plan.sampleRate), '-ac', String(plan.channels)]
+      ? ['-c:a', 'libmp3lame', '-b:a', '128k', '-ar', String(plan.sampleRate), '-ac', String(plan.channels)]
       : ['-c', 'copy']
     if (plan.normalise) {
       console.log(`  Voiceover: segment formats differ — normalising to ${plan.sampleRate}Hz/${plan.channels}ch`)
