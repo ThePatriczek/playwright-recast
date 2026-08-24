@@ -84,7 +84,7 @@ export interface RenderableTrace extends ParsedTrace {
   clickEffectConfig?: { color: string; opacity: number; radius: number; duration: number; soundVolume: number; sound?: string | true }
   cursorKeyframes?: CursorKeyframe[]
   cursorOverlayConfig?: ResolvedCursorOverlayConfig
-  zoomConfig?: { transitionMs?: number; easing?: import('../types/easing.js').EasingSpec }
+  zoomConfig?: { transitionMs?: number; easing?: import('../types/easing.js').EasingSpec; containInCue?: boolean }
   interpolateConfig?: import('../types/interpolate.js').InterpolateConfig
   highlightEvents?: import('../types/text-highlight.js').HighlightEvent[]
   highlightConfig?: import('../text-highlight/defaults.js').ResolvedTextHighlightConfig
@@ -175,7 +175,7 @@ function renderWithZoom(
   targetWidth: number,
   targetHeight: number,
   tmpDir: string,
-  zoomConfig?: { transitionMs?: number; easing?: import('../types/easing.js').EasingSpec },
+  zoomConfig?: { transitionMs?: number; easing?: import('../types/easing.js').EasingSpec; containInCue?: boolean },
 ): string {
   const zoomSubs = subtitles.filter((s) => s.zoom && s.zoom.level > 1.0)
   if (zoomSubs.length === 0) return sourceVideo
@@ -192,7 +192,7 @@ function renderWithZoom(
     transitionMs: zoomConfig?.transitionMs ?? 400,
     easing: zoomConfig?.easing ?? 'ease-in-out',
     fps,
-    containInCue: false,
+    containInCue: zoomConfig?.containInCue ?? false,
   }
 
   const filter = buildZoomFilter(keyframes, srcRes, { width: targetWidth, height: targetHeight }, config)

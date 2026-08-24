@@ -64,7 +64,7 @@ type PipelineState = {
   clickEffectConfig?: ReturnType<typeof resolveClickEffectConfig>
   cursorKeyframes?: CursorKeyframe[]
   cursorOverlayConfig?: ResolvedCursorOverlayConfig
-  zoomConfig?: { transitionMs?: number; easing?: import('../types/easing.js').EasingSpec }
+  zoomConfig?: { transitionMs?: number; easing?: import('../types/easing.js').EasingSpec; containInCue?: boolean }
   interpolateConfig?: import('../types/interpolate.js').InterpolateConfig
   highlightEvents?: HighlightEvent[]
   highlightConfig?: ResolvedTextHighlightConfig
@@ -715,6 +715,7 @@ export class PipelineExecutor {
           state.zoomConfig = {
             transitionMs: stage.config.transitionMs,
             easing: stage.config.easing,
+            containInCue: stage.config.containInCue,
           }
           break
         }
