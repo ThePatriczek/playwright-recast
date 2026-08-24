@@ -168,8 +168,25 @@ so the freeze's **end position is preserved**:
 ```ts
 const alignedMs = Math.ceil(atVideoMs * fps / 1000) * 1000 / fps
 const shift = alignedMs - atVideoMs
-freezes.push({ atVideoMs: alignedMs, durationMs: Math.max(0, overflow - shift) })
+const raw = Math.max(0, overflow - shift)
+freezes.push({ atVideoMs: alignedMs, durationMs: Math.round(raw * fps / 1000) * 1000 / fps })
 ```
+
+**Revised during implementation.** The duration is quantised too, not just the
+start. Leaving it in continuous milliseconds meant `planVoiceoverFreezes()`
+rounded the hold to whole frames for the video while `shiftForFreezes()` shifted
+clicks and cursor keyframes by the exact millisecond value — up to half a frame
+per freeze, accumulating, which is the very drift class this work removes. The
+review caught it; a review of the earlier #20 branch had missed it because
+`tpad` quantised those durations at encode time anyway.
+
+So the invariant is **both endpoints on frame boundaries and a whole number of
+frames held**, rather than exact preservation of `at + duration`. The end may
+move by up to half a frame in either direction. That is the stronger guarantee:
+it is what makes the video hold, the overlay shift, the audio silence and the
+subtitle shift all advance by the identical amount. Verified non-breaking —
+`tpad stop_duration=0.500` at 25 fps already produced 13 held frames, and the
+quantised 0.520 produces 13 as well, so no rendered output changed.
 
 Subtracting, not adding, is load-bearing. Pushing the hold `shift` later means
 the video plays `shift` more milliseconds before it pauses, so the hold needs
@@ -182,27 +199,37 @@ This is not flagged. It changes output by at most one frame, and only where the
 frame is currently on the wrong side of a cut — the definition of a bug fix
 under the binding constraint.
 
-### W2 — hold sub-frame intervals (item 4b). No flag.
+### W2 — hold sub-frame intervals (item 4b). NOT IMPLEMENTED — defect does not occur.
 
-A speed segment allocated ≥1 frame whose source interval contains no native
-frame currently encodes to an empty file, which then breaks the concat demuxer.
+**Superseded during implementation.** This section originally specified a
+fallback for a speed segment allocated >= 1 frame whose source interval
+contains no native frame: such a segment was believed to encode to an empty
+file, breaking the concat demuxer.
 
-#22 proposes probing `best_effort_timestamp_time` for every source frame up
-front. This design does not: that is a full decode pass over the recording to
-serve a rare case. Instead, detect it where it manifests — after encoding each
-segment, probe its frame count; if zero, re-encode that one segment as a hold:
+That cannot happen. The `fps=${fps}` filter that #20 added to
+`renderWithSpeed()` generates a frame by duplication for any non-empty
+interval, and `planSpeedSegments()` never allocates zero frames (it drops
+those), so N >= 1 always yields >= 1 frame. Measured on ffmpeg 8.1 with the
+exact production command:
 
 ```
--ss <last source frame at or before startSec> -frames:v 1
--vf tpad=stop_mode=clone:stop_duration=<allocatedFrames/fps>
+-ss 1.001  -to 1.010   setpts=PTS/1,fps=25 -frames:v 1  ->  1 frame (valid file)
+-ss 1.005  -to 1.006   same                             ->  1 frame
+-ss 1.0001 -to 1.0002  same                             ->  1 frame
+control: -ss 1.00 -to 1.20, -frames:v 5                 ->  5 frames
 ```
 
-The scene then holds the last settled visual for its allocated frames instead
-of vanishing. Cheaper than a global probe, and it cannot misfire on segments
-that encoded correctly.
+Implementing the fallback would have added an ffprobe per segment plus a
+branch that can never fire. It was dropped.
 
-This is not flagged: producing an empty file is not behaviour anyone depends
-on.
+Issue #22 reported this against 0.19.2, which predates the `fps=` filter, so
+the observation was probably true then and is moot now. Worth asking the
+reporter whether they can still reproduce it on current `main`.
+
+Caveat: measured against an MP4 source. The happy-path source is a Playwright
+`recordVideo` `.webm`, which may be VFR; the `fps` filter should behave the
+same (it duplicates to fill), but this has not been checked against an
+authentic recording — the same open item #20 left behind.
 
 ### W3 — audio concat normalisation (item 7). No flag, but conditional.
 
@@ -323,7 +350,7 @@ real trace before the release that carries #20 and #22, since both change what
 
 - [ ] Freeze slices land the boundary frame with the cue that owns it, verified in frames not seconds
 - [ ] Voiceover overflow starts are frame-aligned with no fractional time lost
-- [ ] A sub-frame source interval renders held content instead of an empty segment
+- [x] ~~A sub-frame source interval renders held content instead of an empty segment~~ — dropped: the defect cannot occur (see W2)
 - [ ] Mismatched TTS segment formats are normalised; matching ones still take `-c copy` unchanged
 - [ ] `exactBoundaries: true` preserves narration and hidden-range boundaries exactly; a sub-100 ms visible scene survives
 - [ ] `containInCue: true` keeps every zoom transition inside its cue
