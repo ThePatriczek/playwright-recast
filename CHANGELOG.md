@@ -1,8 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.20.0 (2026-08-24)
 
 ### Features
+
+- **Render an ordered Playwright Test suite as one result-aware video** ([#21](https://github.com/ThePatriczek/playwright-recast/issues/21)) — A whole test run becomes a single narrated video instead of one clip per trace. `playwright-recast/reporter` writes a versioned run manifest carrying declaration order, the final attempt, status, tags, trace path, video path, duration, and error details; `defineSuite({ clip })` lets each test reuse the existing fluent `Pipeline` API rather than introducing a second render DSL. `playwright-recast render-suite` renders an existing manifest, and `playwright-recast test -- ...` runs Playwright, renders the suite even when tests fail, and preserves Playwright's original exit code. Passed tests become ordered clips; failed, skipped, missing-trace, or unrenderable tests can become configurable cards, with an optional summary card closing the video. Retries use the final attempt, and one broken trace degrades to a card instead of aborting the run. The single-trace pipeline is unchanged — the orchestrator consumes its public API. Thanks to [@skyaara](https://github.com/skyaara).
 
 - **`speedUp({ exactBoundaries: true })`** ([#22](https://github.com/ThePatriczek/playwright-recast/issues/22)) — Samples activity at exact narration and hidden-range boundaries in addition to the fixed 100 ms grid, so a narration scene shorter than the sample interval is no longer swallowed. Off by default: enabling it shifts segment boundaries for existing pipelines.
 - **`autoZoom({ containInCue: true })`** ([#22](https://github.com/ThePatriczek/playwright-recast/issues/22)) — Keeps each cue's zoom-in and zoom-out inside the cue's own window instead of starting `transitionMs` before it and ending `transitionMs` after it, removing cross-cue transition leakage. Off by default: enabling it changes how existing demos look.
@@ -19,7 +21,7 @@
 - New `isSpeedClockAuthority()` predicate (`src/speed/clock-authority.ts`) replaces three slightly different inline "is speed active" checks in the renderer and executor.
 - New `src/pipeline/blank-lead.ts` collects the blank-lead policy and the subtitle/overlay shift loops that were duplicated across four sites in `executor.ts`.
 - `planSpeedSegments()` and `probeVideoFps()` extracted from `renderWithSpeed()` / `renderWithZoom()` as pure, independently testable units.
-- Test suite: **673 passed | 11 skipped** (+52 from 621 — clock-authority boundaries, cumulative frame planning, ffmpeg frame-exactness, blank-lead policy under both clock modes, an end-to-end fixture asserting the decoded frame at a cue belongs to the post-transition scene, frame-aligned freeze slicing, audio-format probing/normalisation, `exactBoundaries` sampling, and `containInCue` zoom transitions).
+- Test suite: **674 passed | 11 skipped** (+53 from 621 — clock-authority boundaries, cumulative frame planning, ffmpeg frame-exactness, blank-lead policy under both clock modes, an end-to-end fixture asserting the decoded frame at a cue belongs to the post-transition scene, frame-aligned freeze slicing, audio-format probing/normalisation, `exactBoundaries` sampling, and `containInCue` zoom transitions).
 
 ## 0.19.2 (2026-07-15)
 

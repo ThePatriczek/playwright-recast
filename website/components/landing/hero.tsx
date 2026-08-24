@@ -135,7 +135,7 @@ export function Hero() {
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
               <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500" />
             </span>
-            <span className="truncate">v0.19.2 — typeText(): organic character-by-character typing for demos</span>
+            <span className="truncate">v0.20.0 — render a whole Playwright suite as one result-aware video</span>
           </div>
         </BlurFade>
 
