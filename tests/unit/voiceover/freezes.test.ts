@@ -75,7 +75,7 @@ describe('generateVoiceover freeze emission (waitForNarration-narrowed windows)'
     } as unknown as SubtitledTrace
     const tmp = path.join(TMP_ROOT, 'overflow')
 
-    const result = await generateVoiceover(trace, provider, tmp)
+    const result = await generateVoiceover(trace, provider, tmp, undefined, undefined, 25)
 
     expect(result.voiceover.freezes).toHaveLength(1)
     const freeze = result.voiceover.freezes![0]!
@@ -101,7 +101,7 @@ describe('generateVoiceover freeze emission (waitForNarration-narrowed windows)'
     } as unknown as SubtitledTrace
     const tmp = path.join(TMP_ROOT, 'tiny-window-overflow')
 
-    const result = await generateVoiceover(trace, provider, tmp)
+    const result = await generateVoiceover(trace, provider, tmp, undefined, undefined, 25)
 
     // A freeze is recorded at the boundary (40ms) — previously: none.
     expect(result.voiceover.freezes).toHaveLength(1)
@@ -126,7 +126,7 @@ describe('generateVoiceover freeze emission (waitForNarration-narrowed windows)'
     } as unknown as SubtitledTrace
     const tmp = path.join(TMP_ROOT, 'zero-window-overflow')
 
-    const result = await generateVoiceover(trace, provider, tmp)
+    const result = await generateVoiceover(trace, provider, tmp, undefined, undefined, 25)
 
     expect(result.voiceover.freezes).toHaveLength(1)
     expect(result.voiceover.freezes![0]!.atVideoMs).toBe(1000)
@@ -146,7 +146,7 @@ describe('generateVoiceover freeze emission (waitForNarration-narrowed windows)'
     } as unknown as SubtitledTrace
     const tmp = path.join(TMP_ROOT, 'no-overflow')
 
-    const result = await generateVoiceover(trace, provider, tmp)
+    const result = await generateVoiceover(trace, provider, tmp, undefined, undefined, 25)
 
     expect(result.voiceover.freezes).toEqual([])
   })
@@ -164,7 +164,7 @@ describe('generateVoiceover freeze emission (waitForNarration-narrowed windows)'
     } as unknown as SubtitledTrace
     const tmp = path.join(TMP_ROOT, 'final-overflow')
 
-    const result = await generateVoiceover(trace, provider, tmp)
+    const result = await generateVoiceover(trace, provider, tmp, undefined, undefined, 25)
 
     expect(result.voiceover.freezes).toEqual([])
   })
@@ -182,7 +182,7 @@ describe('generateVoiceover freeze emission (waitForNarration-narrowed windows)'
 
     const result = await generateVoiceover(trace, provider, tmp, undefined, [
       { atVideoMs: 3000, durationMs: 500 },
-    ])
+    ], 25)
 
     expect(result.voiceover.freezes).toContainEqual({ atVideoMs: 3000, durationMs: 500 })
     expect(result.voiceover.entries[1]!.outputStartMs).toBe(5500)
@@ -201,7 +201,7 @@ describe('generateVoiceover freeze emission (waitForNarration-narrowed windows)'
 
     const result = await generateVoiceover(trace, provider, tmp, undefined, [
       { atVideoMs: 5000, durationMs: 500 },
-    ])
+    ], 25)
 
     expect(result.voiceover.freezes).toContainEqual({ atVideoMs: 5000, durationMs: 500 })
     expect(result.voiceover.entries[1]!.outputStartMs).toBe(5500)
@@ -218,7 +218,7 @@ describe('generateVoiceover freeze emission (waitForNarration-narrowed windows)'
     } as unknown as SubtitledTrace
     const tmp = path.join(TMP_ROOT, 'approach-none')
 
-    const result = await generateVoiceover(trace, provider, tmp, undefined, [])
+    const result = await generateVoiceover(trace, provider, tmp, undefined, [], 25)
 
     expect(result.voiceover.freezes).toEqual([])
     expect(result.voiceover.entries[1]!.outputStartMs).toBe(5000)
@@ -237,7 +237,7 @@ describe('generateVoiceover freeze emission (waitForNarration-narrowed windows)'
 
     const result = await generateVoiceover(trace, provider, tmp, undefined, [
       { atVideoMs: 8000, durationMs: 500 },
-    ])
+    ], 25)
 
     expect(result.voiceover.freezes).toContainEqual({ atVideoMs: 8000, durationMs: 500 })
     expect(result.voiceover.entries[1]!.outputStartMs).toBe(5000)

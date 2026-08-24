@@ -16,10 +16,10 @@ export function msPerFrame(fps: number): number {
 /**
  * Round `ms` up to the next whole frame boundary. Values already on a boundary
  * are returned unchanged; the result is never earlier than the input.
- * A non-positive `fps` returns the input untouched.
+ * A non-positive, missing, or NaN frame rate returns the input untouched.
  */
 export function alignMsUpToFrame(ms: number, fps: number): number {
-  if (fps <= 0) return ms
+  if (!(fps > 0)) return ms
   const per = msPerFrame(fps)
   return Math.ceil(ms / per - 1e-9) * per + 0 // normalize -0 to 0
 }
@@ -34,13 +34,15 @@ export function alignMsUpToFrame(ms: number, fps: number): number {
  *
  * A hold too short to absorb the shift clamps at zero rather than going
  * negative; the position still aligns.
+ *
+ * A non-positive, missing, or NaN frame rate returns the inputs untouched.
  */
 export function alignFreezeToFrame(
   atVideoMs: number,
   durationMs: number,
   fps: number,
 ): { atVideoMs: number; durationMs: number } {
-  if (fps <= 0) return { atVideoMs, durationMs }
+  if (!(fps > 0)) return { atVideoMs, durationMs }
   const aligned = alignMsUpToFrame(atVideoMs, fps)
   const shift = aligned - atVideoMs
   return { atVideoMs: aligned, durationMs: Math.max(0, durationMs - shift) }

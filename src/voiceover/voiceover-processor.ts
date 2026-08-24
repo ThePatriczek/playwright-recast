@@ -11,6 +11,7 @@ import type {
   LoudnessNormalizeConfig,
 } from '../types/voiceover.js'
 import { normalizeLoudness } from './normalize.js'
+import { alignFreezeToFrame } from './frame-align.js'
 
 function getAudioDurationMs(filePath: string): number {
   const output = execFileSync('ffprobe', [
@@ -46,13 +47,19 @@ function resolveNormalize(
  * Generate voiceover audio from subtitles using a TTS provider.
  * Produces individual audio segments, optionally normalizes loudness per segment,
  * pads with silence to match timing, and concatenates into a single audio track.
+ * @param outputFps Frame rate of the rendered output. Freeze points are
+ *   aligned to it here — once — so the audio silence, the subtitle shift, and
+ *   the renderer's video hold all use identical numbers. Aligning downstream
+ *   instead would leave shiftForFreezes() on raw milliseconds while the video
+ *   held frame-rounded ones, desyncing every click and cursor keyframe.
  */
 export async function generateVoiceover(
   trace: SubtitledTrace,
   provider: TtsProvider,
   tmpDir: string,
-  options?: VoiceoverOptions,
+  options: VoiceoverOptions | undefined,
   approachHolds: VoiceoverFreeze[] = [],
+  outputFps: number,
 ): Promise<VoiceoveredTrace> {
   fs.mkdirSync(tmpDir, { recursive: true })
   const normalizeConfig = resolveNormalize(options?.normalize)
@@ -102,8 +109,9 @@ export async function generateVoiceover(
 
     while (holdIndex < holds.length && holds[holdIndex]!.atVideoMs <= originalStartsMs[si]!) {
       const h = holds[holdIndex]!
-      freezes.push({ atVideoMs: h.atVideoMs, durationMs: h.durationMs })
-      timeShift += h.durationMs
+      const aligned = alignFreezeToFrame(h.atVideoMs, h.durationMs, outputFps)
+      freezes.push(aligned)
+      timeShift += aligned.durationMs
       holdIndex++
     }
 
@@ -163,12 +171,12 @@ export async function generateVoiceover(
       // before; the renderer's end-of-video tpad handles its overflow instead.
       const nextOriginalStartMs = originalStartsMs[si + 1]
       if (nextOriginalStartMs !== undefined) {
-        freezes.push({
-          atVideoMs: originalEndsMs[si]!,
-          durationMs: overflow,
-        })
+        const aligned = alignFreezeToFrame(originalEndsMs[si]!, overflow, outputFps)
+        freezes.push(aligned)
+        timeShift += aligned.durationMs
+      } else {
+        timeShift += overflow
       }
-      timeShift += overflow
       cursor = subtitle.endMs
     }
 
@@ -184,7 +192,7 @@ export async function generateVoiceover(
   // audio for; record them so the renderer still holds the video there.
   while (holdIndex < holds.length) {
     const h = holds[holdIndex]!
-    freezes.push({ atVideoMs: h.atVideoMs, durationMs: h.durationMs })
+    freezes.push(alignFreezeToFrame(h.atVideoMs, h.durationMs, outputFps))
     holdIndex++
   }
 

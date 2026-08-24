@@ -31,6 +31,11 @@ describe('alignMsUpToFrame', () => {
     expect(alignMsUpToFrame(123, 0)).toBe(123)
     expect(alignMsUpToFrame(123, -5)).toBe(123)
   })
+
+  it('returns the input unchanged for a NaN or missing frame rate', () => {
+    expect(alignMsUpToFrame(123, NaN)).toBe(123)
+    expect(alignMsUpToFrame(123, undefined as unknown as number)).toBe(123)
+  })
 })
 
 describe('alignFreezeToFrame', () => {
@@ -64,5 +69,13 @@ describe('alignFreezeToFrame', () => {
 
   it('returns inputs unchanged for a non-positive frame rate', () => {
     expect(alignFreezeToFrame(100, 500, 0)).toEqual({ atVideoMs: 100, durationMs: 500 })
+  })
+
+  it('returns inputs unchanged for a NaN or missing frame rate', () => {
+    expect(alignFreezeToFrame(100, 500, NaN)).toEqual({ atVideoMs: 100, durationMs: 500 })
+    expect(alignFreezeToFrame(100, 500, undefined as unknown as number)).toEqual({
+      atVideoMs: 100,
+      durationMs: 500,
+    })
   })
 })
