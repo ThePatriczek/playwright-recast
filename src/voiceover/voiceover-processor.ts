@@ -1,6 +1,7 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { execFileSync } from 'node:child_process'
+import { probeAudioFormat, planAudioConcat } from './audio-format.js'
 import type { SubtitledTrace } from '../types/subtitle.js'
 import type {
   TtsProvider,
@@ -204,10 +205,17 @@ export async function generateVoiceover(
 
   const audioTrackPath = path.join(tmpDir, 'voiceover.mp3')
   if (segmentFiles.length > 0) {
+    const plan = planAudioConcat(segmentFiles.map(probeAudioFormat))
+    const codecArgs = plan.normalise
+      ? ['-c:a', 'libmp3lame', '-ar', String(plan.sampleRate), '-ac', String(plan.channels)]
+      : ['-c', 'copy']
+    if (plan.normalise) {
+      console.log(`  Voiceover: segment formats differ — normalising to ${plan.sampleRate}Hz/${plan.channels}ch`)
+    }
     execFileSync('ffmpeg', [
       '-y', '-f', 'concat', '-safe', '0',
       '-i', concatList,
-      '-c', 'copy',
+      ...codecArgs,
       audioTrackPath,
     ], { stdio: 'pipe' })
   }
