@@ -1,0 +1,68 @@
+import { describe, it, expect } from 'vitest'
+import { msPerFrame, alignMsUpToFrame, alignFreezeToFrame } from '../../../src/voiceover/frame-align'
+
+describe('msPerFrame', () => {
+  it('converts a frame rate to milliseconds per frame', () => {
+    expect(msPerFrame(25)).toBe(40)
+    expect(msPerFrame(50)).toBe(20)
+  })
+})
+
+describe('alignMsUpToFrame', () => {
+  it('leaves a value already on a frame boundary unchanged', () => {
+    expect(alignMsUpToFrame(0, 25)).toBe(0)
+    expect(alignMsUpToFrame(40, 25)).toBe(40)
+    expect(alignMsUpToFrame(120, 25)).toBe(120)
+  })
+
+  it('pushes a value forward to the next frame boundary', () => {
+    expect(alignMsUpToFrame(1, 25)).toBe(40)
+    expect(alignMsUpToFrame(100, 25)).toBe(120)
+    expect(alignMsUpToFrame(7025, 25)).toBe(7040)
+  })
+
+  it('never moves a value backwards', () => {
+    for (const ms of [0, 1, 39, 40, 41, 999, 1000]) {
+      expect(alignMsUpToFrame(ms, 25)).toBeGreaterThanOrEqual(ms)
+    }
+  })
+
+  it('returns the input unchanged for a non-positive frame rate', () => {
+    expect(alignMsUpToFrame(123, 0)).toBe(123)
+    expect(alignMsUpToFrame(123, -5)).toBe(123)
+  })
+})
+
+describe('alignFreezeToFrame', () => {
+  it('moves the fractional remainder from the position into the duration', () => {
+    // 100ms is 2.5 frames at 25fps; the hold starts 20ms later, so it must
+    // be 20ms shorter for the following cue to land where it did.
+    const r = alignFreezeToFrame(100, 500, 25)
+    expect(r.atVideoMs).toBe(120)
+    expect(r.durationMs).toBe(480)
+    expect(r.atVideoMs + r.durationMs).toBe(600) // end position preserved
+  })
+
+  it('preserves the end position for every input', () => {
+    for (const at of [0, 7, 33, 100, 7025]) {
+      const r = alignFreezeToFrame(at, 1000, 25)
+      expect(r.atVideoMs + r.durationMs).toBe(at + 1000)
+    }
+  })
+
+  it('leaves an already-aligned freeze untouched', () => {
+    const r = alignFreezeToFrame(120, 480, 25)
+    expect(r).toEqual({ atVideoMs: 120, durationMs: 480 })
+  })
+
+  it('clamps the duration at zero rather than going negative', () => {
+    // A 5ms hold at a position needing a 20ms push cannot absorb the shift.
+    const r = alignFreezeToFrame(100, 5, 25)
+    expect(r.atVideoMs).toBe(120)
+    expect(r.durationMs).toBe(0)
+  })
+
+  it('returns inputs unchanged for a non-positive frame rate', () => {
+    expect(alignFreezeToFrame(100, 500, 0)).toEqual({ atVideoMs: 100, durationMs: 500 })
+  })
+})
