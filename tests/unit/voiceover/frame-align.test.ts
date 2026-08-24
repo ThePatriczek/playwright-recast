@@ -39,19 +39,27 @@ describe('alignMsUpToFrame', () => {
 })
 
 describe('alignFreezeToFrame', () => {
-  it('moves the fractional remainder from the position into the duration', () => {
-    // 100ms is 2.5 frames at 25fps; the hold starts 20ms later, so it must
-    // be 20ms shorter for the following cue to land where it did.
+  it('moves the fractional remainder from the position into the duration, then quantises it', () => {
+    // 100ms is 2.5 frames at 25fps; the hold starts 20ms later, so the raw
+    // hold shrinks by 20ms to 480ms — which is already a whole number of
+    // frames (12), so quantising it changes nothing here.
     const r = alignFreezeToFrame(100, 500, 25)
     expect(r.atVideoMs).toBe(120)
     expect(r.durationMs).toBe(480)
-    expect(r.atVideoMs + r.durationMs).toBe(600) // end position preserved
   })
 
-  it('preserves the end position for every input', () => {
+  it('quantises both endpoints onto frame boundaries for every input', () => {
+    // The end position is no longer preserved exactly (see the doc comment):
+    // both the start and the duration are independently snapped to whole
+    // frames, so the end can drift by up to half a frame from the raw input.
     for (const at of [0, 7, 33, 100, 7025]) {
       const r = alignFreezeToFrame(at, 1000, 25)
-      expect(r.atVideoMs + r.durationMs).toBe(at + 1000)
+      expect(r.atVideoMs % 40).toBe(0)
+      expect(r.durationMs % 40).toBe(0)
+      const end = r.atVideoMs + r.durationMs
+      expect(end % 40).toBe(0)
+      // Never drifts by more than half a frame from the original end.
+      expect(Math.abs(end - (at + 1000))).toBeLessThanOrEqual(20)
     }
   })
 
