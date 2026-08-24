@@ -11,6 +11,7 @@ export interface ZoomExprConfig {
   transitionMs: number
   easing: EasingSpec
   fps: number
+  containInCue: boolean
 }
 
 /** Samples per second for piecewise-linear sampled easing */
@@ -60,7 +61,7 @@ export function buildZoomFilter(
   const T = config.transitionMs / 1000
   const fps = config.fps
 
-  const segments = buildSegments(internal, T)
+  const segments = buildSegments(internal, T, config.containInCue)
   if (segments.length === 0) return scaleOnly
 
   // Time variable: in/fps (frame number / fps = seconds)
@@ -102,13 +103,45 @@ function toInternal(keyframes: ZoomKeyframe[]): InternalKeyframe[] {
 /**
  * Build timeline segments from keyframes.
  */
-function buildSegments(keyframes: InternalKeyframe[], T: number): Segment[] {
+export function buildSegments(
+  keyframes: InternalKeyframe[],
+  T: number,
+  containInCue: boolean,
+): Segment[] {
   const segments: Segment[] = []
 
   for (let i = 0; i < keyframes.length; i++) {
     const kf = keyframes[i]!
     const startSec = kf.atMs / 1000
     const endSec = startSec + kf.holdMs / 1000
+
+    if (containInCue) {
+      // Both transitions live inside [startSec, endSec], so a cue can never
+      // disturb its neighbours and the zoom never anticipates the narration.
+      // A cue shorter than 2T splits evenly and has no hold (#22 item 6).
+      const t = Math.min(T, (endSec - startSec) / 2)
+      if (t > 0.01) {
+        segments.push({
+          type: 'transition', startSec, endSec: startSec + t,
+          fromLevel: 1.0, fromCx: 0.5, fromCy: 0.5,
+          toLevel: kf.level, toCx: kf.x, toCy: kf.y,
+        })
+      }
+      if (endSec - t - (startSec + t) > 0.01) {
+        segments.push({
+          type: 'hold', startSec: startSec + t, endSec: endSec - t,
+          level: kf.level, cx: kf.x, cy: kf.y,
+        })
+      }
+      if (t > 0.01) {
+        segments.push({
+          type: 'transition', startSec: endSec - t, endSec,
+          fromLevel: kf.level, fromCx: kf.x, fromCy: kf.y,
+          toLevel: 1.0, toCx: 0.5, toCy: 0.5,
+        })
+      }
+      continue
+    }
 
     const lastSeg = segments[segments.length - 1]
     const skipTransIn = lastSeg?.type === 'transition' && Math.abs(lastSeg.endSec - startSec) < 0.01

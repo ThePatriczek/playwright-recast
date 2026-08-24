@@ -192,6 +192,7 @@ function renderWithZoom(
     transitionMs: zoomConfig?.transitionMs ?? 400,
     easing: zoomConfig?.easing ?? 'ease-in-out',
     fps,
+    containInCue: false,
   }
 
   const filter = buildZoomFilter(keyframes, srcRes, { width: targetWidth, height: targetHeight }, config)
