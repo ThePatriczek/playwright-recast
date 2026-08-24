@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import * as fs from 'node:fs'
+import * as os from 'node:os'
 import * as path from 'node:path'
 import { execFileSync } from 'node:child_process'
 import {
@@ -9,7 +10,7 @@ import {
 import type { ScreencastFrame } from '../../../src/types/trace'
 import { toMonotonic } from '../../../src/types/trace'
 
-const TMP_DIR = path.join('/tmp', 'recast-screencast-test')
+const TMP_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'recast-screencast-test-'))
 
 function makeJpeg(label: string, color: string): Buffer {
   const filePath = path.join(TMP_DIR, `seed-${label}.jpg`)

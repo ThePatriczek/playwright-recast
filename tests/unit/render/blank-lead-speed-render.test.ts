@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import * as fs from 'node:fs'
+import * as os from 'node:os'
 import * as path from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { detectBlankLeadIn, planSpeedSegments, probeVideoFps } from '../../../src/render/renderer'
@@ -9,7 +10,7 @@ import { toMonotonic } from '../../../src/types/trace'
 import type { SpeedSegment } from '../../../src/types/speed'
 import type { SubtitleEntry } from '../../../src/types/subtitle'
 
-const TMP_DIR = path.join('/tmp', 'recast-blank-speed-render-test')
+const TMP_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'recast-blank-speed-render-test-'))
 const SRC = path.join(TMP_DIR, 'source.mp4')
 
 /**
