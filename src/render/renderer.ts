@@ -22,6 +22,7 @@ import { writeAss } from '../subtitles/ass-writer.js'
 import { chunkSubtitles } from '../subtitles/subtitle-chunker.js'
 import { filterRenderableSubtitles } from '../subtitles/renderable.js'
 import { interpolateVideo } from '../interpolate/interpolator.js'
+import { isSpeedClockAuthority } from '../speed/clock-authority.js'
 
 /**
  * Detect blank/white frames at the start of a video and return the timestamp
@@ -131,6 +132,26 @@ export function getVideoDuration(videoPath: string): number {
 }
 
 /**
+ * Probe a video's frame rate, rounded to the nearest integer.
+ * Handles fractional `r_frame_rate` values like "25/1" or "30000/1001".
+ * Falls back to 25 when ffprobe fails or reports a non-positive rate.
+ */
+export function probeVideoFps(videoPath: string): number {
+  try {
+    const fpsStr = execFileSync('ffprobe', [
+      '-v', 'quiet', '-select_streams', 'v:0',
+      '-show_entries', 'stream=r_frame_rate', '-of', 'csv=p=0', videoPath,
+    ]).toString().trim()
+    const parts = fpsStr.split('/')
+    const probedFps = parts.length === 2
+      ? Number(parts[0]) / Number(parts[1])
+      : Number(fpsStr)
+    if (probedFps > 0) return Math.round(probedFps)
+  } catch { /* use default */ }
+  return 25
+}
+
+/**
  * Probe the actual resolution of a video file.
  */
 export function probeResolution(videoPath: string): { width: number; height: number } {
@@ -164,16 +185,7 @@ function renderWithZoom(
   const srcRes = probeResolution(sourceVideo)
 
   // Probe fps from source video for zoompan frame-to-time conversion
-  let fps = 25
-  try {
-    const fpsStr = execFileSync('ffprobe', [
-      '-v', 'quiet', '-select_streams', 'v:0',
-      '-show_entries', 'stream=r_frame_rate', '-of', 'csv=p=0', sourceVideo,
-    ]).toString().trim()
-    const parts = fpsStr.split('/')
-    const probedFps = parts.length === 2 ? Number(parts[0]) / Number(parts[1]) : Number(fpsStr)
-    if (probedFps > 0) fps = Math.round(probedFps)
-  } catch { /* use default */ }
+  const fps = probeVideoFps(sourceVideo)
 
   const config: ZoomExprConfig = {
     transitionMs: zoomConfig?.transitionMs ?? 400,
@@ -410,6 +422,62 @@ function renderWithHighlights(
   return outputPath
 }
 
+/** One speed segment to encode, with its exact output frame count. */
+export interface SpeedSegmentPlan {
+  /** Source-video seek start (seconds), inclusive. */
+  startSec: number
+  /** Source-video seek end (seconds). */
+  endSec: number
+  /** Speed multiplier applied via setpts. */
+  speed: number
+  /** Exact number of output frames to encode. Always > 0. */
+  frames: number
+}
+
+/**
+ * Pure planner for {@link renderWithSpeed}: assign each segment the exact
+ * output frame count implied by the speed map.
+ *
+ * ffmpeg rounds each independently encoded segment up to a whole frame, so a
+ * 2s @ 2x segment on a 25fps source came out 27 frames (1.08s) instead of 25
+ * (1.00s). Subtitle remapping uses the ideal continuous durations from
+ * computeOutputTimes(), so that overshoot accumulated across cut boundaries —
+ * roughly 0.32s after four segments — and pushed cues onto the wrong scene.
+ *
+ * Frame counts are derived from a running cumulative output position rather
+ * than from each segment's duration in isolation, so any rounding error is
+ * absorbed by the following segment and the total always equals
+ * round(totalOutputSec * fps).
+ *
+ * Segments that round to zero frames are dropped: `-frames:v 0` writes an
+ * empty file and the concat demuxer fails on it. Because cumFrames only
+ * advances by frames actually emitted, dropping one does not shift the frame
+ * budget of the segments after it.
+ */
+export function planSpeedSegments(
+  segments: Array<{ startSec: number; endSec: number; speed: number }>,
+  fps: number,
+): SpeedSegmentPlan[] {
+  const plan: SpeedSegmentPlan[] = []
+  let cumOutSec = 0
+  let cumFrames = 0
+
+  for (const seg of segments) {
+    cumOutSec += (seg.endSec - seg.startSec) / seg.speed
+    const frames = Math.round(cumOutSec * fps) - cumFrames
+    if (frames <= 0) continue
+    cumFrames += frames
+    plan.push({
+      startSec: seg.startSec,
+      endSec: seg.endSec,
+      speed: seg.speed,
+      frames,
+    })
+  }
+
+  return plan
+}
+
 /**
  * Apply speed segments to video: split into chunks, apply speed factor
  * with setpts, concatenate back together.
@@ -446,24 +514,28 @@ function renderWithSpeed(
 
   console.log(`  Speed: ${videoSegments.length} segments, source ${videoDuration.toFixed(1)}s`)
 
-  // Process each segment
-  const segmentPaths: string[] = []
-  for (let i = 0; i < videoSegments.length; i++) {
-    const seg = videoSegments[i]!
-    const segPath = path.join(tmpDir, `speed-seg-${i}.mp4`)
-    const duration = seg.endSec - seg.startSec
-    const outputDuration = duration / seg.speed
+  // Process each segment. Frame counts come from the shared plan so segment
+  // boundaries land exactly where the time remap says they do — encoding each
+  // segment independently let ffmpeg round every one of them up.
+  const fps = probeVideoFps(sourceVideo)
+  const plan = planSpeedSegments(videoSegments, fps)
+  if (plan.length === 0) return sourceVideo
 
-    const args = [
+  const segmentPaths: string[] = []
+  for (let i = 0; i < plan.length; i++) {
+    const seg = plan[i]!
+    const segPath = path.join(tmpDir, `speed-seg-${i}.mp4`)
+
+    ffmpeg([
       '-y', '-ss', String(seg.startSec), '-to', String(seg.endSec),
       '-i', sourceVideo,
-      '-filter:v', `setpts=PTS/${seg.speed}`,
+      '-filter:v', `setpts=PTS/${seg.speed},fps=${fps}`,
+      '-frames:v', String(seg.frames),
       '-c:v', 'libx264', '-preset', 'fast', '-crf', '18', '-an',
       segPath,
-    ]
-    ffmpeg(args)
+    ])
 
-    console.log(`    Seg ${i}: ${seg.startSec.toFixed(1)}s-${seg.endSec.toFixed(1)}s @ ${seg.speed}x → ${outputDuration.toFixed(1)}s`)
+    console.log(`    Seg ${i}: ${seg.startSec.toFixed(1)}s-${seg.endSec.toFixed(1)}s @ ${seg.speed}x → ${(seg.frames / fps).toFixed(2)}s (${seg.frames}f)`)
     segmentPaths.push(segPath)
   }
 
@@ -666,21 +738,27 @@ export function renderVideo(
   const hasZoom = trace.subtitles?.some((s) => s.zoom && s.zoom.level > 1.0) ?? false
   const hasAudio = trace.voiceover?.audioTrackPath &&
     fs.existsSync(trace.voiceover.audioTrackPath)
-  const hasSpeed = trace.speedSegments && trace.speedSegments.length > 0 &&
-    trace.speedSegments.some((s) => Math.abs(s.speed - 1.0) > 0.01)
+  const hasSpeed = isSpeedClockAuthority(trace.speedSegments)
 
-  // Phase 1: Trim blank frames at the start of the video.
+  // Phase 1: Trim blank frames at the start of the video — but only when the
+  // speed map is NOT the clock authority. With non-realtime speed segments,
+  // renderWithSpeed() already selects the retained source intervals relative
+  // to the recording's first frame, and every consumer's timestamps are
+  // expressed in that output clock. Trimming here would introduce a second,
+  // incompatible origin: the segment seeks below are computed against the
+  // ORIGINAL recording clock and would land blankLeadIn seconds late (#20).
   let videoInput = sourceVideo
-  const blankLeadIn = detectBlankLeadIn(videoInput, tmpDir)
-  if (blankLeadIn > 0) {
-    const trimmedPath = path.join(tmpDir, 'trimmed-input.mp4')
-    ffmpeg([
-      '-y', '-ss', String(blankLeadIn), '-i', videoInput,
-      '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '18',
-      trimmedPath,
-    ])
-    videoInput = trimmedPath
-
+  if (!hasSpeed) {
+    const blankLeadIn = detectBlankLeadIn(videoInput, tmpDir)
+    if (blankLeadIn > 0) {
+      const trimmedPath = path.join(tmpDir, 'trimmed-input.mp4')
+      ffmpeg([
+        '-y', '-ss', String(blankLeadIn), '-i', videoInput,
+        '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '18',
+        trimmedPath,
+      ])
+      videoInput = trimmedPath
+    }
   }
 
   // Phase 2: Apply speed segments (changes duration, before zoom/subtitles).

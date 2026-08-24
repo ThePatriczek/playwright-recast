@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Bug fixes
+
+- **Subtitles, zoom, and voiceover ran ahead of the video when `speedUp()` was combined with blank lead-in** ([#20](https://github.com/ThePatriczek/playwright-recast/issues/20)) — `detectBlankLeadIn()` measures source-video time, but the pipeline subtracted that value from subtitle, zoom, click, cursor, and highlight timestamps that had already been remapped into the speed-mapped output clock. A low-entropy opening that read as three seconds of blank frames therefore shifted every cue back by a full three seconds. The renderer compounded it: it trimmed the blank prefix from its input and then had `renderWithSpeed()` seek that trimmed file with offsets computed against the untrimmed recording clock. When non-real-time speed segments are active, the speed map is now the single clock authority — no blank trimming, no blank compensation — because it already selects the retained source intervals. Pipelines without `speedUp()` are unaffected.
+- **Speed segments accumulated frame drift across cut boundaries** ([#20](https://github.com/ThePatriczek/playwright-recast/issues/20)) — Each speed segment was encoded to its own MP4 and concatenated, and ffmpeg rounded every segment up independently: a 2 s segment at 2× on a 25 fps source came out 27 frames (1.08 s) instead of 25 (1.00 s). Subtitle remapping uses the ideal continuous durations, so four segments drifted about 0.32 s. Segment frame counts are now derived from a running cumulative output position, so the total always matches `round(totalOutputSec × fps)` and rounding never accumulates.
+
+### Internal
+
+- New `isSpeedClockAuthority()` predicate (`src/speed/clock-authority.ts`) replaces three slightly different inline "is speed active" checks in the renderer and executor.
+- New `src/pipeline/blank-lead.ts` collects the blank-lead policy and the subtitle/overlay shift loops that were duplicated across four sites in `executor.ts`.
+- `planSpeedSegments()` and `probeVideoFps()` extracted from `renderWithSpeed()` / `renderWithZoom()` as pure, independently testable units.
+- Test suite: **621 passed | 11 skipped** (+30 — clock-authority boundaries, cumulative frame planning, ffmpeg frame-exactness, blank-lead policy under both clock modes, and an end-to-end fixture asserting the decoded frame at a cue belongs to the post-transition scene).
+
 ## 0.19.2 (2026-07-15)
 
 ### Features

@@ -26,6 +26,11 @@ import { parseSrt } from '../subtitles/srt-parser.js'
 import { generateVoiceover } from '../voiceover/voiceover-processor.js'
 import { renderVideo, detectBlankLeadIn, type RenderableTrace } from '../render/renderer.js'
 import {
+  resolveBlankLeadInMs,
+  shiftSubtitlesForBlankLead,
+  shiftOverlayTimesForBlankLead,
+} from './blank-lead.js'
+import {
   assembleVideoFromScreencastFrames,
   selectRecordingPageFrames,
 } from '../render/screencast-assembler.js'
@@ -97,35 +102,40 @@ export class PipelineExecutor {
       throw new Error('Pipeline has no data to render. Did you call .parse()?')
     }
 
-    // Compensate click events and cursor keyframes for blank lead-in.
-    // The renderer trims blank frames from the start of the video (Phase 1),
-    // and voiceover/subtitle timing is already adjusted for this in the voiceover/render
-    // cases. But click sound timing and cursor keyframes are computed earlier without
-    // this compensation, causing audio desync when blank lead-in is non-zero.
+    // Compensate click events, cursor keyframes, and highlight events for
+    // blank lead-in. The renderer trims blank frames from the start of the
+    // video (Phase 1), and voiceover/subtitle timing is already adjusted for
+    // this in the voiceover/render cases. But these are computed earlier
+    // without the compensation, causing desync when blank lead-in is non-zero.
+    // Under speed authority the offset resolves to 0 and nothing is detected
+    // or shifted — see resolveBlankLeadInMs().
     if (
       state.sourceVideoPath &&
       (state.clickEvents || state.cursorKeyframes || state.highlightEvents)
     ) {
       const blankTmpDir = path.join(outputDir, '.recast-blank-probe')
-      fs.mkdirSync(blankTmpDir, { recursive: true })
-      const blankLeadIn = detectBlankLeadIn(state.sourceVideoPath, blankTmpDir)
-      fs.rmSync(blankTmpDir, { recursive: true, force: true })
-      if (blankLeadIn > 0) {
-        const offsetMs = blankLeadIn * 1000
-        if (state.clickEvents) {
-          for (const ce of state.clickEvents) {
-            ce.videoTimeMs = Math.max(0, Math.round(ce.videoTimeMs - offsetMs))
+      const offsetMs = resolveBlankLeadInMs(
+        state.speedMapped?.speedSegments,
+        () => {
+          fs.mkdirSync(blankTmpDir, { recursive: true })
+          try {
+            return detectBlankLeadIn(state.sourceVideoPath!, blankTmpDir)
+          } finally {
+            fs.rmSync(blankTmpDir, { recursive: true, force: true })
+          }
+        },
+      )
+      if (offsetMs > 0) {
+        if (state.clickEvents) shiftOverlayTimesForBlankLead(state.clickEvents, offsetMs)
+        if (state.highlightEvents) {
+          shiftOverlayTimesForBlankLead(state.highlightEvents, offsetMs)
+          for (const he of state.highlightEvents) {
+            he.endTimeMs = Math.max(0, Math.round(he.endTimeMs - offsetMs))
           }
         }
         if (state.cursorKeyframes) {
           for (const kf of state.cursorKeyframes) {
-            kf.videoTimeSec = Math.max(0, kf.videoTimeSec - blankLeadIn)
-          }
-        }
-        if (state.highlightEvents) {
-          for (const he of state.highlightEvents) {
-            he.videoTimeMs = Math.max(0, Math.round(he.videoTimeMs - offsetMs))
-            he.endTimeMs = Math.max(0, Math.round(he.endTimeMs - offsetMs))
+            kf.videoTimeSec = Math.max(0, kf.videoTimeSec - offsetMs / 1000)
           }
         }
       }
@@ -967,26 +977,24 @@ export class PipelineExecutor {
           if (!state.subtitled) throw new Error('voiceover() requires subtitles() first')
 
           // Compensate for blank lead-in BEFORE generating voiceover so the
-          // audio track timing matches the trimmed video.
+          // audio track timing matches the trimmed video. Under speed
+          // authority this resolves to 0: the speed map already defines
+          // output time and the source-time blank offset does not belong in
+          // it (#20).
           if (state.sourceVideoPath && !state._blankTrimApplied) {
             const blankTmpDir = path.join(path.dirname(state.sourceVideoPath), '.recast-blank-tmp')
-            fs.mkdirSync(blankTmpDir, { recursive: true })
-            const blankLeadIn = detectBlankLeadIn(state.sourceVideoPath, blankTmpDir)
-            state._blankLeadInMs = blankLeadIn * 1000
-            fs.rmSync(blankTmpDir, { recursive: true, force: true })
-            if (blankLeadIn > 0) {
-              const offsetMs = blankLeadIn * 1000
-              for (const sub of state.subtitled.subtitles) {
-                sub.startMs = Math.max(0, sub.startMs - offsetMs)
-                sub.endMs = Math.max(0, sub.endMs - offsetMs)
-                if (sub.zoom?.startMs !== undefined) {
-                  sub.zoom.startMs = Math.max(0, sub.zoom.startMs - offsetMs)
+            state._blankLeadInMs = resolveBlankLeadInMs(
+              state.speedMapped?.speedSegments,
+              () => {
+                fs.mkdirSync(blankTmpDir, { recursive: true })
+                try {
+                  return detectBlankLeadIn(state.sourceVideoPath!, blankTmpDir)
+                } finally {
+                  fs.rmSync(blankTmpDir, { recursive: true, force: true })
                 }
-                if (sub.zoom?.endMs !== undefined) {
-                  sub.zoom.endMs = Math.max(0, sub.zoom.endMs - offsetMs)
-                }
-              }
-            }
+              },
+            )
+            shiftSubtitlesForBlankLead(state.subtitled.subtitles, state._blankLeadInMs)
             state._blankTrimApplied = true
           }
 
@@ -1032,26 +1040,23 @@ export class PipelineExecutor {
         }
 
         case 'render':
-          // Apply blank trim compensation for subtitle-only mode (no voiceover)
+          // Apply blank trim compensation for subtitle-only mode (no
+          // voiceover). Resolves to 0 under speed authority — see
+          // resolveBlankLeadInMs().
           if (state.subtitled && state.sourceVideoPath && !state._blankTrimApplied) {
             const blankTmpDir = path.join(path.dirname(state.sourceVideoPath), '.recast-blank-tmp')
-            fs.mkdirSync(blankTmpDir, { recursive: true })
-            const blankLeadIn = detectBlankLeadIn(state.sourceVideoPath, blankTmpDir)
-            state._blankLeadInMs = blankLeadIn * 1000
-            fs.rmSync(blankTmpDir, { recursive: true, force: true })
-            if (blankLeadIn > 0) {
-              const offsetMs = blankLeadIn * 1000
-              for (const sub of state.subtitled.subtitles) {
-                sub.startMs = Math.max(0, sub.startMs - offsetMs)
-                sub.endMs = Math.max(0, sub.endMs - offsetMs)
-                if (sub.zoom?.startMs !== undefined) {
-                  sub.zoom.startMs = Math.max(0, sub.zoom.startMs - offsetMs)
+            state._blankLeadInMs = resolveBlankLeadInMs(
+              state.speedMapped?.speedSegments,
+              () => {
+                fs.mkdirSync(blankTmpDir, { recursive: true })
+                try {
+                  return detectBlankLeadIn(state.sourceVideoPath!, blankTmpDir)
+                } finally {
+                  fs.rmSync(blankTmpDir, { recursive: true, force: true })
                 }
-                if (sub.zoom?.endMs !== undefined) {
-                  sub.zoom.endMs = Math.max(0, sub.zoom.endMs - offsetMs)
-                }
-              }
-            }
+              },
+            )
+            shiftSubtitlesForBlankLead(state.subtitled.subtitles, state._blankLeadInMs)
             state._blankTrimApplied = true
           }
           break
