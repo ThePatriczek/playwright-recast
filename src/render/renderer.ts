@@ -185,16 +185,7 @@ function renderWithZoom(
   const srcRes = probeResolution(sourceVideo)
 
   // Probe fps from source video for zoompan frame-to-time conversion
-  let fps = 25
-  try {
-    const fpsStr = execFileSync('ffprobe', [
-      '-v', 'quiet', '-select_streams', 'v:0',
-      '-show_entries', 'stream=r_frame_rate', '-of', 'csv=p=0', sourceVideo,
-    ]).toString().trim()
-    const parts = fpsStr.split('/')
-    const probedFps = parts.length === 2 ? Number(parts[0]) / Number(parts[1]) : Number(fpsStr)
-    if (probedFps > 0) fps = Math.round(probedFps)
-  } catch { /* use default */ }
+  const fps = probeVideoFps(sourceVideo)
 
   const config: ZoomExprConfig = {
     transitionMs: zoomConfig?.transitionMs ?? 400,
@@ -523,24 +514,28 @@ function renderWithSpeed(
 
   console.log(`  Speed: ${videoSegments.length} segments, source ${videoDuration.toFixed(1)}s`)
 
-  // Process each segment
-  const segmentPaths: string[] = []
-  for (let i = 0; i < videoSegments.length; i++) {
-    const seg = videoSegments[i]!
-    const segPath = path.join(tmpDir, `speed-seg-${i}.mp4`)
-    const duration = seg.endSec - seg.startSec
-    const outputDuration = duration / seg.speed
+  // Process each segment. Frame counts come from the shared plan so segment
+  // boundaries land exactly where the time remap says they do — encoding each
+  // segment independently let ffmpeg round every one of them up.
+  const fps = probeVideoFps(sourceVideo)
+  const plan = planSpeedSegments(videoSegments, fps)
+  if (plan.length === 0) return sourceVideo
 
-    const args = [
+  const segmentPaths: string[] = []
+  for (let i = 0; i < plan.length; i++) {
+    const seg = plan[i]!
+    const segPath = path.join(tmpDir, `speed-seg-${i}.mp4`)
+
+    ffmpeg([
       '-y', '-ss', String(seg.startSec), '-to', String(seg.endSec),
       '-i', sourceVideo,
-      '-filter:v', `setpts=PTS/${seg.speed}`,
+      '-filter:v', `setpts=PTS/${seg.speed},fps=${fps}`,
+      '-frames:v', String(seg.frames),
       '-c:v', 'libx264', '-preset', 'fast', '-crf', '18', '-an',
       segPath,
-    ]
-    ffmpeg(args)
+    ])
 
-    console.log(`    Seg ${i}: ${seg.startSec.toFixed(1)}s-${seg.endSec.toFixed(1)}s @ ${seg.speed}x → ${outputDuration.toFixed(1)}s`)
+    console.log(`    Seg ${i}: ${seg.startSec.toFixed(1)}s-${seg.endSec.toFixed(1)}s @ ${seg.speed}x → ${(seg.frames / fps).toFixed(2)}s (${seg.frames}f)`)
     segmentPaths.push(segPath)
   }
 
