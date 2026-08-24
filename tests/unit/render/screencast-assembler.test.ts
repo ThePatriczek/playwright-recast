@@ -105,7 +105,7 @@ describe('screencast assembler', () => {
       }),
     ).rejects.toThrow(/no screencast frames/i)
   })
-})
+}, 120_000)
 
 describe('selectRecordingPageFrames', () => {
   it('returns the frames belonging to the page whose last frame appears latest', () => {

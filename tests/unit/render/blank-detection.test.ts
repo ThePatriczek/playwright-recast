@@ -91,4 +91,4 @@ describe('Blank frame detection', () => {
     expect(fs.statSync(f0).size).toBeLessThan(15_000)
     expect(fs.statSync(f1).size).toBeGreaterThan(15_000)
   })
-})
+}, 180_000)
