@@ -22,6 +22,7 @@ import { writeAss } from '../subtitles/ass-writer.js'
 import { chunkSubtitles } from '../subtitles/subtitle-chunker.js'
 import { filterRenderableSubtitles } from '../subtitles/renderable.js'
 import { interpolateVideo } from '../interpolate/interpolator.js'
+import { isSpeedClockAuthority } from '../speed/clock-authority.js'
 
 /**
  * Detect blank/white frames at the start of a video and return the timestamp
@@ -666,8 +667,7 @@ export function renderVideo(
   const hasZoom = trace.subtitles?.some((s) => s.zoom && s.zoom.level > 1.0) ?? false
   const hasAudio = trace.voiceover?.audioTrackPath &&
     fs.existsSync(trace.voiceover.audioTrackPath)
-  const hasSpeed = trace.speedSegments && trace.speedSegments.length > 0 &&
-    trace.speedSegments.some((s) => Math.abs(s.speed - 1.0) > 0.01)
+  const hasSpeed = isSpeedClockAuthority(trace.speedSegments)
 
   // Phase 1: Trim blank frames at the start of the video.
   let videoInput = sourceVideo
