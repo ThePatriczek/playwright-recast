@@ -162,13 +162,21 @@ and keeps `-frames:v` on the result, exactly as `renderWithSpeed()` now does.
 
 **Overflow alignment.** `voiceover-processor.ts:166` records
 `atVideoMs: originalEndsMs[si]` in continuous ms. It aligns up to the next
-output frame boundary, with the fractional remainder added to the freeze
-duration so the audio still gets its full pause:
+output frame boundary, with the fractional remainder moved *out of* the hold —
+so the freeze's **end position is preserved**:
 
 ```ts
 const alignedMs = Math.ceil(atVideoMs * fps / 1000) * 1000 / fps
-freezes.push({ atVideoMs: alignedMs, durationMs: overflow + (alignedMs - atVideoMs) })
+const shift = alignedMs - atVideoMs
+freezes.push({ atVideoMs: alignedMs, durationMs: Math.max(0, overflow - shift) })
 ```
+
+Subtracting, not adding, is load-bearing. Pushing the hold `shift` later means
+the video plays `shift` more milliseconds before it pauses, so the hold needs
+`shift` less to resume at the same output position. Adding instead would extend
+every freeze by up to one frame and push the rest of the video later — the
+accumulation this issue exists to remove. The accumulator that shifts subtitles
+(`timeShift`) must advance by the **aligned** duration for the same reason.
 
 This is not flagged. It changes output by at most one frame, and only where the
 frame is currently on the wrong side of a cut — the definition of a bug fix
@@ -238,7 +246,7 @@ Note the interaction already discussed: this option is what generates sub-frame
 segments. W2 is what keeps them visible. They ship together or the option is
 worse than useless.
 
-### W5 — `zoom({ containInCue: true })` (item 6). Opt-in.
+### W5 — `autoZoom({ containInCue: true })` (item 6). Opt-in.
 
 `buildSegments()` (`zoom-expression.ts:105`) sets the zoom-in transition to
 `[startSec - T, startSec]` and the zoom-out to end at `endSec + T`, so both
