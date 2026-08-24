@@ -103,3 +103,25 @@ describe('shiftOverlayTimesForBlankLead', () => {
     expect(events[0]!.videoTimeMs).toBe(4000)
   })
 })
+
+describe('blank-lead compensation is skipped only under speed authority', () => {
+  it('leaves speed-mapped subtitles untouched end to end', () => {
+    // The full pipeline path: subtitles already remapped by timeRemap(),
+    // a 3s blank prefix detected in the source. Under speed authority the
+    // cue must keep its remapped time (7025ms), not slide to 4025ms.
+    const subs = [sub(7025, 9500)]
+    const offset = resolveBlankLeadInMs([seg(1.0), seg(4.0)], () => 3)
+    shiftSubtitlesForBlankLead(subs, offset)
+
+    expect(subs[0]!.startMs).toBe(7025)
+  })
+
+  it('still compensates when there is no speed map (regression guard)', () => {
+    // Pipelines without speedUp() must keep today's behavior exactly.
+    const subs = [sub(7025, 9500)]
+    const offset = resolveBlankLeadInMs(undefined, () => 3)
+    shiftSubtitlesForBlankLead(subs, offset)
+
+    expect(subs[0]!.startMs).toBe(4025)
+  })
+})

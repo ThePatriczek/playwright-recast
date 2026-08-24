@@ -740,18 +740,25 @@ export function renderVideo(
     fs.existsSync(trace.voiceover.audioTrackPath)
   const hasSpeed = isSpeedClockAuthority(trace.speedSegments)
 
-  // Phase 1: Trim blank frames at the start of the video.
+  // Phase 1: Trim blank frames at the start of the video — but only when the
+  // speed map is NOT the clock authority. With non-realtime speed segments,
+  // renderWithSpeed() already selects the retained source intervals relative
+  // to the recording's first frame, and every consumer's timestamps are
+  // expressed in that output clock. Trimming here would introduce a second,
+  // incompatible origin: the segment seeks below are computed against the
+  // ORIGINAL recording clock and would land blankLeadIn seconds late (#20).
   let videoInput = sourceVideo
-  const blankLeadIn = detectBlankLeadIn(videoInput, tmpDir)
-  if (blankLeadIn > 0) {
-    const trimmedPath = path.join(tmpDir, 'trimmed-input.mp4')
-    ffmpeg([
-      '-y', '-ss', String(blankLeadIn), '-i', videoInput,
-      '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '18',
-      trimmedPath,
-    ])
-    videoInput = trimmedPath
-
+  if (!hasSpeed) {
+    const blankLeadIn = detectBlankLeadIn(videoInput, tmpDir)
+    if (blankLeadIn > 0) {
+      const trimmedPath = path.join(tmpDir, 'trimmed-input.mp4')
+      ffmpeg([
+        '-y', '-ss', String(blankLeadIn), '-i', videoInput,
+        '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '18',
+        trimmedPath,
+      ])
+      videoInput = trimmedPath
+    }
   }
 
   // Phase 2: Apply speed segments (changes duration, before zoom/subtitles).
