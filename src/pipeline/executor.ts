@@ -24,7 +24,7 @@ import { processSpeed } from '../speed/speed-processor.js'
 import { generateSubtitles } from '../subtitles/subtitle-generator.js'
 import { parseSrt } from '../subtitles/srt-parser.js'
 import { generateVoiceover } from '../voiceover/voiceover-processor.js'
-import { renderVideo, detectBlankLeadIn, type RenderableTrace } from '../render/renderer.js'
+import { renderVideo, detectBlankLeadIn, probeVideoFps, type RenderableTrace } from '../render/renderer.js'
 import {
   resolveBlankLeadInMs,
   shiftSubtitlesForBlankLead,
@@ -64,7 +64,7 @@ type PipelineState = {
   clickEffectConfig?: ReturnType<typeof resolveClickEffectConfig>
   cursorKeyframes?: CursorKeyframe[]
   cursorOverlayConfig?: ResolvedCursorOverlayConfig
-  zoomConfig?: { transitionMs?: number; easing?: import('../types/easing.js').EasingSpec }
+  zoomConfig?: { transitionMs?: number; easing?: import('../types/easing.js').EasingSpec; containInCue?: boolean }
   interpolateConfig?: import('../types/interpolate.js').InterpolateConfig
   highlightEvents?: HighlightEvent[]
   highlightConfig?: ResolvedTextHighlightConfig
@@ -715,6 +715,7 @@ export class PipelineExecutor {
           state.zoomConfig = {
             transitionMs: stage.config.transitionMs,
             easing: stage.config.easing,
+            containInCue: stage.config.containInCue,
           }
           break
         }
@@ -1029,12 +1030,14 @@ export class PipelineExecutor {
           }
 
           const tmpDir = path.join(path.dirname(state.sourceVideoPath ?? '/tmp'), '.recast-vo-tmp')
+          const outputFps = state.sourceVideoPath ? probeVideoFps(state.sourceVideoPath) : 25
           state.voiceovered = await generateVoiceover(
             state.subtitled,
             stage.provider,
             tmpDir,
             stage.options,
             approachHolds,
+            outputFps,
           )
           break
         }

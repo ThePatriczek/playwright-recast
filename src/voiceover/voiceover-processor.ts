@@ -1,6 +1,7 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { execFileSync } from 'node:child_process'
+import { probeAudioFormat, planAudioConcat } from './audio-format.js'
 import type { SubtitledTrace } from '../types/subtitle.js'
 import type {
   TtsProvider,
@@ -11,6 +12,7 @@ import type {
   LoudnessNormalizeConfig,
 } from '../types/voiceover.js'
 import { normalizeLoudness } from './normalize.js'
+import { alignFreezeToFrame } from './frame-align.js'
 
 function getAudioDurationMs(filePath: string): number {
   const output = execFileSync('ffprobe', [
@@ -22,11 +24,11 @@ function getAudioDurationMs(filePath: string): number {
   return Math.round(Number(output) * 1000)
 }
 
-function generateSilence(durationMs: number, outputPath: string, sampleRate = 24000): void {
+function generateSilence(durationMs: number, outputPath: string, sampleRate = 24000, channels = 1): void {
   const durationSec = Math.max(0.01, durationMs / 1000)
   execFileSync('ffmpeg', [
     '-y', '-f', 'lavfi',
-    '-i', `anullsrc=r=${sampleRate}:cl=mono`,
+    '-i', `anullsrc=r=${sampleRate}:cl=${channels}c`,
     '-t', String(durationSec),
     '-c:a', 'libmp3lame', '-q:a', '9',
     outputPath,
@@ -46,13 +48,19 @@ function resolveNormalize(
  * Generate voiceover audio from subtitles using a TTS provider.
  * Produces individual audio segments, optionally normalizes loudness per segment,
  * pads with silence to match timing, and concatenates into a single audio track.
+ * @param outputFps Frame rate of the rendered output. Freeze points are
+ *   aligned to it here — once — so the audio silence, the subtitle shift, and
+ *   the renderer's video hold all use identical numbers. Aligning downstream
+ *   instead would leave shiftForFreezes() on raw milliseconds while the video
+ *   held frame-rounded ones, desyncing every click and cursor keyframe.
  */
 export async function generateVoiceover(
   trace: SubtitledTrace,
   provider: TtsProvider,
   tmpDir: string,
-  options?: VoiceoverOptions,
+  options: VoiceoverOptions | undefined,
   approachHolds: VoiceoverFreeze[] = [],
+  outputFps: number,
 ): Promise<VoiceoveredTrace> {
   fs.mkdirSync(tmpDir, { recursive: true })
   const normalizeConfig = resolveNormalize(options?.normalize)
@@ -72,6 +80,16 @@ export async function generateVoiceover(
       `Provider "${provider.name}" returned ${audios.length} segments for ${texts.length} texts`,
     )
   }
+
+  // Generated silence must match the TTS segments' format, not a hardcoded
+  // rate: planAudioConcat takes a majority vote across every segment
+  // (up to two silence pads per subtitle), so a fixed rate that disagrees
+  // with the provider's could win the vote and normalise the whole
+  // narration down to it. Probing the first real segment keeps silence
+  // agreeing with TTS, so formats match and concat stays on -c copy.
+  const firstTtsFormat = audios.length > 0 ? probeAudioFormat(audios[0]!.path) : null
+  const silenceSampleRate = firstTtsFormat?.sampleRate ?? 24000
+  const silenceChannels = firstTtsFormat?.channels ?? 1
 
   const entries: VoiceoverEntry[] = []
   const segmentFiles: string[] = []
@@ -102,8 +120,9 @@ export async function generateVoiceover(
 
     while (holdIndex < holds.length && holds[holdIndex]!.atVideoMs <= originalStartsMs[si]!) {
       const h = holds[holdIndex]!
-      freezes.push({ atVideoMs: h.atVideoMs, durationMs: h.durationMs })
-      timeShift += h.durationMs
+      const aligned = alignFreezeToFrame(h.atVideoMs, h.durationMs, outputFps)
+      freezes.push(aligned)
+      timeShift += aligned.durationMs
       holdIndex++
     }
 
@@ -114,7 +133,7 @@ export async function generateVoiceover(
 
     if (subtitle.startMs > cursor) {
       const silencePath = path.join(tmpDir, `silence-${subtitle.index}.mp3`)
-      generateSilence(subtitle.startMs - cursor, silencePath)
+      generateSilence(subtitle.startMs - cursor, silencePath, silenceSampleRate, silenceChannels)
       segmentFiles.push(silencePath)
     }
 
@@ -146,7 +165,7 @@ export async function generateVoiceover(
       const pad = windowDuration - audioDuration
       if (pad > 50) {
         const padPath = path.join(tmpDir, `pad-${subtitle.index}.mp3`)
-        generateSilence(pad, padPath)
+        generateSilence(pad, padPath, silenceSampleRate, silenceChannels)
         segmentFiles.push(padPath)
       }
       cursor = subtitle.endMs
@@ -163,12 +182,12 @@ export async function generateVoiceover(
       // before; the renderer's end-of-video tpad handles its overflow instead.
       const nextOriginalStartMs = originalStartsMs[si + 1]
       if (nextOriginalStartMs !== undefined) {
-        freezes.push({
-          atVideoMs: originalEndsMs[si]!,
-          durationMs: overflow,
-        })
+        const aligned = alignFreezeToFrame(originalEndsMs[si]!, overflow, outputFps)
+        freezes.push(aligned)
+        timeShift += aligned.durationMs
+      } else {
+        timeShift += overflow
       }
-      timeShift += overflow
       cursor = subtitle.endMs
     }
 
@@ -184,7 +203,7 @@ export async function generateVoiceover(
   // audio for; record them so the renderer still holds the video there.
   while (holdIndex < holds.length) {
     const h = holds[holdIndex]!
-    freezes.push({ atVideoMs: h.atVideoMs, durationMs: h.durationMs })
+    freezes.push(alignFreezeToFrame(h.atVideoMs, h.durationMs, outputFps))
     holdIndex++
   }
 
@@ -196,10 +215,17 @@ export async function generateVoiceover(
 
   const audioTrackPath = path.join(tmpDir, 'voiceover.mp3')
   if (segmentFiles.length > 0) {
+    const plan = planAudioConcat(segmentFiles.map(probeAudioFormat))
+    const codecArgs = plan.normalise
+      ? ['-c:a', 'libmp3lame', '-b:a', '128k', '-ar', String(plan.sampleRate), '-ac', String(plan.channels)]
+      : ['-c', 'copy']
+    if (plan.normalise) {
+      console.log(`  Voiceover: segment formats differ — normalising to ${plan.sampleRate}Hz/${plan.channels}ch`)
+    }
     execFileSync('ffmpeg', [
       '-y', '-f', 'concat', '-safe', '0',
       '-i', concatList,
-      '-c', 'copy',
+      ...codecArgs,
       audioTrackPath,
     ], { stdio: 'pipe' })
   }

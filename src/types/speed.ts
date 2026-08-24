@@ -48,6 +48,13 @@ export interface SpeedConfig {
   minSegmentDuration?: number
   /** Maximum speed multiplier. Default: 100.0 */
   maxSpeed?: number
+  /**
+   * Sample activity at exact narration and hidden-range boundaries in addition
+   * to the fixed interval grid. Off by default: turning it on shifts segment
+   * boundaries for existing pipelines. Enable it when narration scenes shorter
+   * than `minSegmentDuration` are being swallowed. Default: false
+   */
+  exactBoundaries?: boolean
   /** Custom rules (evaluated first, first match wins) */
   rules?: SpeedRule[]
   /**

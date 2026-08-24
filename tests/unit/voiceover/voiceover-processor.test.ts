@@ -87,7 +87,7 @@ describe('generateVoiceover provider isAvailable guard', () => {
 
     const trace = makeTrace(1)
     const tmp = path.join(TMP_ROOT, 'isavailable-guard')
-    await expect(generateVoiceover(trace, unavailableProvider, tmp)).rejects.toThrow(
+    await expect(generateVoiceover(trace, unavailableProvider, tmp, undefined, undefined, 25)).rejects.toThrow(
       /provider "unavailable-test" is not available/,
     )
     expect(synthesizeCalled).toBe(false)
@@ -115,7 +115,7 @@ describe('generateVoiceover provider isAvailable guard', () => {
     const tmp = path.join(TMP_ROOT, 'isavailable-ok')
     // Empty mp3s can't be probed for duration; we just want to confirm synthesize
     // was reached before any downstream failure.
-    await generateVoiceover(trace, okProvider, tmp).catch(() => {})
+    await generateVoiceover(trace, okProvider, tmp, undefined, undefined, 25).catch(() => {})
     expect(synthesizeCalled).toBe(true)
   })
 })
@@ -141,7 +141,7 @@ describe('generateVoiceover provider length guard', () => {
 
     const trace = makeTrace(3)
     const tmp = path.join(TMP_ROOT, 'length-guard')
-    await expect(generateVoiceover(trace, shortProvider, tmp)).rejects.toThrow('returned')
+    await expect(generateVoiceover(trace, shortProvider, tmp, undefined, undefined, 25)).rejects.toThrow('returned')
   })
 })
 
@@ -156,7 +156,7 @@ describe('generateVoiceover with VoiceoverOptions.normalize', () => {
     const tmp = path.join(TMP_ROOT, 'no-norm')
     const trace = makeTrace(2)
 
-    const result = await generateVoiceover(trace, provider, tmp)
+    const result = await generateVoiceover(trace, provider, tmp, undefined, undefined, 25)
     const l1 = measureLufs(path.join(tmp, 'seg-1.mp3'))
     const l2 = measureLufs(path.join(tmp, 'seg-2.mp3'))
     expect(Math.abs(l1 - l2)).toBeGreaterThan(10)
@@ -170,7 +170,7 @@ describe('generateVoiceover with VoiceoverOptions.normalize', () => {
     const tmp = path.join(TMP_ROOT, 'norm-on')
     const trace = makeTrace(2)
 
-    await generateVoiceover(trace, provider, tmp, { normalize: true })
+    await generateVoiceover(trace, provider, tmp, { normalize: true }, undefined, 25)
     const l1 = measureLufs(path.join(tmp, 'seg-1.mp3'))
     const l2 = measureLufs(path.join(tmp, 'seg-2.mp3'))
     expect(Math.abs(l1 - l2)).toBeLessThan(2)
@@ -184,7 +184,7 @@ describe('generateVoiceover with VoiceoverOptions.normalize', () => {
     const tmp = path.join(TMP_ROOT, 'norm-custom')
     const trace = makeTrace(1)
 
-    await generateVoiceover(trace, provider, tmp, { normalize: { targetLufs: -22 } })
+    await generateVoiceover(trace, provider, tmp, { normalize: { targetLufs: -22 } }, undefined, 25)
     const l = measureLufs(path.join(tmp, 'seg-1.mp3'))
     expect(l).toBeGreaterThan(-24)
     expect(l).toBeLessThan(-20)

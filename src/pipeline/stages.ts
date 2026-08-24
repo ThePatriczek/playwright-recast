@@ -51,6 +51,12 @@ export interface AutoZoomConfig {
   transitionMs?: number
   /** Easing function for zoom transitions (default: 'ease-in-out') */
   easing?: EasingSpec
+  /**
+   * Keep each cue's zoom-in and zoom-out inside the cue's own window, instead
+   * of starting `transitionMs` before it and ending `transitionMs` after it.
+   * Off by default: enabling it changes how existing demos look. Default: false
+   */
+  containInCue?: boolean
   /** @deprecated Use clickLevel instead */
   actionLevel?: number
   followCursor?: boolean

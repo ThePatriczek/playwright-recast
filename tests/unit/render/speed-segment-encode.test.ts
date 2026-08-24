@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import * as fs from 'node:fs'
+import * as os from 'node:os'
 import * as path from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { planSpeedSegments, probeVideoFps } from '../../../src/render/renderer'
 
-const TMP_DIR = path.join('/tmp', 'recast-speed-encode-test')
+const TMP_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'recast-speed-encode-test-'))
 const SRC = path.join(TMP_DIR, 'src.mp4')
 
 const countFrames = (file: string): number =>

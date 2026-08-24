@@ -23,6 +23,7 @@ import { chunkSubtitles } from '../subtitles/subtitle-chunker.js'
 import { filterRenderableSubtitles } from '../subtitles/renderable.js'
 import { interpolateVideo } from '../interpolate/interpolator.js'
 import { isSpeedClockAuthority } from '../speed/clock-authority.js'
+import { alignFreezeToFrame } from '../voiceover/frame-align.js'
 
 /**
  * Detect blank/white frames at the start of a video and return the timestamp
@@ -83,7 +84,7 @@ export interface RenderableTrace extends ParsedTrace {
   clickEffectConfig?: { color: string; opacity: number; radius: number; duration: number; soundVolume: number; sound?: string | true }
   cursorKeyframes?: CursorKeyframe[]
   cursorOverlayConfig?: ResolvedCursorOverlayConfig
-  zoomConfig?: { transitionMs?: number; easing?: import('../types/easing.js').EasingSpec }
+  zoomConfig?: { transitionMs?: number; easing?: import('../types/easing.js').EasingSpec; containInCue?: boolean }
   interpolateConfig?: import('../types/interpolate.js').InterpolateConfig
   highlightEvents?: import('../types/text-highlight.js').HighlightEvent[]
   highlightConfig?: import('../text-highlight/defaults.js').ResolvedTextHighlightConfig
@@ -174,7 +175,7 @@ function renderWithZoom(
   targetWidth: number,
   targetHeight: number,
   tmpDir: string,
-  zoomConfig?: { transitionMs?: number; easing?: import('../types/easing.js').EasingSpec },
+  zoomConfig?: { transitionMs?: number; easing?: import('../types/easing.js').EasingSpec; containInCue?: boolean },
 ): string {
   const zoomSubs = subtitles.filter((s) => s.zoom && s.zoom.level > 1.0)
   if (zoomSubs.length === 0) return sourceVideo
@@ -191,6 +192,7 @@ function renderWithZoom(
     transitionMs: zoomConfig?.transitionMs ?? 400,
     easing: zoomConfig?.easing ?? 'ease-in-out',
     fps,
+    containInCue: zoomConfig?.containInCue ?? false,
   }
 
   const filter = buildZoomFilter(keyframes, srcRes, { width: targetWidth, height: targetHeight }, config)
@@ -551,14 +553,14 @@ function renderWithSpeed(
 
 /** One video slice to encode when applying voiceover freezes. */
 export interface FreezeSegmentPlan {
-  /** Source-video start (seconds), inclusive. */
-  startSec: number
-  /** Source-video end (seconds), exclusive; null means "to end of video". */
-  endSec: number | null
-  /** Clone-pad held before the slice's first frame (a leading hold). */
-  startHoldSec: number
-  /** Clone-pad held after the slice's last frame. */
-  stopHoldSec: number
+  /** Output-video start frame, inclusive. */
+  startFrame: number
+  /** Output-video end frame, exclusive; null means "to end of video". */
+  endFrame: number | null
+  /** Clone-pad frames held before the slice's first frame. */
+  startHoldFrames: number
+  /** Clone-pad frames held after the slice's last frame. */
+  stopHoldFrames: number
 }
 
 /**
@@ -575,52 +577,68 @@ export interface FreezeSegmentPlan {
  * overlays from the video by that hold's duration.
  *
  * The total held time always equals the sum of all in-range freeze durations,
- * which is exactly what shiftForFreezes() applies to the overlays.
+ * which is exactly what shiftForFreezes() applies to the overlays. Positions
+ * and durations are expressed in whole output frames, so `totalHoldSec` is the
+ * frame-quantised sum; freezes reaching here from the voiceover path are
+ * already frame-aligned, so that quantisation is a no-op for them.
  */
 export function planVoiceoverFreezes(
   freezes: Array<{ atVideoMs: number; durationMs: number }>,
   videoDur: number,
+  fps: number,
 ): { segments: FreezeSegmentPlan[]; totalHoldSec: number } {
-  // Collapse freezes onto distinct cut positions (rounded to the ms), summing
-  // durations that land together. Keep atSec === 0 entries — those are leading
-  // holds, applied as a start-pad. Holds at/after the end are left to the
-  // renderer's end-of-video tpad.
-  // Keep every freeze with a positive hold: shiftForFreezes() shifts the
-  // overlays by the full ms-resolution list, so dropping a small hold here
-  // would hold the video less than the overlays shift and desync them.
+  // Collapse freezes onto distinct cut positions, summing durations that land
+  // on the same frame. Positions and durations are converted to whole frames
+  // here — the same integers the slicer trims on — so a cut and the overlay
+  // shift measured from it can never disagree about which side of a frame
+  // boundary they fall on. Keep frame 0 entries: those are leading holds,
+  // applied as a start-pad. Holds at/after the end are left to the renderer's
+  // end-of-video tpad.
+  const toFrames = (sec: number): number => Math.round(sec * fps)
+  const totalFrames = toFrames(videoDur)
+
   const byPos = new Map<number, number>()
   for (const f of freezes) {
-    const atSec = Math.max(0, Math.min(videoDur, f.atVideoMs / 1000))
-    const durSec = Math.max(0, f.durationMs / 1000)
-    if (durSec <= 0) continue
-    if (atSec >= videoDur - 0.01) continue
-    const key = Math.round(atSec * 1000)
-    byPos.set(key, (byPos.get(key) ?? 0) + durSec)
+    const atFrame = Math.max(0, Math.min(totalFrames, toFrames(f.atVideoMs / 1000)))
+    const durFrames = Math.max(0, toFrames(f.durationMs / 1000))
+    if (durFrames <= 0) continue
+    if (atFrame >= totalFrames) continue
+    byPos.set(atFrame, (byPos.get(atFrame) ?? 0) + durFrames)
   }
   const cuts = [...byPos.entries()]
-    .map(([ms, durSec]) => ({ atSec: ms / 1000, durSec }))
-    .sort((a, b) => a.atSec - b.atSec)
+    .map(([atFrame, durFrames]) => ({ atFrame, durFrames }))
+    .sort((a, b) => a.atFrame - b.atFrame)
 
-  const totalHoldSec = cuts.reduce((a, b) => a + b.durSec, 0)
+  const totalHoldSec = cuts.reduce((a, b) => a + b.durFrames, 0) / fps
   if (cuts.length === 0) return { segments: [], totalHoldSec: 0 }
 
   const segments: FreezeSegmentPlan[] = []
   let prevEnd = 0
   let pendingStartHold = 0 // holds at prevEnd that must start-pad the next slice
   for (const c of cuts) {
-    if (c.atSec <= prevEnd + 0.01) {
+    if (c.atFrame <= prevEnd) {
       // Coincides with the current slice's start (e.g. a leading freeze at 0).
       // Hold the same frame by start-padding the next emitted slice.
-      pendingStartHold += c.durSec
+      pendingStartHold += c.durFrames
       continue
     }
-    segments.push({ startSec: prevEnd, endSec: c.atSec, startHoldSec: pendingStartHold, stopHoldSec: c.durSec })
-    prevEnd = c.atSec
+    segments.push({
+      startFrame: prevEnd,
+      endFrame: c.atFrame,
+      startHoldFrames: pendingStartHold,
+      stopHoldFrames: c.durFrames,
+    })
+    prevEnd = c.atFrame
     pendingStartHold = 0
   }
 
-  if (prevEnd < videoDur - 0.01 || pendingStartHold > 0.01) {
-    segments.push({ startSec: prevEnd, endSec: null, startHoldSec: pendingStartHold, stopHoldSec: 0 })
+  if (prevEnd < totalFrames || pendingStartHold > 0) {
+    segments.push({
+      startFrame: prevEnd,
+      endFrame: null,
+      startHoldFrames: pendingStartHold,
+      stopHoldFrames: 0,
+    })
   }
 
   return { segments, totalHoldSec }
@@ -641,21 +659,36 @@ function applyVoiceoverFreezes(
   if (freezes.length === 0) return videoPath
 
   const videoDur = getVideoDuration(videoPath)
-  const { segments, totalHoldSec } = planVoiceoverFreezes(freezes, videoDur)
+  const fps = probeVideoFps(videoPath)
+  const { segments, totalHoldSec } = planVoiceoverFreezes(freezes, videoDur, fps)
   if (segments.length === 0) return videoPath
 
   const segPaths: string[] = []
   for (let i = 0; i < segments.length; i++) {
     const seg = segments[i]!
     const segPath = path.join(tmpDir, `vo-freeze-seg-${i}.mp4`)
+
+    // Slice by frame index, not timestamp: `trim` counts decoded frames, so the
+    // boundary frame lands with the cue that owns it instead of wherever an
+    // input seek's timestamp rounding puts it. No `-ss` — the trim filter already
+    // applies the offset, and an input seek would double-apply it.
+    const trim = seg.endFrame !== null
+      ? `trim=start_frame=${seg.startFrame}:end_frame=${seg.endFrame}`
+      : `trim=start_frame=${seg.startFrame}`
+    const filters = [trim, 'setpts=PTS-STARTPTS']
+
     const pad: string[] = []
-    if (seg.startHoldSec > 0) pad.push(`start_mode=clone:start_duration=${seg.startHoldSec.toFixed(3)}`)
-    if (seg.stopHoldSec > 0) pad.push(`stop_mode=clone:stop_duration=${seg.stopHoldSec.toFixed(3)}`)
+    if (seg.startHoldFrames > 0) {
+      pad.push(`start_mode=clone:start_duration=${(seg.startHoldFrames / fps).toFixed(3)}`)
+    }
+    if (seg.stopHoldFrames > 0) {
+      pad.push(`stop_mode=clone:stop_duration=${(seg.stopHoldFrames / fps).toFixed(3)}`)
+    }
+    if (pad.length > 0) filters.push(`tpad=${pad.join(':')}`)
+
     ffmpeg([
-      '-y', '-ss', String(seg.startSec),
-      ...(seg.endSec !== null ? ['-to', String(seg.endSec)] : []),
-      '-i', videoPath,
-      ...(pad.length > 0 ? ['-vf', `tpad=${pad.join(':')}`] : []),
+      '-y', '-i', videoPath,
+      '-vf', filters.join(','),
       '-c:v', 'libx264', '-preset', 'fast', '-crf', '18', '-an',
       segPath,
     ])
@@ -808,12 +841,17 @@ export function renderVideo(
   const approachFreezes: Array<{ atVideoMs: number; durationMs: number }> = []
   if (!trace.voiceover && trace.cursorKeyframes) {
     const approachMs = trace.cursorOverlayConfig?.approachMs ?? 500
+    // Align here rather than upstream: this path has no audio or subtitles to
+    // stay in sync with, unlike the voiceover path, which is aligned when the
+    // freezes are born.
+    const approachFps = probeVideoFps(videoInput)
     for (const kf of trace.cursorKeyframes) {
       if (kf.approach) {
-        approachFreezes.push({
-          atVideoMs: Math.max(0, Math.round(kf.videoTimeSec * 1000) - 2), // -2ms: ripple + cursor shift into the hold
-          durationMs: Math.round(approachMs),
-        })
+        approachFreezes.push(alignFreezeToFrame(
+          Math.max(0, Math.round(kf.videoTimeSec * 1000) - 2), // -2ms: ripple + cursor shift into the hold
+          Math.round(approachMs),
+          approachFps,
+        ))
       }
     }
   }

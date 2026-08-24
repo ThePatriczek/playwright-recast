@@ -3,8 +3,10 @@ import { toMonotonic } from '../types/trace.js'
 import type { SpeedConfig, SpeedSegment, SpeedMappedTrace, SpeedRuleContext } from '../types/speed.js'
 import { classifyTimepoint, USER_ACTION_METHODS } from './classifiers.js'
 import { computeOutputTimes, buildTimeRemap } from './time-remap.js'
+import { buildSamplePoints } from './sample-points.js'
+import { isNarrationBoundaryTitle } from '../pipeline/narration-subtitles.js'
 
-const DEFAULTS: Required<Omit<SpeedConfig, 'rules' | 'recordingPageId' | 'postFastForwardSettleMs' | 'segments'>> = {
+const DEFAULTS: Required<Omit<SpeedConfig, 'rules' | 'recordingPageId' | 'postFastForwardSettleMs' | 'segments' | 'exactBoundaries'>> = {
   duringIdle: 4.0,
   duringUserAction: 1.0,
   duringNetworkWait: 2.0,
@@ -148,7 +150,25 @@ export function processSpeed(
   const sampleInterval = 100 // ms
   const rawSegments: Array<{ start: number; end: number; speed: number }> = []
 
-  for (let t = visibleStart; t < visibleEnd; t += sampleInterval) {
+  const boundaryTimes = config.exactBoundaries
+    ? [
+        ...actions
+          .filter((a) => typeof a.title === 'string' && isNarrationBoundaryTitle(a.title))
+          .flatMap((a) => [a.startTime as number, a.endTime as number]),
+        ...hiddenRanges.flatMap((r) => [r.start as number, r.end as number]),
+      ]
+    : []
+
+  const samplePoints = buildSamplePoints({
+    visibleStart,
+    visibleEnd,
+    sampleInterval,
+    exactBoundaries: config.exactBoundaries ?? false,
+    boundaryTimes,
+  })
+
+  for (let pi = 0; pi < samplePoints.length - 1; pi++) {
+    const t = samplePoints[pi]!
     // Skip hidden ranges
     const isHidden = hiddenRanges.some(
       (r) => t >= (r.start as number) && t < (r.end as number),
@@ -187,7 +207,7 @@ export function processSpeed(
       speed = Math.min(speedForActivity(activityType, config), c.maxSpeed)
     }
 
-    const segEnd = Math.min(t + sampleInterval, visibleEnd)
+    const segEnd = samplePoints[pi + 1]!
 
     if (rawSegments.length > 0) {
       const last = rawSegments[rawSegments.length - 1]!
