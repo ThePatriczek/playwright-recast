@@ -18,6 +18,18 @@ https://github.com/user-attachments/assets/418d996d-2e18-4ae8-9ccc-3e5161dc7af8
 
 ---
 
+## SHOWCASE
+
+### Neo4j
+
+[![Snowflake Cortex Neo4j Agent Integration](https://img.youtube.com/vi/A20UqfxuKBA/maxresdefault.jpg)](https://www.youtube.com/watch?v=A20UqfxuKBA)
+
+**[Snowflake Cortex Neo4j Agent Integration](https://www.youtube.com/watch?v=A20UqfxuKBA)** — see a real agent workflow spanning Snowflake Cortex and Neo4j presented as a polished product video.
+
+> **A huge thank you to [@Andy2003](https://github.com/Andy2003)** for the eight contributions that power the faster, more resilient v0.21.0 release.
+
+---
+
 ## Why?
 
 Recording product demos is painful. Every UI change means re-recording. Manual voiceover and subtitling takes hours. Timing is always off.
@@ -54,7 +66,7 @@ await Recast
 - **Cursor overlay** — Animated cursor travels between click positions with configurable duration, easing, and post-arrival visibility. Bundled arrow cursor or custom image.
 - **Animated zoom with easing** — Auto-zoom uses customizable easing functions (ease-in-out, ease-out, cubic-bezier, or custom JS functions) with smooth zoom-to-zoom panning.
 - **Frame interpolation** — Smooth out choppy browser recordings with ffmpeg minterpolate. Blend, duplicate, or motion-compensated modes with multi-pass support.
-- **Step helpers** — `narrate()`, `highlight()`, `zoom()`, `pace()`, `typeText()`, `click()`, `markClick()`, `waitForNarration()` — importable helpers for Playwright step definitions. `typeText()` replaces instant fills with visible, naturally varied keystrokes; marker helpers write directly into the trace zip so the pipeline picks them up automatically via `subtitlesFromTrace()`.
+- **Step helpers** — `narrate()`, `highlight()`, `zoom()`, `pace()`, `typeText()`, `click()`, `markClick()`, `waitForNarration()` — importable helpers for Playwright step definitions. `typeText()` replaces instant fills with visible, naturally varied keystrokes; `click()` can dwell on the target to record the app's hover state; marker helpers write directly into the trace zip so the pipeline picks them up automatically via `subtitlesFromTrace()`.
 - **Polished click markers** — `click()` / `markClick()` mark a click in the trace; the renderer prefers these over auto-detected clicks and plays a deliberate, held cursor approach over the painted target (configurable via `cursorOverlay({ approachMs })`) — no more "the mouse moves before there's anything to click on."
 - **Voiceover-driven freezes** — When a TTS narration is longer than its visual window, the renderer holds the current frame until the audio finishes; overlays freeze with it, click sounds shift to match. `waitForNarration()` marks an explicit beat to hold on until a line is fully spoken — so with TTS you can skip `autoWait` entirely and run the test at full speed while the rendered video stays in sync.
 - **Soft (embedded) subtitle track** — `render({ embedSubtitles: true })` muxes a toggleable subtitle track into the container (`mov_text` for mp4, `webvtt` for webm).
@@ -166,7 +178,7 @@ import { setupRecast, narrate, highlight, zoom, pace, typeText, click, waitForNa
 
 setupRecast(test)
 // Optional global defaults:
-// setupRecast(test, { narrateAutoWait: true, clickSettleMs: 200, typingDelayMs: 100 })
+// setupRecast(test, { narrateAutoWait: true, clickSettleMs: 200, hoverDwellMs: 400, typingDelayMs: 100 })
 export { narrate, highlight, zoom, pace, typeText, click, waitForNarration }
 
 // steps/my-steps.ts

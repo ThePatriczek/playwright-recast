@@ -1,28 +1,41 @@
 # Changelog
 
-## Unreleased
+## 0.21.0 (2026-08-28)
 
 ### Features
 
-- **`setupRecast({ hoverDwellMs })`** — `click()` now rests on its target before pressing it, so the app paints its own hover state (highlighted row, revealed button) into the recording. Off by default (`0`). The hover is best effort — an unhoverable target still goes through the normal `click()` actionability path — and the click marker is written after the dwell so `resolveClickMarkers()` still pairs it with the real click.
+- **`setupRecast({ hoverDwellMs })`** ([#25](https://github.com/ThePatriczek/playwright-recast/pull/25)) — `click()` now rests on its target before pressing it, so the app paints its own hover state (highlighted row, revealed button) into the recording. Off by default (`0`). The hover is best effort — an unhoverable target still goes through the normal `click()` actionability path — and the click marker is written after the dwell so `resolveClickMarkers()` still pairs it with the real click.
 
 ### Bug fixes
 
-- **Captions drifted ahead of the narration, further with every cue** — gap silence and pads are MP3s that always come out longer than requested, and narration holds rounded to the nearest frame, while the caption timeline advanced by the requested values. On a 55-cue screencast: 71ms early at the first cue, 3.37s at the last. Now +1ms and +38ms, bounded.
-- **Highlights were held for the length of a narration freeze, and could overlap** — the overlay was composited before voiceover freezes, so a mark caught by a narration hold stayed frozen there for the whole spoken line, and nothing kept two marks apart. Highlights now composite after the freezes, keep their configured duration, and end when the next mark appears.
-- **An overlay still on screen at the end of the video was held through the audio padding** — when the audio outlasts the video the last frame is cloned, and the clone carried whatever was baked into it. Timed overlays now composite onto the padded timeline, so they end where they were told to.
-- **Cursor overlays failed to render past ~96 keyframes** — the trajectory expression nested one `if()` per keyframe and ffmpeg's expression parser allows ~100 nesting levels (libavutil/eval.c), so a long screencast died in the cursor stage with a filter parse error. Per-keyframe branches are now combined by a balanced bisection on movement start time, so nesting is log2(keyframes); verified against ffmpeg's own evaluator at 200 keyframes.
-- **A failing ffmpeg now reports ffmpeg's own diagnostics** — exit status plus the head and tail of its output, rather than `spawnSync ffmpeg ENOBUFS` whenever that output outgrew Node's 1MB default buffer. Every ffmpeg call in the pipeline runs through the same wrapper, apart from the loudness-normalisation pair, which reads ffmpeg's output by design and already buffers 10MB.
-- **Filter graphs are passed as a script file once they outgrow a single argv entry** — Linux caps that at 128KB and the graphs grow with the screencast (~380 bytes per cursor keyframe), so anything past 60KB goes to a file with the matching `-filter_*_script` option. The file is kept, and named in the error message, when ffmpeg fails.
+- **Captions drifted ahead of the narration, further with every cue** ([#26](https://github.com/ThePatriczek/playwright-recast/pull/26)) — gap silence and pads are MP3s that always come out longer than requested, and narration holds rounded to the nearest frame, while the caption timeline advanced by the requested values. On a 55-cue screencast: 71ms early at the first cue, 3.37s at the last. Now +1ms and +38ms, bounded.
+- **Highlights were held for the length of a narration freeze, and could overlap** ([#28](https://github.com/ThePatriczek/playwright-recast/pull/28)) — the overlay was composited before voiceover freezes, so a mark caught by a narration hold stayed frozen there for the whole spoken line, and nothing kept two marks apart. Highlights now composite after the freezes, keep their configured duration, and end when the next mark appears.
+- **An overlay still on screen at the end of the video was held through the audio padding** ([#28](https://github.com/ThePatriczek/playwright-recast/pull/28)) — when the audio outlasts the video the last frame is cloned, and the clone carried whatever was baked into it. Timed overlays now composite onto the padded timeline, so they end where they were told to.
+- **Cursor overlays failed to render past ~96 keyframes** ([#30](https://github.com/ThePatriczek/playwright-recast/pull/30)) — the trajectory expression nested one `if()` per keyframe and ffmpeg's expression parser allows ~100 nesting levels (libavutil/eval.c), so a long screencast died in the cursor stage with a filter parse error. Per-keyframe branches are now combined by a balanced bisection on movement start time, so nesting is log2(keyframes); verified against ffmpeg's own evaluator at 200 keyframes.
+- **A failing ffmpeg now reports ffmpeg's own diagnostics** ([#31](https://github.com/ThePatriczek/playwright-recast/pull/31)) — exit status plus the head and tail of its output, rather than `spawnSync ffmpeg ENOBUFS` whenever that output outgrew Node's 1MB default buffer. Every ffmpeg call in the pipeline runs through the same wrapper, apart from the loudness-normalisation pair, which reads ffmpeg's output by design and already buffers 10MB.
+- **Filter graphs are passed as a script file once they outgrow a single argv entry** ([#32](https://github.com/ThePatriczek/playwright-recast/pull/32)) — Linux caps that at 128KB and the graphs grow with the screencast (~380 bytes per cursor keyframe), so anything past 60KB goes to a file with the matching `-filter_*_script` option. The file is kept, and named in the error message, when ffmpeg fails.
 
 ### Behavior changes
 
-- **A narration hold can be up to one frame longer** — it rounds up instead of to the nearest frame, so it always covers its audio.
+- **A narration hold can be up to one frame longer** ([#26](https://github.com/ThePatriczek/playwright-recast/pull/26)) — it rounds up instead of to the nearest frame, so it always covers its audio.
 
 ### Performance
 
-- **Voiceover freeze slicing no longer re-decodes the video for every slice** — slices seek with `-ss` instead of `trim=start_frame`, which decoded from frame 0 each time (O(N²) for N slices). Cuts stay frame-exact. On a 160-slice screencast the stage dropped from 551s to 125s.
-- **Highlights, cursor, click ripples, zoom and the final encode render in one ffmpeg pass** — they were five full-length re-encodes, 403s of a 764s screencast's 582s total, each one another generation of lossy encoding. All are frame-in/frame-out filters, so they now compose into a single `-filter_complex` graph: one 106s encode, end-to-end ~17.5min → ~5.5min. Output unchanged across the video proper — mean SSIM 0.99927 over all 19107 frames, bit-identical audio and subtitles.
+- **Voiceover freeze slicing no longer re-decodes the video for every slice** ([#27](https://github.com/ThePatriczek/playwright-recast/pull/27)) — slices seek with `-ss` instead of `trim=start_frame`, which decoded from frame 0 each time (O(N²) for N slices). Cuts stay frame-exact. On a 160-slice screencast the stage dropped from 551s to 125s.
+- **Highlights, cursor, click ripples, zoom and the final encode render in one ffmpeg pass** ([#29](https://github.com/ThePatriczek/playwright-recast/pull/29)) — they were five full-length re-encodes, 403s of a 764s screencast's 582s total, each one another generation of lossy encoding. All are frame-in/frame-out filters, so they now compose into a single `-filter_complex` graph: one 106s encode, end-to-end ~17.5min → ~5.5min. Output unchanged across the video proper — mean SSIM 0.99927 over all 19107 frames, bit-identical audio and subtitles.
+
+### Docs
+
+- Added a new **SHOWCASE** category to the README and website, starting with the [Snowflake Cortex Neo4j Agent Integration](https://www.youtube.com/watch?v=A20UqfxuKBA) video.
+- Documented `hoverDwellMs` and the updated `click()` sequence across the README, website helper pages, and LLM indexes.
+
+### Internal
+
+- Test suite: **728 passed | 13 skipped** across 85 test files.
+
+### Acknowledgements
+
+- A huge thank you to [@Andy2003](https://github.com/Andy2003), who contributed all eight pull requests ([#25](https://github.com/ThePatriczek/playwright-recast/pull/25)–[#32](https://github.com/ThePatriczek/playwright-recast/pull/32)) that make up this release.
 
 ## 0.20.0 (2026-08-24)
 

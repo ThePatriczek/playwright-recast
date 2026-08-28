@@ -18,7 +18,8 @@ Both helpers need `setupRecast(test)` to record markers and a pipeline that rend
 ```typescript
 import { click, markClick } from 'playwright-recast'
 
-// Settle → mark → real click. Options pass straight to Playwright.
+// Settle → optional hover dwell → mark → real click.
+// Options pass straight to Playwright.
 await click(page.locator('button[type=submit]'))
 await click(page.getByRole('link', { name: 'Next' }), { force: true })
 
@@ -38,10 +39,11 @@ Order of operations:
 
 1. `await locator.waitFor({ state: 'visible' })` — the target must be on screen before the settle (the real click comes last, so its auto-wait can't be relied on here).
 2. Wait the **settle** (`clickSettleMs`, default 150 ms) so the recorder captures a painted frame.
-3. `markClick(locator)` — write the marker at the element center.
-4. `await locator.click(options)` — the real click.
+3. When enabled, hover the locator and wait the **dwell** (`hoverDwellMs`, default 0 ms) so the app paints its own hover state. The hover is best effort and capped at one second; failure skips the dwell.
+4. `markClick(locator)` — write the marker at the element center after the dwell, keeping it close enough to pair with the real click.
+5. `await locator.click(options)` — the real click.
 
-The settle is the only real-time cost added to the trace. Tune or disable it globally with [`setupRecast(test, { clickSettleMs })`](/docs/helpers/setup-recast#clicksettlems--the-click-settle); pass `0` to disable.
+The settle is the only real-time cost added by default. Tune or disable it globally with [`setupRecast(test, { clickSettleMs })`](/docs/helpers/setup-recast#clicksettlems--the-click-settle). To record hover-only UI, opt into [`setupRecast(test, { hoverDwellMs })`](/docs/helpers/setup-recast#hoverdwellms--capture-the-hover-state). Pass `0` to disable either wait.
 
 ## `markClick(locator)`
 

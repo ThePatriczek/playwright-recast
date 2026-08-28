@@ -34,6 +34,19 @@ export function Footer() {
         </div>
 
         <p className="text-xs text-fd-muted-foreground/70">
+          Special thanks to{' '}
+          <a
+            href="https://github.com/Andy2003"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="cursor-pointer underline underline-offset-4 transition-colors duration-150 hover:text-fd-muted-foreground"
+          >
+            @Andy2003
+          </a>{' '}
+          for powering v0.21.0
+        </p>
+
+        <p className="text-xs text-fd-muted-foreground/70">
           Built with{' '}
           <a
             href="https://fumadocs.vercel.app"

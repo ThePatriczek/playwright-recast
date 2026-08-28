@@ -6,6 +6,7 @@ playwright-recast is a fluent pipeline library that turns Playwright trace files
 
 ## Docs
 
+- [Neo4j Showcase](https://thepatriczek.github.io/playwright-recast/docs/showcase/neo4j): Snowflake Cortex Neo4j Agent Integration video
 - [Installation](https://thepatriczek.github.io/playwright-recast/docs/getting-started/installation): Install the npm package and system dependencies (ffmpeg)
 - [Quick Start](https://thepatriczek.github.io/playwright-recast/docs/getting-started/quick-start): Minimal setup to generate your first video
 - [Your First Video](https://thepatriczek.github.io/playwright-recast/docs/getting-started/your-first-video): Step-by-step tutorial

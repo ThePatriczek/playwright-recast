@@ -4,6 +4,12 @@
 
 playwright-recast is a fluent pipeline library that turns Playwright trace files into production-ready product videos. Your tests already capture everything — traces, screenshots, cursor positions. This library turns those artifacts into narrated, styled videos with a single pipeline.
 
+## SHOWCASE
+
+### Neo4j
+
+[Snowflake Cortex Neo4j Agent Integration](https://www.youtube.com/watch?v=A20UqfxuKBA) demonstrates a real agent workflow spanning Snowflake Cortex and Neo4j as a polished product video built with playwright-recast.
+
 - npm: https://www.npmjs.com/package/playwright-recast
 - GitHub: https://github.com/ThePatriczek/playwright-recast
 - Docs: https://thepatriczek.github.io/playwright-recast/docs
@@ -3679,14 +3685,25 @@ setupRecast(test)
 |--------|------|---------|-------------|
 | `narrateAutoWait` | `boolean \| number \| object` | off | Default narration auto-wait behavior. |
 | `clickSettleMs` | `number` | `150` | Real-time settle delay used by `click()`. Pass `0` to disable. |
+| `hoverDwellMs` | `number` | `0` | Time `click()` rests on the target after hovering so the recording captures the app's hover state. |
 | `typingDelayMs` | `number` | `100` | Average delay between `typeText()` keystrokes. A per-call `delayMs` overrides it. |
+
+### hoverDwellMs — capture the hover state
+
+```typescript
+setupRecast(test, { hoverDwellMs: 400 })
+```
+
+The default is off. When enabled, `click()` attempts a best-effort hover after
+the settle, waits only when that hover succeeds, then marks and clicks the
+target. This captures hover-only UI without preventing an otherwise valid click.
 
 ### typingDelayMs — the typing speed
 
 Each actual typing delay varies from 65% through 135% of this suite-wide average:
 
 ```typescript
-setupRecast(test, { typingDelayMs: 80 })
+setupRecast(test, { typingDelayMs: 80, hoverDwellMs: 400 })
 
 await typeText(page.getByLabel('Email'), 'user@example.com')
 await typeText(page.getByLabel('Search'), 'revenue', { delayMs: 40 })

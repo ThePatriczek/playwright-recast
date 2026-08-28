@@ -33,6 +33,7 @@ setupRecast(test)
 |--------|------|---------|-------------|
 | `narrateAutoWait` | `boolean \| number \| object` | off | Default [`autoWait`](/docs/helpers/narrate#autowait--visual-time-without-tts) applied to every `narrate()` call that omits its own. |
 | `clickSettleMs` | `number` | `150` | Real-time settle delay the [`click()`](/docs/helpers/click) helper waits before marking, so the recorder captures a painted frame of the target. Pass `0` to disable. |
+| `hoverDwellMs` | `number` | `0` | Time `click()` rests on the target after a successful hover, so the recording captures the app's own hover state. Pass `0` to disable. |
 | `typingDelayMs` | `number` | `100` | Average delay between [`typeText()`](/docs/helpers/type-text) keystrokes. A per-call `delayMs` overrides it. |
 
 ### narrateAutoWait — a global autoWait default
@@ -71,14 +72,31 @@ setupRecast(test, { clickSettleMs: 250 }) // slower targets need more settle
 setupRecast(test, { clickSettleMs: 0 })   // disable the settle entirely
 ```
 
-This is the only real-time cost `click()` adds to the test run. `markClick()` does not settle — standalone callers own their own timing.
+This settle is always the only real-time cost `click()` adds by default. Enabling `hoverDwellMs` adds its configured dwell after a successful hover. `markClick()` does not settle or hover — standalone callers own their own timing.
+
+### hoverDwellMs — capture the hover state
+
+Set a dwell when the UI reveals useful context only while the pointer is over
+the click target—for example, a highlighted table row or a newly visible action
+button:
+
+```typescript
+setupRecast(test, { hoverDwellMs: 400 })
+```
+
+The default is `0`, so existing suites do not change. When enabled, `click()`
+attempts a real Playwright hover with a one-second timeout after the settle,
+waits the configured dwell only if that hover succeeds, then writes the marker
+and performs the real click. The hover is best effort: a covered or otherwise
+unhoverable target skips the dwell and continues through the normal click
+actionability path.
 
 ### typingDelayMs — the typing speed
 
 Set the average delay between [`typeText()`](/docs/helpers/type-text) keystrokes for the whole suite. Each actual delay varies from 65% through 135% of the configured average, producing a natural cadence while keeping duration bounded:
 
 ```typescript
-setupRecast(test, { typingDelayMs: 80 })
+setupRecast(test, { typingDelayMs: 80, hoverDwellMs: 400 })
 
 await typeText(page.getByLabel('Email'), 'user@example.com')
 await typeText(page.getByLabel('Search'), 'revenue', { delayMs: 40 })
