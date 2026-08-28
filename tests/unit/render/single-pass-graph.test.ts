@@ -42,10 +42,18 @@ const INTERMEDIATE_VIDEOS = [
   'zoom-combined.mp4',
 ]
 
+/**
+ * Fixtures and renders are lossless: the pixel assertions compare separately
+ * encoded files, and at a lossy CRF quantisation can leave them differing
+ * where the filtered frames are identical.
+ */
+const LOSSLESS_CRF = 0
+
 function encode(lavfi: string, dest: string): void {
   execFileSync('ffmpeg', [
     '-y', '-v', 'error', '-f', 'lavfi', '-i', lavfi,
-    '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', dest,
+    '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', String(LOSSLESS_CRF),
+    '-pix_fmt', 'yuv420p', dest,
   ], { stdio: 'pipe' })
 }
 
@@ -107,7 +115,7 @@ function render(
   const tmpDir = path.join(TMP_ROOT, label)
   fs.mkdirSync(tmpDir, { recursive: true })
   const output = path.join(TMP_ROOT, `${label}.mp4`)
-  renderVideo(trace, { resolution: TARGET, ...config }, output, tmpDir)
+  renderVideo(trace, { resolution: TARGET, crf: LOSSLESS_CRF, ...config }, output, tmpDir)
   return { output, tmpDir }
 }
 
