@@ -41,6 +41,18 @@ describe('makeHighlightsExclusive()', () => {
     expect(makeHighlightsExclusive(input)).toEqual(input)
   })
 
+  it('fits fadeOut to a short window even without a neighbour', () => {
+    // The pipeline clamps a highlight to its subtitle's end, so it can arrive
+    // shorter than its own fadeOut; the renderer needs end - start - fadeOut > 0.
+    const [only] = makeHighlightsExclusive([
+      makeEvent({ videoTimeMs: 1000, endTimeMs: 1100, fadeOut: 500, swipeDuration: 300 }),
+    ])
+
+    expect(only!.fadeOut).toBe(50)
+    expect(only!.swipeDuration).toBe(100)
+    expect(only!.endTimeMs - only!.videoTimeMs - only!.fadeOut).toBeGreaterThan(0)
+  })
+
   it('sorts by start time before clamping', () => {
     const result = makeHighlightsExclusive([
       makeEvent({ videoTimeMs: 3000, endTimeMs: 9000 }),

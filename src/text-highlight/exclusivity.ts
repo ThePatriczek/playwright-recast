@@ -5,10 +5,15 @@ import type { HighlightEvent } from '../types/text-highlight.js'
  *
  * Durations are nominal wall-clock values while `videoTimeMs` is on the
  * speed-mapped output clock, so compressing idle time pulls marks closer
- * together than their durations. A clamped mark keeps whatever window is left:
- * `fadeOut` (at most half of it, so the mark is solid before it fades) and
- * `swipeDuration` shrink to fit. A mark left with no window at all — two on
- * the same timestamp, or an empty event — is dropped.
+ * together than their durations. Every mark is then fitted to the window it
+ * has — its own, or the one the next mark leaves it: `fadeOut` takes at most
+ * half of it, so the mark is solid before it fades, and `swipeDuration` shrinks
+ * to fit. A mark with no window at all — two on the same timestamp, an event
+ * already clamped to nothing — is dropped.
+ *
+ * Fitting applies to every mark, not just clamped ones: the pipeline clamps a
+ * highlight to its subtitle's end, which can already leave it shorter than its
+ * configured `fadeOut`, and the renderer needs a positive pre-fade duration.
  */
 export function makeHighlightsExclusive(
   events: ReadonlyArray<HighlightEvent>,
@@ -27,11 +32,6 @@ export function makeHighlightsExclusive(
     // No window at all: two marks on the same timestamp, or an empty event.
     // Either way there is nothing to render — ffmpeg rejects a zero-length clip.
     if (window <= 0) continue
-
-    if (endTimeMs === current.endTimeMs) {
-      exclusive.push(current)
-      continue
-    }
 
     exclusive.push({
       ...current,
