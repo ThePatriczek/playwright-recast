@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Bug fixes
+
+- **Cursor overlays failed to render past ~96 keyframes** — the trajectory expression nested one `if()` per keyframe and ffmpeg's expression parser allows ~100 nesting levels (libavutil/eval.c), so a long screencast died in the cursor stage with a filter parse error. Per-keyframe branches are now combined by a balanced bisection on movement start time, so nesting is log2(keyframes); verified against ffmpeg's own evaluator at 200 keyframes.
+
 ## 0.20.0 (2026-08-24)
 
 ### Features
