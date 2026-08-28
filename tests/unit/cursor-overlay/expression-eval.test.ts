@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, afterAll } from 'vitest'
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
@@ -31,6 +31,10 @@ function evaluate(expr: string, durationSec: number): number[] {
 }
 
 const at = (values: number[], t: number) => values[Math.round(t * RATE)]!
+
+afterAll(() => {
+  fs.rmSync(TMP_DIR, { recursive: true, force: true })
+})
 
 const viewport = { width: 1280, height: 720 }
 const srcRes = { width: 1280, height: 720 }
