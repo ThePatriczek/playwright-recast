@@ -74,6 +74,7 @@ function pixelAt(video: string, atSec: number, x: number, y: number): [number, n
 }
 
 const isRed = ([r, g, b]: [number, number, number]): boolean => r > 120 && g < 90 && b < 90
+const isYellow = ([r, g, b]: [number, number, number]): boolean => r > 150 && g > 150 && b < 110
 
 /** A trace carrying only what renderVideo reads: no speed map, no audio. */
 function baseTrace(overrides: Partial<RenderableTrace> = {}): RenderableTrace {
@@ -180,6 +181,37 @@ describe('overlay and zoom stages render in a single pass', () => {
     }))
     expect(probeResolution(output)).toEqual(TARGET)
     expect(countFrames(output)).toBe(DURATION_SEC * FPS)
+  })
+
+  it('does not clone a live overlay into the audio padding', () => {
+    // The audio outlasts the video, so the last frame is held. A highlight that
+    // is still on screen there must not be held with it for the whole pad.
+    const silence = path.join(TMP_ROOT, 'long-audio.mp3')
+    execFileSync('ffmpeg', [
+      '-y', '-v', 'error', '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo',
+      '-t', String(DURATION_SEC + 3), '-q:a', '9', silence,
+    ], { stdio: 'pipe' })
+
+    const withPad = render('pad-overlay', baseTrace({
+      highlightEvents: [{
+        x: 100, y: 100, width: 200, height: 60,
+        videoTimeMs: 500, endTimeMs: DURATION_SEC * 1000,
+        color: '#FFFF00', opacity: 1.0, swipeDuration: 100, fadeOut: 100,
+      }],
+      voiceover: {
+        audioTrackPath: silence,
+        entries: [],
+        totalDurationMs: (DURATION_SEC + 3) * 1000,
+      },
+    })).output
+    const x = Math.round(200 * TARGET.width / VIEWPORT.width)
+    const y = Math.round(130 * TARGET.height / VIEWPORT.height)
+
+    // Inside its window the mark is drawn; in the padded tail it is gone.
+    expect(pixelAt(withPad, DURATION_SEC - 0.5, x, y))
+      .not.toEqual(pixelAt(withPad, DURATION_SEC + 1.5, x, y))
+    expect(isYellow(pixelAt(withPad, DURATION_SEC - 0.5, x, y))).toBe(true)
+    expect(isYellow(pixelAt(withPad, DURATION_SEC + 1.5, x, y))).toBe(false)
   })
 
   it('burns subtitles through the graph tail', () => {

@@ -4,10 +4,11 @@
 
 ### Performance
 
-- **Highlights, cursor, click ripples, zoom and the final encode render in one ffmpeg pass** — they were five full-length re-encodes, 403s of a 764s screencast's 582s total, each one another generation of lossy encoding. All are frame-in/frame-out filters, so they now compose into a single `-filter_complex` graph: one 106s encode, end-to-end ~17.5min → ~5.5min. Output unchanged — mean SSIM 0.99927 over all 19107 frames, bit-identical audio and subtitles.
+- **Highlights, cursor, click ripples, zoom and the final encode render in one ffmpeg pass** — they were five full-length re-encodes, 403s of a 764s screencast's 582s total, each one another generation of lossy encoding. All are frame-in/frame-out filters, so they now compose into a single `-filter_complex` graph: one 106s encode, end-to-end ~17.5min → ~5.5min. Output unchanged across the video proper — mean SSIM 0.99927 over all 19107 frames, bit-identical audio and subtitles.
 
 ### Bug fixes
 
+- **An overlay still on screen at the end of the video was held through the audio padding** — when the audio outlasts the video the last frame is cloned, and the clone carried whatever was baked into it. Timed overlays now composite onto the padded timeline, so they end where they were told to.
 - **Highlights were held for the length of a narration freeze, and could overlap** — the overlay was composited before voiceover freezes, so a mark caught by a narration hold stayed frozen there for the whole spoken line, and nothing kept two marks apart. Highlights now composite after the freezes, keep their configured duration, and end when the next mark appears.
 
 ## 0.20.0 (2026-08-24)

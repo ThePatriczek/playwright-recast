@@ -834,6 +834,19 @@ export function renderVideo(
     }
   }
 
+  // Phase 3.4a: Extra length to hold the last frame for, when the audio
+  // outlasts the video. Nothing in the graph changes duration, so the input's
+  // duration is also the pre-pad output duration.
+  const graphInputDur = getVideoDuration(videoInput)
+  let tpadDuration = 0
+  if (hasAudio && trace.voiceover) {
+    const audioDur = trace.voiceover.totalDurationMs / 1000
+    if (audioDur > graphInputDur + 0.5) {
+      tpadDuration = audioDur - graphInputDur + 1.0 // +1s buffer
+      console.log(`  Will pad video by ${tpadDuration.toFixed(1)}s to match audio (${audioDur.toFixed(1)}s)`)
+    }
+  }
+
   // Phase 3.4b: Build the render graph. The order is load-bearing: overlays
   // are baked in before zoom crops and scales, and every overlay's coordinates
   // are in the source resolution.
@@ -842,6 +855,14 @@ export function renderVideo(
   const addStage = (stage: GraphStage): void => {
     graph.push(...stage.statements)
     vLabel = stage.outLabel
+  }
+
+  // Pad before the overlays, not after them: the clone repeats whatever is
+  // baked into the last frame, so padding last would hold an overlay that is
+  // still on screen there for the whole remaining narration.
+  if (tpadDuration > 0) {
+    graph.push(`[${vLabel}]tpad=stop_mode=clone:stop_duration=${tpadDuration.toFixed(3)}[padded]`)
+    vLabel = 'padded'
   }
 
   // No overlay stage resizes or retimes, so probe the input once.
@@ -925,20 +946,6 @@ export function renderVideo(
     }
   }
 
-  // Phase 4: Compute extra padding needed if audio is longer than video.
-  // The tpad filter will be added in Phase 5's vFilters to hold the last frame.
-  // None of the graph stages changes duration, so the input's duration is also
-  // the pre-pad output duration.
-  const graphInputDur = getVideoDuration(videoInput)
-  let tpadDuration = 0
-  if (hasAudio && trace.voiceover) {
-    const audioDur = trace.voiceover.totalDurationMs / 1000
-    if (audioDur > graphInputDur + 0.5) {
-      tpadDuration = audioDur - graphInputDur + 1.0 // +1s buffer
-      console.log(`  Will pad video by ${tpadDuration.toFixed(1)}s to match audio (${audioDur.toFixed(1)}s)`)
-    }
-  }
-
   // Phase 5: Final encode (audio merge + subtitle burn + format)
   const ffmpegArgs: string[] = ['-y', '-i', videoInput]
 
@@ -1009,11 +1016,6 @@ export function renderVideo(
 
   const vFilters: string[] = []
 
-  // Pad video with last frame to match audio duration
-  if (tpadDuration > 0) {
-    vFilters.push(`tpad=stop_mode=clone:stop_duration=${tpadDuration.toFixed(3)}`)
-  }
-
   // Scale — unless zoompan already rendered at the target resolution. Keyed
   // on the stage that was built, not on `hasZoom`: if buildZoomStage ever
   // declines a zoom `hasZoom` accepted, the output would silently keep the
@@ -1042,7 +1044,7 @@ export function renderVideo(
     }
   }
 
-  // The linear tail (pad, scale, subtitle burn) closes the graph.
+  // The linear tail (scale, subtitle burn) closes the graph.
   if (vFilters.length > 0) {
     graph.push(`[${vLabel}]${vFilters.join(',')}[vout]`)
     vLabel = 'vout'
