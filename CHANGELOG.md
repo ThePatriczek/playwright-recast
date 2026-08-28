@@ -9,6 +9,7 @@
 ### Bug fixes
 
 - **Captions drifted ahead of the narration, further with every cue** — gap silence and pads are MP3s that always come out longer than requested, and narration holds rounded to the nearest frame, while the caption timeline advanced by the requested values. On a 55-cue screencast: 71ms early at the first cue, 3.37s at the last. Now +1ms and +38ms, bounded.
+- **Highlights were held for the length of a narration freeze, and could overlap** — the overlay was composited before voiceover freezes, so a mark caught by a narration hold stayed frozen there for the whole spoken line, and nothing kept two marks apart. Highlights now composite after the freezes, keep their configured duration, and end when the next mark appears.
 
 ### Behavior changes
 
