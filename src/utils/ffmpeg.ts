@@ -45,11 +45,11 @@ export function runFfmpeg(args: string[]): void {
   const spilled = spillLargeFilters(args)
   try {
     execFileSync('ffmpeg', spilled.args, { stdio: 'pipe', maxBuffer: MAX_FFMPEG_OUTPUT })
-    spilled.discard()
   } catch (error: unknown) {
     // Keep the spilled graphs — they are the failing input worth inspecting.
     throw new Error(describeFfmpegFailure(error) + spilled.note(), { cause: error })
   }
+  spilled.discard()
 }
 
 /** Filter options and the file-based equivalent ffmpeg reads them from. */
@@ -71,7 +71,7 @@ const MAX_INLINE_FILTER = 60 * 1024
 
 interface SpilledFilters {
   args: string[]
-  /** Remove the temp files — only safe once ffmpeg succeeded. */
+  /** Remove the temp files. Best effort, and only once ffmpeg succeeded. */
   discard: () => void
   /** Where the graphs went, for a failure message. */
   note: () => string
@@ -99,7 +99,11 @@ function spillLargeFilters(args: string[]): SpilledFilters {
 
   return {
     args: spilledArgs,
-    discard: () => { if (dir !== undefined) fs.rmSync(dir, { recursive: true, force: true }) },
+    discard: () => {
+      if (dir === undefined) return
+      // A render that worked must not fail over leftover temp files.
+      try { fs.rmSync(dir, { recursive: true, force: true }) } catch { /* ignore */ }
+    },
     note: () => files.length === 0
       ? ''
       : `\nFilter graph${files.length === 1 ? '' : 's'} passed as file(s): ${files.join(', ')}`,
