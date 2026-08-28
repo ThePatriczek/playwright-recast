@@ -43,7 +43,7 @@ export function Footer() {
           >
             @Andy2003
           </a>{' '}
-          for powering v0.21.0
+          for helping shape playwright-recast
         </p>
 
         <p className="text-xs text-fd-muted-foreground/70">

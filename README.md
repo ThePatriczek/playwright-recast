@@ -26,7 +26,7 @@ https://github.com/user-attachments/assets/418d996d-2e18-4ae8-9ccc-3e5161dc7af8
 
 **[Snowflake Cortex Neo4j Agent Integration](https://www.youtube.com/watch?v=A20UqfxuKBA)** — see a real agent workflow spanning Snowflake Cortex and Neo4j presented as a polished product video.
 
-> **A huge thank you to [@Andy2003](https://github.com/Andy2003)** for the eight contributions that power the faster, more resilient v0.21.0 release.
+> **A huge thank you to [@Andy2003](https://github.com/Andy2003)** for the outstanding, long-term contributions that have helped shape playwright-recast.
 
 ---
 

@@ -10,6 +10,8 @@ playwright-recast is a fluent pipeline library that turns Playwright trace files
 
 [Snowflake Cortex Neo4j Agent Integration](https://www.youtube.com/watch?v=A20UqfxuKBA) demonstrates a real agent workflow spanning Snowflake Cortex and Neo4j as a polished product video built with playwright-recast.
 
+A huge thank you to [@Andy2003](https://github.com/Andy2003) for the outstanding, long-term contributions that have helped shape playwright-recast.
+
 - npm: https://www.npmjs.com/package/playwright-recast
 - GitHub: https://github.com/ThePatriczek/playwright-recast
 - Docs: https://thepatriczek.github.io/playwright-recast/docs

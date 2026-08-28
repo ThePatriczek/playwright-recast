@@ -78,8 +78,8 @@ export function Showcase() {
                   @Andy2003
                 </a>
               </span>{' '}
-              for the eight contributions that power the faster, more resilient
-              v0.21.0 release.
+              for the outstanding, long-term contributions that have helped
+              shape playwright-recast.
             </p>
           </div>
         </BlurFade>

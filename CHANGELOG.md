@@ -35,7 +35,7 @@
 
 ### Acknowledgements
 
-- A huge thank you to [@Andy2003](https://github.com/Andy2003), who contributed all eight pull requests ([#25](https://github.com/ThePatriczek/playwright-recast/pull/25)–[#32](https://github.com/ThePatriczek/playwright-recast/pull/32)) that make up this release.
+- A huge thank you to [@Andy2003](https://github.com/Andy2003) for the outstanding, long-term contributions that have helped shape playwright-recast.
 
 ## 0.20.0 (2026-08-24)
 
