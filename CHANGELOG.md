@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Bug fixes
+
+- **A failing ffmpeg now reports ffmpeg's own diagnostics** — exit status plus the head and tail of its output, rather than `spawnSync ffmpeg ENOBUFS` whenever that output outgrew Node's 1MB default buffer.
+
 ## 0.20.0 (2026-08-24)
 
 ### Features
