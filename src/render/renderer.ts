@@ -640,14 +640,25 @@ function applyVoiceoverFreezes(
     const seg = segments[i]!
     const segPath = path.join(tmpDir, `vo-freeze-seg-${i}.mp4`)
 
-    // Slice by frame index, not timestamp: `trim` counts decoded frames, so the
-    // boundary frame lands with the cue that owns it instead of wherever an
-    // input seek's timestamp rounding puts it. No `-ss` — the trim filter already
-    // applies the offset, and an input seek would double-apply it.
-    const trim = seg.endFrame !== null
-      ? `trim=start_frame=${seg.startFrame}:end_frame=${seg.endFrame}`
-      : `trim=start_frame=${seg.startFrame}`
-    const filters = [trim, 'setpts=PTS-STARTPTS']
+    // Seek to the slice instead of decoding up to it: `trim=start_frame` alone
+    // decodes every preceding frame, so N slices cost O(N^2) decodes.
+    //
+    // Aim half a frame early. `-ss` before `-i` is an accurate seek and yields
+    // the first frame with PTS >= the request, so asking for exactly
+    // startFrame/fps skips to startFrame+1 whenever the container timebase
+    // rounds that PTS a hair low; half a frame is unambiguous either way.
+    const seekArgs = seg.startFrame > 0
+      ? ['-ss', ((seg.startFrame - 0.5) / fps).toFixed(6)]
+      : []
+
+    // Length stays in frames, counted from the seek point, so the boundary
+    // frame lands with the cue that owns it rather than wherever timestamp
+    // rounding puts it.
+    const filters: string[] = []
+    if (seg.endFrame !== null) {
+      filters.push(`trim=end_frame=${seg.endFrame - seg.startFrame}`)
+    }
+    filters.push('setpts=PTS-STARTPTS')
 
     const pad: string[] = []
     if (seg.startHoldFrames > 0) {
@@ -659,7 +670,7 @@ function applyVoiceoverFreezes(
     if (pad.length > 0) filters.push(`tpad=${pad.join(':')}`)
 
     ffmpeg([
-      '-y', '-i', videoPath,
+      '-y', ...seekArgs, '-i', videoPath,
       '-vf', filters.join(','),
       '-c:v', 'libx264', '-preset', 'fast', '-crf', '18', '-an',
       segPath,

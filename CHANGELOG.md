@@ -2,14 +2,24 @@
 
 ## Unreleased
 
-### Performance
+### Features
 
-- **Highlights, cursor, click ripples, zoom and the final encode render in one ffmpeg pass** — they were five full-length re-encodes, 403s of a 764s screencast's 582s total, each one another generation of lossy encoding. All are frame-in/frame-out filters, so they now compose into a single `-filter_complex` graph: one 106s encode, end-to-end ~17.5min → ~5.5min. Output unchanged across the video proper — mean SSIM 0.99927 over all 19107 frames, bit-identical audio and subtitles.
+- **`setupRecast({ hoverDwellMs })`** — `click()` now rests on its target before pressing it, so the app paints its own hover state (highlighted row, revealed button) into the recording. Off by default (`0`). The hover is best effort — an unhoverable target still goes through the normal `click()` actionability path — and the click marker is written after the dwell so `resolveClickMarkers()` still pairs it with the real click.
 
 ### Bug fixes
 
-- **An overlay still on screen at the end of the video was held through the audio padding** — when the audio outlasts the video the last frame is cloned, and the clone carried whatever was baked into it. Timed overlays now composite onto the padded timeline, so they end where they were told to.
+- **Captions drifted ahead of the narration, further with every cue** — gap silence and pads are MP3s that always come out longer than requested, and narration holds rounded to the nearest frame, while the caption timeline advanced by the requested values. On a 55-cue screencast: 71ms early at the first cue, 3.37s at the last. Now +1ms and +38ms, bounded.
 - **Highlights were held for the length of a narration freeze, and could overlap** — the overlay was composited before voiceover freezes, so a mark caught by a narration hold stayed frozen there for the whole spoken line, and nothing kept two marks apart. Highlights now composite after the freezes, keep their configured duration, and end when the next mark appears.
+- **An overlay still on screen at the end of the video was held through the audio padding** — when the audio outlasts the video the last frame is cloned, and the clone carried whatever was baked into it. Timed overlays now composite onto the padded timeline, so they end where they were told to.
+
+### Behavior changes
+
+- **A narration hold can be up to one frame longer** — it rounds up instead of to the nearest frame, so it always covers its audio.
+
+### Performance
+
+- **Voiceover freeze slicing no longer re-decodes the video for every slice** — slices seek with `-ss` instead of `trim=start_frame`, which decoded from frame 0 each time (O(N²) for N slices). Cuts stay frame-exact. On a 160-slice screencast the stage dropped from 551s to 125s.
+- **Highlights, cursor, click ripples, zoom and the final encode render in one ffmpeg pass** — they were five full-length re-encodes, 403s of a 764s screencast's 582s total, each one another generation of lossy encoding. All are frame-in/frame-out filters, so they now compose into a single `-filter_complex` graph: one 106s encode, end-to-end ~17.5min → ~5.5min. Output unchanged across the video proper — mean SSIM 0.99927 over all 19107 frames, bit-identical audio and subtitles.
 
 ## 0.20.0 (2026-08-24)
 
