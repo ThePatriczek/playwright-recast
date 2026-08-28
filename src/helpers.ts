@@ -50,7 +50,7 @@ let _clickSettleMs = DEFAULT_CLICK_SETTLE_MS
 const DEFAULT_TYPING_DELAY_MS = 100
 let _typingDelayMs = DEFAULT_TYPING_DELAY_MS
 const DEFAULT_HOVER_DWELL_MS = 0
-/** Cap on the cosmetic pre-click hover — the target is already visible. */
+/** Cap on the hover attempt itself — the dwell that follows is separate. */
 const HOVER_TIMEOUT_MS = 1000
 let _hoverDwellMs = DEFAULT_HOVER_DWELL_MS
 

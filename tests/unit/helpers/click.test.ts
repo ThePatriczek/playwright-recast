@@ -24,12 +24,12 @@ function makeEnv() {
 function makeLocator(
   box: { x: number; y: number; width: number; height: number } | null,
   calls: string[],
-  sink: { clickOptions?: unknown },
+  sink: { clickOptions?: unknown; hoverOptions?: unknown },
 ): Locator {
   return {
     async boundingBox() { calls.push('boundingBox'); return box },
     async waitFor(opts: { state?: string }) { calls.push(`waitFor:${opts?.state}`) },
-    async hover() { calls.push('hover') },
+    async hover(options?: unknown) { calls.push('hover'); sink.hoverOptions = options },
     async click(options?: unknown) { calls.push('click'); sink.clickOptions = options },
   } as unknown as Locator
 }
@@ -39,7 +39,7 @@ describe('markClick()', () => {
   beforeEach(() => { env = makeEnv(); setupRecast(env.fakeTest) })
 
   it('writes one marker step with the element center as JSON', async () => {
-    const sink: { clickOptions?: unknown } = {}
+    const sink: { clickOptions?: unknown; hoverOptions?: unknown } = {}
     const loc = makeLocator({ x: 100, y: 200, width: 40, height: 20 }, env.calls, sink)
     await markClick(loc)
     expect(env.steps).toHaveLength(1)
@@ -47,14 +47,14 @@ describe('markClick()', () => {
   })
 
   it('pushes no annotations', async () => {
-    const sink: { clickOptions?: unknown } = {}
+    const sink: { clickOptions?: unknown; hoverOptions?: unknown } = {}
     const loc = makeLocator({ x: 0, y: 0, width: 10, height: 10 }, env.calls, sink)
     await markClick(loc)
     expect(env.info.annotations).toEqual([])
   })
 
   it('no-ops when boundingBox() is null', async () => {
-    const sink: { clickOptions?: unknown } = {}
+    const sink: { clickOptions?: unknown; hoverOptions?: unknown } = {}
     const loc = makeLocator(null, env.calls, sink)
     await markClick(loc)
     expect(env.steps).toEqual([])
@@ -67,7 +67,7 @@ describe('click()', () => {
 
   it('waits visible, settles, marks, then clicks — forwarding options', async () => {
     setupRecast(env.fakeTest, { clickSettleMs: 20 })
-    const sink: { clickOptions?: unknown } = {}
+    const sink: { clickOptions?: unknown; hoverOptions?: unknown } = {}
     const loc = makeLocator({ x: 10, y: 10, width: 20, height: 20 }, env.calls, sink)
     const t0 = Date.now()
     await click(loc, { button: 'left', force: true })
@@ -85,13 +85,15 @@ describe('click()', () => {
 
   it('hovers the target before clicking when hoverDwellMs is set', async () => {
     setupRecast(env.fakeTest, { clickSettleMs: 0, hoverDwellMs: 60 })
-    const sink: { clickOptions?: unknown } = {}
+    const sink: { clickOptions?: unknown; hoverOptions?: unknown } = {}
     const loc = makeLocator({ x: 10, y: 10, width: 20, height: 20 }, env.calls, sink)
 
     const t0 = Date.now()
     await click(loc)
 
     expect(Date.now() - t0).toBeGreaterThanOrEqual(50)
+    // The hover attempt is capped on its own, well under the click's timeout.
+    expect(sink.hoverOptions).toEqual({ timeout: 1000 })
     expect(env.calls).toEqual([
       'waitFor:visible',
       'hover',
@@ -103,7 +105,7 @@ describe('click()', () => {
 
   it('marks the click after the hover so the marker stays inside the reconciliation window', async () => {
     setupRecast(env.fakeTest, { clickSettleMs: 0, hoverDwellMs: 40 })
-    const sink: { clickOptions?: unknown } = {}
+    const sink: { clickOptions?: unknown; hoverOptions?: unknown } = {}
     const loc = makeLocator({ x: 10, y: 10, width: 20, height: 20 }, env.calls, sink)
 
     await click(loc)
@@ -117,7 +119,7 @@ describe('click()', () => {
 
   it('clicks anyway when the hover cannot be performed, and skips the dwell', async () => {
     setupRecast(env.fakeTest, { clickSettleMs: 0, hoverDwellMs: 300 })
-    const sink: { clickOptions?: unknown } = {}
+    const sink: { clickOptions?: unknown; hoverOptions?: unknown } = {}
     const loc = makeLocator({ x: 0, y: 0, width: 10, height: 10 }, env.calls, sink)
     ;(loc as unknown as { hover: () => Promise<void> }).hover = async () => {
       throw new Error('intercepted')
@@ -132,7 +134,7 @@ describe('click()', () => {
 
   it('does not hover when hoverDwellMs is left at its default', async () => {
     setupRecast(env.fakeTest, { clickSettleMs: 0 })
-    const sink: { clickOptions?: unknown } = {}
+    const sink: { clickOptions?: unknown; hoverOptions?: unknown } = {}
     const loc = makeLocator({ x: 0, y: 0, width: 10, height: 10 }, env.calls, sink)
 
     await click(loc)
@@ -142,7 +144,7 @@ describe('click()', () => {
 
   it('skips the settle wait when clickSettleMs is 0', async () => {
     setupRecast(env.fakeTest, { clickSettleMs: 0 })
-    const sink: { clickOptions?: unknown } = {}
+    const sink: { clickOptions?: unknown; hoverOptions?: unknown } = {}
     const loc = makeLocator({ x: 0, y: 0, width: 10, height: 10 }, env.calls, sink)
     const t0 = Date.now()
     await click(loc)
@@ -159,7 +161,7 @@ describe('click helpers without setupRecast()', () => {
   it('markClick no-ops before reading the locator box when setupRecast was not called', async () => {
     const { markClick } = await import('../../../src/helpers')
     const calls: string[] = []
-    const sink: { clickOptions?: unknown } = {}
+    const sink: { clickOptions?: unknown; hoverOptions?: unknown } = {}
     const loc = makeLocator({ x: 10, y: 20, width: 30, height: 40 }, calls, sink)
 
     await markClick(loc)
@@ -170,7 +172,7 @@ describe('click helpers without setupRecast()', () => {
   it('click falls back to the real locator click without settle or marker work', async () => {
     const { click } = await import('../../../src/helpers')
     const calls: string[] = []
-    const sink: { clickOptions?: unknown } = {}
+    const sink: { clickOptions?: unknown; hoverOptions?: unknown } = {}
     const loc = makeLocator({ x: 10, y: 20, width: 30, height: 40 }, calls, sink)
     const t0 = Date.now()
 
