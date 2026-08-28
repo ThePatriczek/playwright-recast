@@ -11,6 +11,7 @@
 - **Captions drifted ahead of the narration, further with every cue** — gap silence and pads are MP3s that always come out longer than requested, and narration holds rounded to the nearest frame, while the caption timeline advanced by the requested values. On a 55-cue screencast: 71ms early at the first cue, 3.37s at the last. Now +1ms and +38ms, bounded.
 - **Highlights were held for the length of a narration freeze, and could overlap** — the overlay was composited before voiceover freezes, so a mark caught by a narration hold stayed frozen there for the whole spoken line, and nothing kept two marks apart. Highlights now composite after the freezes, keep their configured duration, and end when the next mark appears.
 - **An overlay still on screen at the end of the video was held through the audio padding** — when the audio outlasts the video the last frame is cloned, and the clone carried whatever was baked into it. Timed overlays now composite onto the padded timeline, so they end where they were told to.
+- **Cursor overlays failed to render past ~96 keyframes** — the trajectory expression nested one `if()` per keyframe and ffmpeg's expression parser allows ~100 nesting levels (libavutil/eval.c), so a long screencast died in the cursor stage with a filter parse error. Per-keyframe branches are now combined by a balanced bisection on movement start time, so nesting is log2(keyframes); verified against ffmpeg's own evaluator at 200 keyframes.
 
 ### Behavior changes
 

@@ -166,10 +166,12 @@ describe('buildOverlayExpressions', () => {
       srcRes,
     )
 
-    // Nested ffmpeg if() branches are evaluated from left to right.
-    expect(result.x.indexOf('2.0000\\,2.7000')).toBeLessThan(
-      result.x.indexOf('1.5000\\,2.5000'),
-    )
+    // Both windows are present, and the expression bisects on the later
+    // movement start, so t >= 2.0 resolves to the later keyframe.
+    // expression-eval.test.ts checks the resulting positions with ffmpeg.
+    expect(result.x).toContain('1.5000\\,2.5000')
+    expect(result.x).toContain('2.0000\\,2.7000')
+    expect(result.x.startsWith('if(lt(t\\,2.0000)\\,')).toBe(true)
   })
 })
 
