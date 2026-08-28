@@ -15,6 +15,7 @@ import { buildZoomFilter, stepZoomsToKeyframes, type ZoomExprConfig } from './zo
 import { generateRippleClip } from '../click-effect/ripple-generator.js'
 import type { HighlightEvent } from '../types/text-highlight.js'
 import { generateHighlightClip } from '../text-highlight/highlight-generator.js'
+import { makeHighlightsExclusive, shiftHighlightsForFreezes } from '../text-highlight/exclusivity.js'
 import { writeDefaultClickSound } from '../click-effect/defaults.js'
 import { generateClickSoundTrack, getAudioDurationMs as getClickAudioDurationMs } from '../click-effect/sound-track.js'
 import { writeSrt } from '../subtitles/srt-writer.js'
@@ -815,18 +816,6 @@ export function renderVideo(
     videoInput = interpolatedPath
   }
 
-  // Phase 3.3: Apply text highlight overlays (pre-freeze; highlights freeze
-  // with the held frame, which is acceptable since their duration is
-  // configured independently).
-  if (trace.highlightEvents && trace.highlightEvents.length > 0) {
-    videoInput = renderWithHighlights(
-      videoInput,
-      trace.highlightEvents,
-      trace.metadata.viewport,
-      tmpDir,
-    )
-  }
-
   // Phase 3.4: Voiceover-driven freezes. If a narration's audio is longer
   // than its visual window, the voiceover stage records "freeze" points so
   // the video holds the current frame until the audio finishes. We apply
@@ -869,6 +858,21 @@ export function renderVideo(
           shiftForFreezes(kf.videoTimeSec * 1000, allFreezes) / 1000
       }
     }
+    if (trace.highlightEvents) {
+      trace.highlightEvents = shiftHighlightsForFreezes(trace.highlightEvents, allFreezes)
+    }
+  }
+
+  // Phase 3.44: Highlights, on the freeze-extended timeline like the cursor and
+  // click overlays. Compositing them before the freezes instead held whichever
+  // mark was on screen for the whole spoken line.
+  if (trace.highlightEvents && trace.highlightEvents.length > 0) {
+    videoInput = renderWithHighlights(
+      videoInput,
+      makeHighlightsExclusive(trace.highlightEvents),
+      trace.metadata.viewport,
+      tmpDir,
+    )
   }
 
   // Phase 3.45: Apply cursor overlay on the freeze-extended timeline. The

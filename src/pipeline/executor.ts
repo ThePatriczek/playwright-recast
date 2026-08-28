@@ -539,6 +539,9 @@ export class PipelineExecutor {
             }
           }
           if (traceHighlights.length > 0) {
+            // Overlap is resolved in the renderer, on the freeze-extended
+            // timeline — the only clock on which "until the next mark" is a
+            // real distance.
             state.highlightEvents = traceHighlights
             state.highlightConfig = hlDefaults
             console.log(`  highlight: ${traceHighlights.length} from trace`)

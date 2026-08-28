@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Bug fixes
+
+- **Highlights were held for the length of a narration freeze, and could overlap** — the overlay was composited before voiceover freezes, so a mark caught by a narration hold stayed frozen there for the whole spoken line, and nothing kept two marks apart. Highlights now composite after the freezes, keep their configured duration, and end when the next mark appears.
+
 ## 0.20.0 (2026-08-24)
 
 ### Features
