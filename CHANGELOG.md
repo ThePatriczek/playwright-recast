@@ -5,6 +5,7 @@
 ### Bug fixes
 
 - **A failing ffmpeg now reports ffmpeg's own diagnostics** — exit status plus the head and tail of its output, rather than `spawnSync ffmpeg ENOBUFS` whenever that output outgrew Node's 1MB default buffer. Every ffmpeg call in the pipeline runs through the same wrapper, apart from the loudness-normalisation pair, which reads ffmpeg's output by design and already buffers 10MB.
+- **Filter graphs are passed as a script file once they outgrow a single argv entry** — Linux caps that at 128KB and the graphs grow with the screencast (~380 bytes per cursor keyframe), so anything past 60KB goes to a file with the matching `-filter_*_script` option. The file is kept, and named in the error message, when ffmpeg fails.
 
 ## 0.20.0 (2026-08-24)
 

@@ -63,6 +63,8 @@ export function generateClickSoundTrack(input: ClickSoundInput): string {
     filterComplex = parts.join(';')
   }
 
+  // One clause per click, so the graph grows with the screencast — runFfmpeg
+  // spills it to a file if it outgrows a single argv entry.
   runFfmpeg([
     '-y', '-i', input.soundPath,
     '-filter_complex', filterComplex,
