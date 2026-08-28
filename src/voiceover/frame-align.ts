@@ -63,3 +63,21 @@ export function alignFreezeToFrame(
   const quantisedDuration = Math.round(rawDuration / per) * per + 0 // normalize -0 to 0
   return { atVideoMs: aligned, durationMs: quantisedDuration }
 }
+
+/**
+ * Align a hold that lets narration audio finish. Like {@link alignFreezeToFrame}
+ * but never rounds *down*: the caption timeline advances by this hold, so a
+ * short one leaves captions ahead of the voice and compounds across cues; the
+ * surplus is absorbed by the next gap. Non-positive/NaN fps passes through.
+ */
+export function alignNarrationHold(
+  atVideoMs: number,
+  durationMs: number,
+  fps: number,
+): { atVideoMs: number; durationMs: number } {
+  if (!(fps > 0)) return { atVideoMs, durationMs }
+  return {
+    atVideoMs: alignMsUpToFrame(atVideoMs, fps),
+    durationMs: alignMsUpToFrame(Math.max(0, durationMs), fps),
+  }
+}
