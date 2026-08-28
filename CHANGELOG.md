@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Bug fixes
+
+- **Captions drifted ahead of the narration, further with every cue** — gap silence and pads are MP3s that always come out longer than requested, and narration holds rounded to the nearest frame, while the caption timeline advanced by the requested values. On a 55-cue screencast: 71ms early at the first cue, 3.37s at the last. Now +1ms and +38ms, bounded.
+
+### Behavior changes
+
+- **A narration hold can be up to one frame longer** — it rounds up instead of to the nearest frame, so it always covers its audio.
+
 ## 0.20.0 (2026-08-24)
 
 ### Features
