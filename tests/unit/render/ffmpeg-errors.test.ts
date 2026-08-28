@@ -27,8 +27,17 @@ describe('ffmpeg()', () => {
     }
 
     expect(message).not.toContain('ENOBUFS')
-    expect(message).toContain('ffmpeg')
     expect(message).toContain("Missing ')' or too many args")
+
+    const lines = message.split('\n')
+    // Exit status, both ends of the output, and a marker for what was dropped.
+    expect(lines[0]).toMatch(/^ffmpeg failed \(exit \d+\)/)
+    expect(message).toContain('ffmpeg version')
+    expect(message).toContain('Conversion failed')
+    expect(message).toMatch(/… \d+ line\(s\) omitted …/)
+    // Every kept line is capped, so one echoed 40KB expression cannot bury it.
+    expect(Math.max(...lines.map((line) => line.length))).toBeLessThanOrEqual(241)
+    expect(lines.length).toBeLessThanOrEqual(30)
   })
 
   it('reports the exit status and the tail of ffmpeg output for ordinary failures', () => {

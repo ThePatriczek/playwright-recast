@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process'
+import { runFfmpeg } from '../utils/ffmpeg.js'
 
 export interface ClickSoundInput {
   clicks: Array<{ videoTimeMs: number }>
@@ -62,13 +63,13 @@ export function generateClickSoundTrack(input: ClickSoundInput): string {
     filterComplex = parts.join(';')
   }
 
-  execFileSync('ffmpeg', [
+  runFfmpeg([
     '-y', '-i', input.soundPath,
     '-filter_complex', filterComplex,
     '-map', '[out]',
     '-c:a', 'libmp3lame', '-q:a', '2',
     input.outputPath,
-  ], { stdio: 'pipe' })
+  ])
 
   return input.outputPath
 }

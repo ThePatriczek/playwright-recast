@@ -1,6 +1,6 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
-import { execFileSync } from 'node:child_process'
+import { runFfmpeg } from '../utils/ffmpeg.js'
 import type { ScreencastFrame } from '../types/trace.js'
 
 const DEFAULT_TAIL_DURATION_SEC = 0.04
@@ -58,7 +58,7 @@ export async function assembleVideoFromScreencastFrames(opts: AssembleOptions): 
   // frame rate. The `fps` filter duplicates frames during idle pauses and
   // drops during bursts — preserving the visual cadence of the screencast.
   // 25fps matches Playwright's recordVideo default.
-  execFileSync('ffmpeg', [
+  runFfmpeg([
     '-y',
     '-f', 'concat', '-safe', '0', '-i', concatPath,
     // JPEG inputs come in yuvj420p (full range). Explicit `scale` with
@@ -70,7 +70,7 @@ export async function assembleVideoFromScreencastFrames(opts: AssembleOptions): 
     '-c:v', 'libx264', '-preset', 'fast', '-crf', '18',
     '-r', String(OUTPUT_FPS),
     outputPath,
-  ], { stdio: 'pipe' })
+  ])
 }
 
 /**

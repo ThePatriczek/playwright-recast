@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process'
+import { runFfmpeg } from '../utils/ffmpeg.js'
 
 export interface RippleArgs {
   color: string     // hex '#RRGGBB'
@@ -55,6 +55,6 @@ export function buildRippleArgs(opts: RippleArgs): string[] {
  */
 export function generateRippleClip(opts: RippleArgs): string {
   const args = buildRippleArgs(opts)
-  execFileSync('ffmpeg', args, { stdio: 'pipe' })
+  runFfmpeg(args)
   return opts.outputPath
 }
