@@ -84,12 +84,14 @@ describe('click()', () => {
   })
 
   it('hovers the target before clicking when hoverDwellMs is set', async () => {
-    setupRecast(env.fakeTest, { clickSettleMs: 0, hoverDwellMs: 20 })
+    setupRecast(env.fakeTest, { clickSettleMs: 0, hoverDwellMs: 60 })
     const sink: { clickOptions?: unknown } = {}
     const loc = makeLocator({ x: 10, y: 10, width: 20, height: 20 }, env.calls, sink)
 
+    const t0 = Date.now()
     await click(loc)
 
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(50)
     expect(env.calls).toEqual([
       'waitFor:visible',
       'hover',
