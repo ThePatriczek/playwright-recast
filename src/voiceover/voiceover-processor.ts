@@ -13,7 +13,7 @@ import type {
   LoudnessNormalizeConfig,
 } from '../types/voiceover.js'
 import { normalizeLoudness } from './normalize.js'
-import { alignFreezeToFrame } from './frame-align.js'
+import { alignFreezeToFrame, alignNarrationHold } from './frame-align.js'
 
 function getAudioDurationMs(filePath: string): number {
   const output = execFileSync('ffprobe', [
@@ -104,8 +104,11 @@ export async function generateVoiceover(
   // intervening visuals (clicks) don't play through before the audio ends.
   const originalStartsMs = trace.subtitles.map((s) => s.startMs)
   const originalEndsMs = trace.subtitles.map((s) => s.endMs)
-  let cursor = 0
   let timeShift = 0
+  /** Where the track really ends. Every MP3 here runs longer than requested
+   *  (24ms frames at 24kHz, encoder delay, padding), so measuring lets the next
+   *  gap absorb the excess instead of it accumulating. */
+  let audioEndMs = 0
 
   // Approach holds (cursor-glide pauses at marked clicks) are interleaved with
   // the subtitles by position: each one drained below adds its duration to
@@ -132,10 +135,19 @@ export async function generateVoiceover(
     if (subtitle.zoom?.startMs !== undefined) subtitle.zoom.startMs += timeShift
     if (subtitle.zoom?.endMs !== undefined) subtitle.zoom.endMs += timeShift
 
-    if (subtitle.startMs > cursor) {
+    // Fill from where the track really ends up to this cue's start.
+    const gapMs = subtitle.startMs - audioEndMs
+    if (gapMs > 0) {
       const silencePath = path.join(tmpDir, `silence-${subtitle.index}.mp3`)
-      generateSilence(subtitle.startMs - cursor, silencePath, silenceSampleRate, silenceChannels)
-      segmentFiles.push(silencePath)
+      generateSilence(gapMs, silencePath, silenceSampleRate, silenceChannels)
+      const silenceMs = getAudioDurationMs(silencePath)
+      // A tiny gap's smallest writable file overshoots more than skipping it.
+      if (Math.abs(silenceMs - gapMs) < gapMs) {
+        segmentFiles.push(silencePath)
+        audioEndMs += silenceMs
+      } else {
+        fs.unlinkSync(silencePath)
+      }
     }
 
     const segPath = path.join(tmpDir, `seg-${subtitle.index}.mp3`)
@@ -163,16 +175,18 @@ export async function generateVoiceover(
     // the builder clamps it and the loop shifts start/end by the same amount.
     if (audioDuration <= windowDuration) {
       segmentFiles.push(segPath)
+      audioEndMs += audioDuration
       const pad = windowDuration - audioDuration
       if (pad > 50) {
         const padPath = path.join(tmpDir, `pad-${subtitle.index}.mp3`)
         generateSilence(pad, padPath, silenceSampleRate, silenceChannels)
         segmentFiles.push(padPath)
+        audioEndMs += getAudioDurationMs(padPath)
       }
-      cursor = subtitle.endMs
     } else {
       const overflow = audioDuration - windowDuration
       segmentFiles.push(segPath)
+      audioEndMs += audioDuration
       subtitle.endMs = subtitle.startMs + audioDuration
       // Freeze the video on the last frame of this segment's window so the
       // narration finishes before the next visual action starts. Hold at the
@@ -183,13 +197,13 @@ export async function generateVoiceover(
       // before; the renderer's end-of-video tpad handles its overflow instead.
       const nextOriginalStartMs = originalStartsMs[si + 1]
       if (nextOriginalStartMs !== undefined) {
-        const aligned = alignFreezeToFrame(originalEndsMs[si]!, overflow, outputFps)
+        // Rounds up: a short hold leaves captions ahead of the voice.
+        const aligned = alignNarrationHold(originalEndsMs[si]!, overflow, outputFps)
         freezes.push(aligned)
         timeShift += aligned.durationMs
       } else {
         timeShift += overflow
       }
-      cursor = subtitle.endMs
     }
 
     entries.push({
