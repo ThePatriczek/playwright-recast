@@ -18,7 +18,7 @@ describe('ffmpeg()', () => {
     try {
       ffmpeg([
         '-y', '-f', 'lavfi', '-i', 'color=c=black:s=64x64:r=5:d=1',
-        '-vf', `drawtext=text=x:fontsize=10:y=0:x='${hugeBogusExpression(200)}'`,
+        '-vf', `drawbox=x='${hugeBogusExpression(200)}':y=0:w=10:h=10:color=red`,
         '-f', 'null', '-',
       ])
       throw new Error('expected ffmpeg() to throw')

@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { msPerFrame, alignMsUpToFrame, alignFreezeToFrame } from '../../../src/voiceover/frame-align'
+import {
+  msPerFrame,
+  alignMsUpToFrame,
+  alignFreezeToFrame,
+  alignNarrationHold,
+} from '../../../src/voiceover/frame-align'
 
 describe('msPerFrame', () => {
   it('converts a frame rate to milliseconds per frame', () => {
@@ -82,6 +87,58 @@ describe('alignFreezeToFrame', () => {
   it('returns inputs unchanged for a NaN or missing frame rate', () => {
     expect(alignFreezeToFrame(100, 500, NaN)).toEqual({ atVideoMs: 100, durationMs: 500 })
     expect(alignFreezeToFrame(100, 500, undefined as unknown as number)).toEqual({
+      atVideoMs: 100,
+      durationMs: 500,
+    })
+  })
+})
+
+describe('alignNarrationHold', () => {
+  it('never returns a hold shorter than the audio it must cover', () => {
+    // alignFreezeToFrame rounds to the nearest frame and subtracts the start
+    // shift, so it can come back short — which is what let captions creep
+    // ahead of the voice. This must only ever round up.
+    for (const at of [0, 7, 33, 100, 7025]) {
+      for (const dur of [0, 1, 5, 39, 40, 41, 956, 1000]) {
+        const r = alignNarrationHold(at, dur, 25)
+        expect(r.durationMs, `hold for ${dur}ms at ${at}ms`).toBeGreaterThanOrEqual(dur)
+      }
+    }
+  })
+
+  it('overshoots by less than a whole frame', () => {
+    for (const dur of [1, 5, 39, 41, 956, 1000]) {
+      expect(alignNarrationHold(0, dur, 25).durationMs - dur).toBeLessThan(40)
+    }
+  })
+
+  it('puts both endpoints on frame boundaries', () => {
+    for (const at of [0, 7, 33, 100, 7025]) {
+      const r = alignNarrationHold(at, 956, 25)
+      expect(r.atVideoMs % 40).toBe(0)
+      expect(r.durationMs % 40).toBe(0)
+      expect((r.atVideoMs + r.durationMs) % 40).toBe(0)
+    }
+  })
+
+  it('leaves an already-aligned hold untouched', () => {
+    expect(alignNarrationHold(120, 480, 25)).toEqual({ atVideoMs: 120, durationMs: 480 })
+  })
+
+  it('never moves the hold position backwards', () => {
+    for (const at of [0, 1, 39, 40, 41, 7025]) {
+      expect(alignNarrationHold(at, 100, 25).atVideoMs).toBeGreaterThanOrEqual(at)
+    }
+  })
+
+  it('clamps a negative duration to zero', () => {
+    expect(alignNarrationHold(120, -5, 25).durationMs).toBe(0)
+  })
+
+  it('returns inputs unchanged for a non-positive, NaN, or missing frame rate', () => {
+    expect(alignNarrationHold(100, 500, 0)).toEqual({ atVideoMs: 100, durationMs: 500 })
+    expect(alignNarrationHold(100, 500, NaN)).toEqual({ atVideoMs: 100, durationMs: 500 })
+    expect(alignNarrationHold(100, 500, undefined as unknown as number)).toEqual({
       atVideoMs: 100,
       durationMs: 500,
     })

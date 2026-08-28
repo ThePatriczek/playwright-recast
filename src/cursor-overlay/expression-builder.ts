@@ -109,10 +109,9 @@ function buildTrajectoryAxis(
   const visibleAfter = Math.max(0, config.hideAfterMs / 1000)
   const initialOffset = Math.round(INITIAL_OFFSET * scale)
   const easedProgress = progressExpression(config.easing)
-  const segments: string[] = []
+  const branches: Branch[] = []
 
-  // Later movements take priority when pointer visibility windows overlap.
-  for (let i = points.length - 1; i >= 0; i--) {
+  for (let i = 0; i < points.length; i++) {
     const point = points[i]!
     const target = point[axis]
     const previous = i === 0 ? target - initialOffset : points[i - 1]![axis]
@@ -127,16 +126,40 @@ function buildTrajectoryAxis(
       `${start}+(${target - start})*${easedProgress}\\,` +
       `${target})`
 
-    segments.push(
-      `if(between(t\\,${moveStart.toFixed(4)}\\,${(point.t + visibleAfter).toFixed(4)})\\,${segment}\\,`
-    )
+    branches.push({
+      from: moveStart,
+      expr:
+        `if(between(t\\,${moveStart.toFixed(4)}\\,${(point.t + visibleAfter).toFixed(4)})\\,${segment}\\,0)`,
+    })
   }
 
-  let expr = segments.join('')
-  expr += '0'
-  expr += ')'.repeat(segments.length)
+  return buildBranchSearch(branches, 0, branches.length - 1)
+}
 
-  return expr
+/** One keyframe's position expression, keyed by the time its movement starts. */
+interface Branch {
+  from: number
+  expr: string
+}
+
+/**
+ * Bisect on movement start times instead of chaining one `if()` per keyframe:
+ * ffmpeg's expression parser allows ~100 nesting levels (libavutil/eval.c), so
+ * a chain stopped parsing past ~96 keyframes. Nesting is now log2(keyframes).
+ *
+ * Equivalent to the chain because movement starts and window ends both grow in
+ * keyframe order: the last branch that has started is the one the chain
+ * matched first, and past its window every earlier window has closed too.
+ */
+function buildBranchSearch(branches: Branch[], lo: number, hi: number): string {
+  if (lo === hi) return branches[lo]!.expr
+
+  // Right half keeps `mid`, so coincident start times resolve to the later
+  // keyframe — the one the chain gave priority to.
+  const mid = Math.ceil((lo + hi) / 2)
+  const left = buildBranchSearch(branches, lo, mid - 1)
+  const right = buildBranchSearch(branches, mid, hi)
+  return `if(lt(t\\,${branches[mid]!.from.toFixed(4)})\\,${left}\\,${right})`
 }
 
 /**
