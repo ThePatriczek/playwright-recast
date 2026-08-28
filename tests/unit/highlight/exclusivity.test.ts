@@ -63,6 +63,17 @@ describe('makeHighlightsExclusive()', () => {
     expect(first!.fadeOut).toBe(50)
   })
 
+  it('drops an empty mark instead of emitting a zero-length clip', () => {
+    const result = makeHighlightsExclusive([
+      makeEvent({ videoTimeMs: 1000, endTimeMs: 1000 }),
+      makeEvent({ videoTimeMs: 1000, endTimeMs: 5000, width: 20 }),
+      makeEvent({ videoTimeMs: 9000, endTimeMs: 9000 }),
+    ])
+
+    expect(result).toHaveLength(1)
+    expect(result[0]!.width).toBe(20)
+  })
+
   it('drops a mark that shares its start with the next one', () => {
     const result = makeHighlightsExclusive([
       makeEvent({ videoTimeMs: 1000, endTimeMs: 5000, width: 10 }),

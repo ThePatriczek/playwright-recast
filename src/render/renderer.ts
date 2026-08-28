@@ -88,6 +88,8 @@ export interface RenderableTrace extends ParsedTrace {
   zoomConfig?: { transitionMs?: number; easing?: import('../types/easing.js').EasingSpec; containInCue?: boolean }
   interpolateConfig?: import('../types/interpolate.js').InterpolateConfig
   highlightEvents?: import('../types/text-highlight.js').HighlightEvent[]
+  /** Highlight times are already on the freeze-extended clock. */
+  highlightsOnFreezeClock?: boolean
   highlightConfig?: import('../text-highlight/defaults.js').ResolvedTextHighlightConfig
 }
 
@@ -858,7 +860,7 @@ export function renderVideo(
           shiftForFreezes(kf.videoTimeSec * 1000, allFreezes) / 1000
       }
     }
-    if (trace.highlightEvents) {
+    if (trace.highlightEvents && !trace.highlightsOnFreezeClock) {
       trace.highlightEvents = shiftHighlightsForFreezes(trace.highlightEvents, allFreezes)
     }
   }

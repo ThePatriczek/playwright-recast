@@ -7,8 +7,8 @@ import type { HighlightEvent } from '../types/text-highlight.js'
  * speed-mapped output clock, so compressing idle time pulls marks closer
  * together than their durations. A clamped mark keeps whatever window is left:
  * `fadeOut` (at most half of it, so the mark is solid before it fades) and
- * `swipeDuration` shrink to fit. Marks sharing a timestamp leave no window at
- * all, and the earlier one is dropped.
+ * `swipeDuration` shrink to fit. A mark left with no window at all — two on
+ * the same timestamp, or an empty event — is dropped.
  */
 export function makeHighlightsExclusive(
   events: ReadonlyArray<HighlightEvent>,
@@ -19,17 +19,23 @@ export function makeHighlightsExclusive(
   for (let i = 0; i < sorted.length; i++) {
     const current = sorted[i]!
     const next = sorted[i + 1]
-    if (next === undefined || current.endTimeMs <= next.videoTimeMs) {
+    const endTimeMs = next === undefined
+      ? current.endTimeMs
+      : Math.min(current.endTimeMs, next.videoTimeMs)
+    const window = endTimeMs - current.videoTimeMs
+
+    // No window at all: two marks on the same timestamp, or an empty event.
+    // Either way there is nothing to render — ffmpeg rejects a zero-length clip.
+    if (window <= 0) continue
+
+    if (endTimeMs === current.endTimeMs) {
       exclusive.push(current)
       continue
     }
 
-    const window = next.videoTimeMs - current.videoTimeMs
-    if (window <= 0) continue
-
     exclusive.push({
       ...current,
-      endTimeMs: next.videoTimeMs,
+      endTimeMs,
       fadeOut: Math.min(current.fadeOut, Math.floor(window / 2)),
       swipeDuration: Math.min(current.swipeDuration, window),
     })

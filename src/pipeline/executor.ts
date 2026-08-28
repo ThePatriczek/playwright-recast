@@ -68,6 +68,7 @@ type PipelineState = {
   interpolateConfig?: import('../types/interpolate.js').InterpolateConfig
   highlightEvents?: HighlightEvent[]
   highlightConfig?: ResolvedTextHighlightConfig
+  highlightsOnFreezeClock?: boolean
   introConfig?: IntroConfig
   outroConfig?: OutroConfig
   backgroundMusicConfig?: ResolvedBackgroundMusicConfig
@@ -156,6 +157,7 @@ export class PipelineExecutor {
       interpolateConfig: state.interpolateConfig,
       highlightEvents: state.highlightEvents,
       highlightConfig: state.highlightConfig,
+      highlightsOnFreezeClock: state.highlightsOnFreezeClock,
     }
 
     // Render final video
@@ -937,6 +939,10 @@ export class PipelineExecutor {
 
           state.highlightEvents = filtered
           state.highlightConfig = hlConfig
+          // These times come from the subtitles, which voiceover() rewrites
+          // onto the freeze-extended clock — so after it, they are already
+          // shifted and the renderer must not shift them again.
+          state.highlightsOnFreezeClock = state.voiceovered !== undefined
           console.log(`  textHighlight: ${filtered.length} highlight(s) from report`)
           for (const he of filtered) {
             console.log(`    highlight: (${he.x}, ${he.y}) ${he.width}x${he.height} @ ${he.videoTimeMs}ms [${he.color}]`)
