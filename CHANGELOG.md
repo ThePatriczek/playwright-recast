@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Features
+
+- **`setupRecast({ hoverDwellMs })`** — `click()` now rests on its target before pressing it, so the app paints its own hover state (highlighted row, revealed button) into the recording. Off by default (`0`). The hover is best effort — an unhoverable target still goes through the normal `click()` actionability path — and the click marker is written after the dwell so `resolveClickMarkers()` still pairs it with the real click.
+
 ## 0.20.0 (2026-08-24)
 
 ### Features

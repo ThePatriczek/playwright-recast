@@ -15,6 +15,9 @@ export interface SetupRecastOptions {
   clickSettleMs?: number
   /** Average delay between `typeText()` keystrokes in ms (default: 100). */
   typingDelayMs?: number
+  /** How long `click()` hovers its target before pressing, so the recording
+   *  shows the app's hover state (default: 0, off). */
+  hoverDwellMs?: number
 }
 
 /** Per-call options for `typeText()`. */
@@ -46,6 +49,8 @@ let _clickSettleMs = DEFAULT_CLICK_SETTLE_MS
  *  by +/- 35% to avoid a mechanical cadence. */
 const DEFAULT_TYPING_DELAY_MS = 100
 let _typingDelayMs = DEFAULT_TYPING_DELAY_MS
+const DEFAULT_HOVER_DWELL_MS = 0
+let _hoverDwellMs = DEFAULT_HOVER_DWELL_MS
 
 /**
  * Title prefix written to a trace step by `narrate()`. The `subtitlesFromTrace`
@@ -106,6 +111,8 @@ function estimateNarrationMs(text: string, charsPerSecond: number): number {
  *   (default: 150). Pass 0 to disable.
  * @param options.typingDelayMs Default average delay between `typeText()`
  *   keystrokes in ms (default: 100). A per-call `delayMs` overrides this.
+ * @param options.hoverDwellMs How long `click()` hovers the target before
+ *   pressing it, in ms (default: 0, off), so the app paints its hover state.
  */
 export function setupRecast(
   testInstance: RecastTest,
@@ -116,6 +123,7 @@ export function setupRecast(
   _narrateAutoWait = options?.narrateAutoWait
   _clickSettleMs = options?.clickSettleMs ?? DEFAULT_CLICK_SETTLE_MS
   _typingDelayMs = options?.typingDelayMs ?? DEFAULT_TYPING_DELAY_MS
+  _hoverDwellMs = options?.hoverDwellMs ?? DEFAULT_HOVER_DWELL_MS
 }
 
 /**
@@ -420,8 +428,9 @@ export async function markClick(locator: Locator): Promise<void> {
 /**
  * Perform a click that renders with a polished cursor approach. Waits for the
  * target to be visible, settles briefly (so the recorder captures the painted
- * target), marks the click, then performs the real `locator.click(options)`.
- * `options` is forwarded to Playwright unchanged.
+ * target), hovers it for `setupRecast({ hoverDwellMs })`, marks the click,
+ * then performs the real `locator.click(options)`. `options` is forwarded to
+ * Playwright unchanged.
  */
 export async function click(
   locator: Locator,
@@ -435,6 +444,13 @@ export async function click(
   if (_clickSettleMs > 0) {
     await new Promise((resolve) => setTimeout(resolve, _clickSettleMs))
   }
+  if (_hoverDwellMs > 0) {
+    // Best effort: `locator.click()` below runs the real actionability checks.
+    await locator.hover({ timeout: 5_000 }).catch(() => {})
+    await new Promise((resolve) => setTimeout(resolve, _hoverDwellMs))
+  }
+  // After the dwell: resolveClickMarkers() only pairs a marker with a click
+  // inside a short window, and an unpaired marker renders a second click.
   await markClick(locator)
   await locator.click(options)
 }
