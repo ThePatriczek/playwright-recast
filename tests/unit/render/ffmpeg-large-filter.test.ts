@@ -24,7 +24,10 @@ const tinySource = ['-f', 'lavfi', '-i', 'color=c=black:s=64x64:r=5:d=0.4']
 const filterDirs = () => fs.readdirSync(os.tmpdir()).filter(e => e.startsWith('recast-filter-'))
 
 describe('oversized filter graphs', () => {
-  it('cannot be passed inline — the argv entry exceeds the kernel limit', () => {
+  // Linux caps one argv entry (MAX_ARG_STRLEN); macOS bounds the block as a
+  // whole, so the inline call can succeed there. The wrapper tests below hold
+  // everywhere — this one only documents the limit being worked around.
+  it.skipIf(process.platform !== 'linux')('cannot be passed inline — the argv entry exceeds the kernel limit', () => {
     const filter = `[0:v]drawbox=x='${longExpression(ARGV_LIMIT)}':y=0:w=4:h=4:color=white[out]`
     expect(Buffer.byteLength(filter)).toBeGreaterThan(ARGV_LIMIT)
 
@@ -72,9 +75,13 @@ describe('oversized filter graphs', () => {
       message = (error as Error).message
     }
 
-    const kept = message.match(/([^\s',]*recast-filter-[^\s',]+\.txt)/)
-    expect(kept).not.toBeNull()
-    expect(fs.readFileSync(kept![1]!, 'utf8')).toBe(filter)
-    fs.rmSync(path.dirname(kept![1]!), { recursive: true, force: true })
+    // Read the whole note rather than scanning for a path: a temp dir with a
+    // space in it would truncate anything whitespace-delimited.
+    const note = message.split('\n').find((line) => line.startsWith('Filter graph'))
+    expect(note).toBeDefined()
+    const kept = note!.slice(note!.indexOf(': ') + 2).split(', ')
+    expect(kept).toHaveLength(1)
+    expect(fs.readFileSync(kept[0]!, 'utf8')).toBe(filter)
+    fs.rmSync(path.dirname(kept[0]!), { recursive: true, force: true })
   })
 })
