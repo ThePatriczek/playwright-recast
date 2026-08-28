@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process'
+import { runFfmpeg } from '../utils/ffmpeg.js'
 
 export interface HighlightClipArgs {
   /** Highlight color as hex '#RRGGBB' */
@@ -88,6 +88,6 @@ export function buildHighlightArgs(opts: HighlightClipArgs): string[] {
  */
 export function generateHighlightClip(opts: HighlightClipArgs): string {
   const args = buildHighlightArgs(opts)
-  execFileSync('ffmpeg', args, { stdio: 'pipe' })
+  runFfmpeg(args)
   return opts.outputPath
 }

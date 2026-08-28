@@ -1,5 +1,5 @@
 import * as path from 'node:path'
-import { execFileSync } from 'node:child_process'
+import { runFfmpeg } from '../utils/ffmpeg.js'
 import type { ResolvedBackgroundMusicConfig } from './defaults.js'
 
 export interface VoiceoverSegment {
@@ -135,7 +135,7 @@ export function generateMusicTrack(
   inputArgs.push('-af', filters.join(','))
   inputArgs.push('-c:a', 'libmp3lame', '-q:a', '2', outputPath)
 
-  execFileSync('ffmpeg', inputArgs, { stdio: 'pipe' })
+  runFfmpeg(inputArgs)
 
   return outputPath
 }

@@ -1,5 +1,6 @@
 import * as fs from 'node:fs'
 import { execFileSync } from 'node:child_process'
+import { runFfmpeg } from '../utils/ffmpeg.js'
 import type { InterpolateConfig, InterpolateMode, InterpolateQuality } from '../types/interpolate.js'
 
 interface MinterpolateParams {
@@ -78,7 +79,7 @@ function probeSourceFps(inputPath: string): number {
 }
 
 function runSinglePass(inputPath: string, outputPath: string, filter: string): void {
-  execFileSync('ffmpeg', [
+  runFfmpeg([
     '-y',
     '-i', inputPath,
     '-vf', filter,
@@ -87,7 +88,7 @@ function runSinglePass(inputPath: string, outputPath: string, filter: string): v
     '-crf', '18',
     '-an',
     outputPath,
-  ], { stdio: 'pipe' })
+  ])
 }
 
 /**

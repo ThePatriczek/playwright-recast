@@ -25,6 +25,7 @@ import { filterRenderableSubtitles } from '../subtitles/renderable.js'
 import { interpolateVideo } from '../interpolate/interpolator.js'
 import { isSpeedClockAuthority } from '../speed/clock-authority.js'
 import { alignFreezeToFrame } from '../voiceover/frame-align.js'
+import { runFfmpeg } from '../utils/ffmpeg.js'
 
 /**
  * Detect blank/white frames at the start of a video and return the timestamp
@@ -94,7 +95,7 @@ export interface RenderableTrace extends ParsedTrace {
 }
 
 export function ffmpeg(args: string[]): void {
-  execFileSync('ffmpeg', args, { stdio: 'pipe' })
+  runFfmpeg(args)
 }
 
 /**

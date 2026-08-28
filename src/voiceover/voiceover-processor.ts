@@ -1,6 +1,7 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { execFileSync } from 'node:child_process'
+import { runFfmpeg } from '../utils/ffmpeg.js'
 import { probeAudioFormat, planAudioConcat } from './audio-format.js'
 import type { SubtitledTrace } from '../types/subtitle.js'
 import type {
@@ -26,13 +27,13 @@ function getAudioDurationMs(filePath: string): number {
 
 function generateSilence(durationMs: number, outputPath: string, sampleRate = 24000, channels = 1): void {
   const durationSec = Math.max(0.01, durationMs / 1000)
-  execFileSync('ffmpeg', [
+  runFfmpeg([
     '-y', '-f', 'lavfi',
     '-i', `anullsrc=r=${sampleRate}:cl=${channels}c`,
     '-t', String(durationSec),
     '-c:a', 'libmp3lame', '-q:a', '9',
     outputPath,
-  ], { stdio: 'pipe' })
+  ])
 }
 
 /** Resolve normalize option to a concrete config or `null` (disabled). */
@@ -236,12 +237,12 @@ export async function generateVoiceover(
     if (plan.normalise) {
       console.log(`  Voiceover: segment formats differ — normalising to ${plan.sampleRate}Hz/${plan.channels}ch`)
     }
-    execFileSync('ffmpeg', [
+    runFfmpeg([
       '-y', '-f', 'concat', '-safe', '0',
       '-i', concatList,
       ...codecArgs,
       audioTrackPath,
-    ], { stdio: 'pipe' })
+    ])
   }
 
   const totalDurationMs = segmentFiles.length > 0
