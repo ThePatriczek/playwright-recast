@@ -113,17 +113,19 @@ describe('click()', () => {
     expect(markerIndex).toBeLessThan(clickIndex)
   })
 
-  it('clicks anyway when the hover cannot be performed', async () => {
-    setupRecast(env.fakeTest, { clickSettleMs: 0, hoverDwellMs: 5 })
+  it('clicks anyway when the hover cannot be performed, and skips the dwell', async () => {
+    setupRecast(env.fakeTest, { clickSettleMs: 0, hoverDwellMs: 300 })
     const sink: { clickOptions?: unknown } = {}
     const loc = makeLocator({ x: 0, y: 0, width: 10, height: 10 }, env.calls, sink)
     ;(loc as unknown as { hover: () => Promise<void> }).hover = async () => {
       throw new Error('intercepted')
     }
 
+    const t0 = Date.now()
     await click(loc)
 
     expect(env.calls).toContain('click')
+    expect(Date.now() - t0).toBeLessThan(300)
   })
 
   it('does not hover when hoverDwellMs is left at its default', async () => {

@@ -50,6 +50,8 @@ let _clickSettleMs = DEFAULT_CLICK_SETTLE_MS
 const DEFAULT_TYPING_DELAY_MS = 100
 let _typingDelayMs = DEFAULT_TYPING_DELAY_MS
 const DEFAULT_HOVER_DWELL_MS = 0
+/** Cap on the cosmetic pre-click hover — the target is already visible. */
+const HOVER_TIMEOUT_MS = 1000
 let _hoverDwellMs = DEFAULT_HOVER_DWELL_MS
 
 /**
@@ -445,9 +447,12 @@ export async function click(
     await new Promise((resolve) => setTimeout(resolve, _clickSettleMs))
   }
   if (_hoverDwellMs > 0) {
-    // Best effort: `locator.click()` below runs the real actionability checks.
-    await locator.hover({ timeout: 5_000 }).catch(() => {})
-    await new Promise((resolve) => setTimeout(resolve, _hoverDwellMs))
+    // Best effort, and short: the target is visible and settled already, so a
+    // hover that does not land is obstructed and no hover state will appear —
+    // dwelling on it would only add latency ahead of the real click, which
+    // runs its own actionability checks.
+    const hovered = await locator.hover({ timeout: HOVER_TIMEOUT_MS }).then(() => true, () => false)
+    if (hovered) await new Promise((resolve) => setTimeout(resolve, _hoverDwellMs))
   }
   // After the dwell: resolveClickMarkers() only pairs a marker with a click
   // inside a short window, and an unpaired marker renders a second click.
