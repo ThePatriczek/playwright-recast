@@ -8,16 +8,9 @@ import { ffmpeg } from '../../../src/render/renderer'
 /** Linux caps one argv entry at 128KB, so a big filter graph cannot be inlined. */
 const ARGV_LIMIT = 128 * 1024
 
-/** A valid but very long expression: a sum of gated constants. */
-function longExpression(bytes: number): string {
-  const terms: string[] = []
-  let size = 0
-  for (let i = 0; terms.length === 0 || size < bytes; i++) {
-    const term = `if(between(t\\,${i}.0000\\,${i + 1}.0000)\\,${i % 17}\\,0)`
-    terms.push(term)
-    size += term.length + 1
-  }
-  return terms.join('+')
+/** Keep parser complexity constant while making one argv entry very large. */
+function paddedFilter(filter: string, bytes: number): string {
+  return filter + ' '.repeat(Math.max(0, bytes - Buffer.byteLength(filter)))
 }
 
 const tinySource = ['-f', 'lavfi', '-i', 'color=c=black:s=64x64:r=5:d=0.4']
@@ -28,7 +21,10 @@ describe('oversized filter graphs', () => {
   // whole, so the inline call can succeed there. The wrapper tests below hold
   // everywhere — this one only documents the limit being worked around.
   it.skipIf(process.platform !== 'linux')('cannot be passed inline — the argv entry exceeds the kernel limit', () => {
-    const filter = `[0:v]drawbox=x='${longExpression(ARGV_LIMIT)}':y=0:w=4:h=4:color=white[out]`
+    const filter = paddedFilter(
+      '[0:v]drawbox=x=0:y=0:w=4:h=4:color=white[out]',
+      ARGV_LIMIT + 1,
+    )
     expect(Buffer.byteLength(filter)).toBeGreaterThan(ARGV_LIMIT)
 
     expect(() => execFileSync('ffmpeg', [
@@ -38,7 +34,10 @@ describe('oversized filter graphs', () => {
 
   it('renders with a filter_complex larger than the argv limit', () => {
     const before = filterDirs()
-    const filter = `[0:v]drawbox=x='${longExpression(ARGV_LIMIT)}':y=0:w=4:h=4:color=white[out]`
+    const filter = paddedFilter(
+      '[0:v]drawbox=x=0:y=0:w=4:h=4:color=white[out]',
+      ARGV_LIMIT + 1,
+    )
     const out = path.join(os.tmpdir(), `recast-large-filter-${process.pid}.mp4`)
 
     ffmpeg([
@@ -57,7 +56,7 @@ describe('oversized filter graphs', () => {
 
     ffmpeg([
       '-y', ...tinySource,
-      '-vf', `drawbox=x='${longExpression(ARGV_LIMIT)}':y=0:w=4:h=4:color=white`,
+      '-vf', paddedFilter('drawbox=x=0:y=0:w=4:h=4:color=white', ARGV_LIMIT + 1),
       '-c:v', 'libx264', '-preset', 'ultrafast', out,
     ])
 
@@ -66,7 +65,10 @@ describe('oversized filter graphs', () => {
   })
 
   it('keeps the spilled filter file and names it when ffmpeg fails', () => {
-    const filter = `[0:v]drawbox=x='${longExpression(ARGV_LIMIT)}':y=0:w=4:h=4:color=nosuchcolor[out]`
+    const filter = paddedFilter(
+      '[0:v]drawbox=x=0:y=0:w=4:h=4:color=nosuchcolor[out]',
+      ARGV_LIMIT + 1,
+    )
     let message = ''
     try {
       ffmpeg(['-y', ...tinySource, '-filter_complex', filter, '-map', '[out]', '-f', 'null', '-'])
