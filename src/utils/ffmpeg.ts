@@ -1,4 +1,7 @@
 import { execFileSync } from 'node:child_process'
+import * as fs from 'node:fs'
+import * as os from 'node:os'
+import * as path from 'node:path'
 
 /**
  * Assert that both `ffmpeg` and `ffprobe` are available on the system PATH.
@@ -39,10 +42,71 @@ const MAX_LINE_LENGTH = 240
  * with a bare `spawnSync ffmpeg ENOBUFS` and nothing else.
  */
 export function runFfmpeg(args: string[]): void {
+  const spilled = spillLargeFilters(args)
   try {
-    execFileSync('ffmpeg', args, { stdio: 'pipe', maxBuffer: MAX_FFMPEG_OUTPUT })
+    execFileSync('ffmpeg', spilled.args, { stdio: 'pipe', maxBuffer: MAX_FFMPEG_OUTPUT })
   } catch (error: unknown) {
-    throw new Error(describeFfmpegFailure(error), { cause: error })
+    // Keep the spilled graphs — they are the failing input worth inspecting.
+    throw new Error(describeFfmpegFailure(error) + spilled.note(), { cause: error })
+  }
+  spilled.discard()
+}
+
+/** Filter options and the file-based equivalent ffmpeg reads them from. */
+const FILTER_SCRIPT_OPTIONS: Record<string, string> = {
+  '-filter_complex': '-filter_complex_script',
+  '-lavfi': '-filter_complex_script',
+  '-vf': '-filter_script:v',
+  '-filter:v': '-filter_script:v',
+  '-af': '-filter_script:a',
+  '-filter:a': '-filter_script:a',
+}
+
+/**
+ * Linux caps one argv entry at 128KB (MAX_ARG_STRLEN) and filter graphs grow
+ * with the screencast — the cursor overlay alone spends ~380 bytes per
+ * keyframe. Anything larger goes to a file ffmpeg reads instead.
+ */
+const MAX_INLINE_FILTER = 60 * 1024
+
+interface SpilledFilters {
+  args: string[]
+  /** Remove the temp files. Best effort, and only once ffmpeg succeeded. */
+  discard: () => void
+  /** Where the graphs went, for a failure message. */
+  note: () => string
+}
+
+function spillLargeFilters(args: string[]): SpilledFilters {
+  let dir: string | undefined
+  const files: string[] = []
+  const spilledArgs = [...args]
+
+  for (let i = 0; i + 1 < spilledArgs.length; i++) {
+    const scriptOption = FILTER_SCRIPT_OPTIONS[spilledArgs[i]!]
+    const graph = spilledArgs[i + 1]!
+    if (scriptOption === undefined || Buffer.byteLength(graph) <= MAX_INLINE_FILTER) continue
+
+    dir ??= fs.mkdtempSync(path.join(os.tmpdir(), 'recast-filter-'))
+    const file = path.join(dir, `filter-${files.length}.txt`)
+    // No trailing newline: ffmpeg reads the file as the whole graph.
+    fs.writeFileSync(file, graph)
+    files.push(file)
+    spilledArgs[i] = scriptOption
+    spilledArgs[i + 1] = file
+    i++
+  }
+
+  return {
+    args: spilledArgs,
+    discard: () => {
+      if (dir === undefined) return
+      // A render that worked must not fail over leftover temp files.
+      try { fs.rmSync(dir, { recursive: true, force: true }) } catch { /* ignore */ }
+    },
+    note: () => files.length === 0
+      ? ''
+      : `\nFilter graph${files.length === 1 ? '' : 's'} passed as file(s): ${files.join(', ')}`,
   }
 }
 

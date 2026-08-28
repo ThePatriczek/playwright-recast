@@ -13,6 +13,7 @@
 - **An overlay still on screen at the end of the video was held through the audio padding** — when the audio outlasts the video the last frame is cloned, and the clone carried whatever was baked into it. Timed overlays now composite onto the padded timeline, so they end where they were told to.
 - **Cursor overlays failed to render past ~96 keyframes** — the trajectory expression nested one `if()` per keyframe and ffmpeg's expression parser allows ~100 nesting levels (libavutil/eval.c), so a long screencast died in the cursor stage with a filter parse error. Per-keyframe branches are now combined by a balanced bisection on movement start time, so nesting is log2(keyframes); verified against ffmpeg's own evaluator at 200 keyframes.
 - **A failing ffmpeg now reports ffmpeg's own diagnostics** — exit status plus the head and tail of its output, rather than `spawnSync ffmpeg ENOBUFS` whenever that output outgrew Node's 1MB default buffer. Every ffmpeg call in the pipeline runs through the same wrapper, apart from the loudness-normalisation pair, which reads ffmpeg's output by design and already buffers 10MB.
+- **Filter graphs are passed as a script file once they outgrow a single argv entry** — Linux caps that at 128KB and the graphs grow with the screencast (~380 bytes per cursor keyframe), so anything past 60KB goes to a file with the matching `-filter_*_script` option. The file is kept, and named in the error message, when ffmpeg fails.
 
 ### Behavior changes
 
