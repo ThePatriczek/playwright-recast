@@ -28,6 +28,10 @@ const TARGET = { width: 320, height: 180 }
 const DURATION_SEC = 4
 const FPS = 25
 
+const HAS_SUBTITLES_FILTER = execFileSync('ffmpeg', ['-hide_banner', '-filters'], {
+  stdio: ['ignore', 'pipe', 'ignore'],
+}).toString().split('\n').some((line) => /\bsubtitles\b/.test(line))
+
 let TMP_ROOT: string
 /** Busy pattern, so nothing is mistaken for a blank lead-in. */
 let SRC: string
@@ -131,11 +135,16 @@ describe('overlay and zoom stages render in a single pass', () => {
     TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'recast-single-pass-test-'))
     SRC = path.join(TMP_ROOT, 'src.mp4')
     SQUARE_SRC = path.join(TMP_ROOT, 'square.mp4')
-    encode(`testsrc=s=${SOURCE_RES.width}x${SOURCE_RES.height}:d=${DURATION_SEC}:r=${FPS}`, SRC)
-    // Busy border keeps the blank detector quiet; the red square is what the
-    // zoom geometry is measured against.
     encode(
       `testsrc=s=${SOURCE_RES.width}x${SOURCE_RES.height}:d=${DURATION_SEC}:r=${FPS},`
+      + 'noise=alls=5:allf=t',
+      SRC,
+    )
+    // Noise keeps the blank detector quiet; the red square is what the zoom
+    // geometry is measured against.
+    encode(
+      `testsrc=s=${SOURCE_RES.width}x${SOURCE_RES.height}:d=${DURATION_SEC}:r=${FPS},`
+      + 'noise=alls=5:allf=t,'
       + `drawbox=x=280:y=140:w=80:h=80:color=red@1.0:t=fill`,
       SQUARE_SRC,
     )
@@ -222,7 +231,7 @@ describe('overlay and zoom stages render in a single pass', () => {
     expect(isYellow(pixelAt(withPad, DURATION_SEC + 1.5, x, y))).toBe(false)
   })
 
-  it('burns subtitles through the graph tail', () => {
+  it.skipIf(!HAS_SUBTITLES_FILTER)('burns subtitles through the graph tail', () => {
     const cue: SubtitleEntry[] = [
       { index: 0, startMs: 0, endMs: DURATION_SEC * 1000, text: 'BURNED IN' },
     ]
