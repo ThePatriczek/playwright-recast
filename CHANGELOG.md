@@ -14,6 +14,10 @@
 
 - **A narration hold can be up to one frame longer** — it rounds up instead of to the nearest frame, so it always covers its audio.
 
+### Performance
+
+- **Voiceover freeze slicing no longer re-decodes the video for every slice** — slices seek with `-ss` instead of `trim=start_frame`, which decoded from frame 0 each time (O(N²) for N slices). Cuts stay frame-exact. On a 160-slice screencast the stage dropped from 551s to 125s.
+
 ## 0.20.0 (2026-08-24)
 
 ### Features
