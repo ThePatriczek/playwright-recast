@@ -7,8 +7,8 @@ import type { HighlightEvent } from '../types/text-highlight.js'
  * speed-mapped output clock, so compressing idle time pulls marks closer
  * together than their durations. Every mark is then fitted to the window it
  * has — its own, or the one the next mark leaves it: `fadeOut` takes at most
- * half of it, so the mark is solid before it fades, and `swipeDuration` shrinks
- * to fit. A mark with no window at all — two on the same timestamp, an event
+ * half of it, so the mark is solid before it fades, and `swipeDuration` fits in
+ * the solid part, so the rectangle is fully revealed before the fade starts. A mark with no window at all — two on the same timestamp, an event
  * already clamped to nothing — is dropped.
  *
  * Fitting applies to every mark, not just clamped ones: the pipeline clamps a
@@ -33,11 +33,14 @@ export function makeHighlightsExclusive(
     // Either way there is nothing to render — ffmpeg rejects a zero-length clip.
     if (window <= 0) continue
 
+    // The swipe has to finish before the fade starts, so it gets the solid
+    // part of the window, not all of it.
+    const fadeOut = Math.min(current.fadeOut, Math.floor(window / 2))
     exclusive.push({
       ...current,
       endTimeMs,
-      fadeOut: Math.min(current.fadeOut, Math.floor(window / 2)),
-      swipeDuration: Math.min(current.swipeDuration, window),
+      fadeOut,
+      swipeDuration: Math.min(current.swipeDuration, window - fadeOut),
     })
   }
 

@@ -49,7 +49,7 @@ describe('makeHighlightsExclusive()', () => {
     ])
 
     expect(only!.fadeOut).toBe(50)
-    expect(only!.swipeDuration).toBe(100)
+    expect(only!.swipeDuration).toBe(50)
     expect(only!.endTimeMs - only!.videoTimeMs - only!.fadeOut).toBeGreaterThan(0)
   })
 
@@ -71,8 +71,9 @@ describe('makeHighlightsExclusive()', () => {
 
     expect(first!.endTimeMs).toBe(1100)
     expect(first!.endTimeMs).toBeLessThanOrEqual(second!.videoTimeMs)
-    expect(first!.swipeDuration).toBe(100)
     expect(first!.fadeOut).toBe(50)
+    // The swipe finishes inside the solid part, before the fade begins.
+    expect(first!.swipeDuration).toBe(50)
   })
 
   it('drops an empty mark instead of emitting a zero-length clip', () => {
