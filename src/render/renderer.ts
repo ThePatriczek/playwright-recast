@@ -169,27 +169,40 @@ export function probeResolution(videoPath: string): { width: number; height: num
 
 
 /**
- * Render with smooth zoom transitions in a single ffmpeg pass.
- * Uses dynamic crop expressions with easing for animated zoom in/out/pan.
+ * One stage of the render graph: the statements it contributes, and the label
+ * carrying the video out of it.
+ *
+ * Highlights, cursor, clicks, zoom and the tpad/scale/subtitle tail are all
+ * frame-in/frame-out filters, so they compose into one ffmpeg pass instead of
+ * a full re-encode each — which also drops four generations of lossy
+ * intermediate encoding.
  */
-function renderWithZoom(
-  sourceVideo: string,
+interface GraphStage {
+  /** Filter-graph statements, joined with ';' to form the graph. */
+  statements: string[]
+  /** Label carrying the video out of this stage. */
+  outLabel: string
+}
+
+/**
+ * Smooth zoom transitions via dynamic crop expressions with easing.
+ *
+ * Null when no cue zooms — the caller then owes the output a `scale`, since
+ * zoompan is what otherwise resizes to the target resolution.
+ */
+function buildZoomStage(
+  inLabel: string,
   subtitles: SubtitleEntry[],
-  targetWidth: number,
-  targetHeight: number,
-  tmpDir: string,
+  srcRes: { width: number; height: number },
+  targetRes: { width: number; height: number },
+  fps: number,
   zoomConfig?: { transitionMs?: number; easing?: import('../types/easing.js').EasingSpec; containInCue?: boolean },
-): string {
+): GraphStage | null {
   const zoomSubs = subtitles.filter((s) => s.zoom && s.zoom.level > 1.0)
-  if (zoomSubs.length === 0) return sourceVideo
+  if (zoomSubs.length === 0) return null
 
   const keyframes = stepZoomsToKeyframes(subtitles)
-  if (keyframes.length === 0) return sourceVideo
-
-  const srcRes = probeResolution(sourceVideo)
-
-  // Probe fps from source video for zoompan frame-to-time conversion
-  const fps = probeVideoFps(sourceVideo)
+  if (keyframes.length === 0) return null
 
   const config: ZoomExprConfig = {
     transitionMs: zoomConfig?.transitionMs ?? 400,
@@ -198,37 +211,28 @@ function renderWithZoom(
     containInCue: zoomConfig?.containInCue ?? false,
   }
 
-  const filter = buildZoomFilter(keyframes, srcRes, { width: targetWidth, height: targetHeight }, config)
+  const filter = buildZoomFilter(keyframes, srcRes, targetRes, config)
   console.log(`  Zoom: zoompan single-pass (${keyframes.length} keyframes, ${fps}fps, easing: ${typeof config.easing === 'string' ? config.easing : 'custom'})`)
 
-  const outputPath = path.join(tmpDir, 'zoom-combined.mp4')
-  const videoDur = getVideoDuration(sourceVideo)
-  ffmpeg([
-    '-y', '-i', sourceVideo,
-    '-filter_complex', `[0:v]${filter},setpts=N/${fps}/TB[zout]`,
-    '-map', '[zout]',
-    '-t', String(videoDur),
-    '-c:v', 'libx264', '-preset', 'fast', '-crf', '18', '-an', outputPath,
-  ])
-
-  return outputPath
+  // zoompan drives its own frame clock, so restate PTS from the frame index.
+  return {
+    statements: [`[${inLabel}]${filter},setpts=N/${fps}/TB[zoomOut]`],
+    outLabel: 'zoomOut',
+  }
 }
 
 /**
- * Apply an animated cursor overlay to the video.
- * Renders a cursor image that smoothly moves between action positions
- * using ffmpeg movie + overlay with time-based expressions.
+ * Animated cursor overlay: a cursor image that smoothly moves between action
+ * positions, driven by time-based overlay expressions.
  */
-function renderWithCursorOverlay(
-  sourceVideo: string,
+function buildCursorStage(
+  inLabel: string,
   keyframes: CursorKeyframe[],
   config: ResolvedCursorOverlayConfig,
   viewport: { width: number; height: number },
+  srcRes: { width: number; height: number },
   tmpDir: string,
-): string {
-  if (keyframes.length === 0) return sourceVideo
-
-  const srcRes = probeResolution(sourceVideo)
+): GraphStage {
   const scaleFactor = srcRes.height / 1080
 
   // Use custom image or bundled default arrow cursor
@@ -256,43 +260,31 @@ function renderWithCursorOverlay(
 
   const escapedClipPath = cursorClipPath.replace(/'/g, "'\\''").replace(/\\/g, '\\\\')
 
-  // movie loads the cursor clip as an infinitely looping source;
-  // overlay animates position; enable controls per-click visibility
-  const cursorStream = `movie='${escapedClipPath}':loop=0,setpts=N/30/TB,format=rgba[cursor]`
-  const filterParts = [
-    cursorStream,
-    `[0:v][cursor]overlay=x='${xExpr}':y='${yExpr}':enable='${enableExpr}':eof_action=pass:format=yuv420[out]`,
-  ]
-
-  const outputPath = path.join(tmpDir, 'cursor-overlay.mp4')
   console.log(`  Cursor overlay: ${keyframes.length} keyframes via movie+overlay`)
 
-  ffmpeg([
-    '-y', '-i', sourceVideo,
-    '-filter_complex', filterParts.join(';'),
-    '-map', '[out]',
-    '-c:v', 'libx264', '-preset', 'fast', '-crf', '18', '-an',
-    outputPath,
-  ])
-
-  return outputPath
+  // movie loads the cursor clip as an infinitely looping source;
+  // overlay animates position; enable controls per-click visibility
+  return {
+    statements: [
+      `movie='${escapedClipPath}':loop=0,setpts=N/30/TB,format=rgba[cursorSrc]`,
+      `[${inLabel}][cursorSrc]overlay=x='${xExpr}':y='${yExpr}':enable='${enableExpr}':eof_action=pass:format=yuv420[cursorOut]`,
+    ],
+    outLabel: 'cursorOut',
+  }
 }
 
 /**
- * Apply click ripple overlays to the video.
- * For each click event, overlays a pre-generated transparent ripple clip
- * at the click position/time using ffmpeg movie filter + overlay.
+ * Click ripple overlays: one pre-generated transparent ripple clip per click,
+ * overlaid at the click position and time.
  */
-function renderWithClickEffects(
-  sourceVideo: string,
+function buildClickStage(
+  inLabel: string,
   clickEvents: ClickEvent[],
   config: { color: string; opacity: number; radius: number; duration: number },
   viewport: { width: number; height: number },
+  srcRes: { width: number; height: number },
   tmpDir: string,
-): string {
-  if (clickEvents.length === 0) return sourceVideo
-
-  const srcRes = probeResolution(sourceVideo)
+): GraphStage {
   // Scale factor: radius is relative to 1080p
   const scaleFactor = srcRes.height / 1080
 
@@ -316,67 +308,54 @@ function renderWithClickEffects(
   const scaleX = srcRes.width / viewport.width
   const scaleY = srcRes.height / viewport.height
 
-  // Build filter_complex with movie sources for each click.
-  // Each movie instance creates an independent stream positioned at the click time.
-  const filterParts: string[] = []
-  let prevLabel = '0:v'
+  // Build the graph with a movie source for each click. Each movie instance is
+  // an independent stream positioned at the click time.
+  const statements: string[] = []
+  let prevLabel = inLabel
 
   for (let i = 0; i < clickEvents.length; i++) {
     const click = clickEvents[i]!
     const cx = Math.round(click.x * scaleX)
     const cy = Math.round(click.y * scaleY)
     const timeSec = (click.videoTimeMs / 1000).toFixed(3)
-    const outLabel = `v${i}`
-    const rippleLabel = `r${i}`
+    const outLabel = `clkOut${i}`
+    const rippleLabel = `clkSrc${i}`
 
     // movie filter: read ripple, shift PTS to click time
     const escapedPath = ripplePath.replace(/'/g, "'\\''").replace(/\\/g, '\\\\')
-    filterParts.push(
+    statements.push(
       `movie='${escapedPath}',setpts=PTS+${timeSec}/TB,format=rgba[${rippleLabel}]`,
     )
     // Overlay at click position (centered)
     const ox = Math.max(0, cx - Math.round(halfSize))
     const oy = Math.max(0, cy - Math.round(halfSize))
-    filterParts.push(
+    statements.push(
       `[${prevLabel}][${rippleLabel}]overlay=${ox}:${oy}:eof_action=pass:format=yuv420[${outLabel}]`,
     )
     prevLabel = outLabel
   }
 
-  const outputPath = path.join(tmpDir, 'click-overlay.mp4')
-
   console.log(`  Click overlay: ${clickEvents.length} ripples via movie+overlay`)
 
-  ffmpeg([
-    '-y', '-i', sourceVideo,
-    '-filter_complex', filterParts.join(';'),
-    '-map', `[${prevLabel}]`,
-    '-c:v', 'libx264', '-preset', 'fast', '-crf', '18', '-an',
-    outputPath,
-  ])
-
-  return outputPath
+  return { statements, outLabel: prevLabel }
 }
 
 /**
- * Render text highlight overlays onto the video.
- * For each highlight, generates a marker clip (swipe-in + hold + fade-out)
- * and overlays it at the correct position and time.
+ * Text highlight overlays: a marker clip per highlight (swipe-in + hold +
+ * fade-out), overlaid at its position and time.
  */
-function renderWithHighlights(
-  sourceVideo: string,
+function buildHighlightStage(
+  inLabel: string,
   highlightEvents: HighlightEvent[],
   viewport: { width: number; height: number },
+  srcRes: { width: number; height: number },
   tmpDir: string,
-): string {
-  if (highlightEvents.length === 0) return sourceVideo
-
-  const srcRes = probeResolution(sourceVideo)
+): GraphStage {
   const scaleX = srcRes.width / viewport.width
   const scaleY = srcRes.height / viewport.height
 
-  const filterParts: string[] = []
-  let prevLabel = '0:v'
+  const statements: string[] = []
+  let prevLabel = inLabel
 
   for (let i = 0; i < highlightEvents.length; i++) {
     const hl = highlightEvents[i]!
@@ -399,32 +378,22 @@ function renderWithHighlights(
     const ox = Math.max(0, Math.round(hl.x * scaleX))
     const oy = Math.max(0, Math.round(hl.y * scaleY))
     const timeSec = (hl.videoTimeMs / 1000).toFixed(3)
-    const outLabel = `hl${i}`
-    const hlLabel = `h${i}`
+    const outLabel = `hlOut${i}`
+    const hlLabel = `hlSrc${i}`
 
     const escapedPath = clipPath.replace(/'/g, "'\\''").replace(/\\/g, '\\\\')
-    filterParts.push(
+    statements.push(
       `movie='${escapedPath}',setpts=PTS+${timeSec}/TB,format=rgba[${hlLabel}]`,
     )
-    filterParts.push(
+    statements.push(
       `[${prevLabel}][${hlLabel}]overlay=${ox}:${oy}:eof_action=pass:format=yuv420[${outLabel}]`,
     )
     prevLabel = outLabel
   }
 
-  const outputPath = path.join(tmpDir, 'highlight-overlay.mp4')
-
   console.log(`  Highlight overlay: ${highlightEvents.length} markers via movie+overlay`)
 
-  ffmpeg([
-    '-y', '-i', sourceVideo,
-    '-filter_complex', filterParts.join(';'),
-    '-map', `[${prevLabel}]`,
-    '-c:v', 'libx264', '-preset', 'fast', '-crf', '18', '-an',
-    outputPath,
-  ])
-
-  return outputPath
+  return { statements, outLabel: prevLabel }
 }
 
 /** One speed segment to encode, with its exact output frame count. */
@@ -876,56 +845,92 @@ export function renderVideo(
     }
   }
 
-  // Phase 3.44: Highlights, on the freeze-extended timeline like the cursor and
-  // click overlays. Compositing them before the freezes instead held whichever
-  // mark was on screen for the whole spoken line.
-  if (trace.highlightEvents && trace.highlightEvents.length > 0) {
-    videoInput = renderWithHighlights(
-      videoInput,
-      makeHighlightsExclusive(trace.highlightEvents),
-      trace.metadata.viewport,
-      tmpDir,
-    )
+  // Phase 3.4a: Extra length to hold the last frame for, when the audio
+  // outlasts the video. Nothing in the graph changes duration, so the input's
+  // duration is also the pre-pad output duration.
+  const graphInputDur = getVideoDuration(videoInput)
+  let tpadDuration = 0
+  if (hasAudio && trace.voiceover) {
+    const audioDur = trace.voiceover.totalDurationMs / 1000
+    if (audioDur > graphInputDur + 0.5) {
+      tpadDuration = audioDur - graphInputDur + 1.0 // +1s buffer
+      console.log(`  Will pad video by ${tpadDuration.toFixed(1)}s to match audio (${audioDur.toFixed(1)}s)`)
+    }
   }
 
-  // Phase 3.45: Apply cursor overlay on the freeze-extended timeline. The
-  // per-click appear/move/disappear window references the same shifted
-  // videoTimeSec as the click ripple, so the cursor approaches and the
+  // Phase 3.4b: Build the render graph. The order is load-bearing: overlays
+  // are baked in before zoom crops and scales, and every overlay's coordinates
+  // are in the source resolution.
+  const graph: string[] = []
+  let vLabel = '0:v'
+  const addStage = (stage: GraphStage): void => {
+    graph.push(...stage.statements)
+    vLabel = stage.outLabel
+  }
+
+  // Pad before the overlays, not after them: the clone repeats whatever is
+  // baked into the last frame, so padding last would hold an overlay that is
+  // still on screen there for the whole remaining narration.
+  if (tpadDuration > 0) {
+    graph.push(`[${vLabel}]tpad=stop_mode=clone:stop_duration=${tpadDuration.toFixed(3)}[padded]`)
+    vLabel = 'padded'
+  }
+
+  // No overlay stage resizes or retimes, so probe the input once.
+  const graphInputRes = probeResolution(videoInput)
+  const graphInputFps = probeVideoFps(videoInput)
+
+  // Highlights first, so one is visible for exactly as long as it was
+  // configured for — and never alongside the next one.
+  if (trace.highlightEvents && trace.highlightEvents.length > 0) {
+    addStage(buildHighlightStage(
+      vLabel,
+      makeHighlightsExclusive(trace.highlightEvents),
+      trace.metadata.viewport,
+      graphInputRes,
+      tmpDir,
+    ))
+  }
+
+  // The cursor's per-click appear/move/disappear window references the same
+  // shifted videoTimeSec as the click ripple, so the cursor approaches and the
   // ripple fires in sync — exactly as in the no-freeze case.
   if (trace.cursorKeyframes && trace.cursorKeyframes.length > 0 && trace.cursorOverlayConfig) {
-    videoInput = renderWithCursorOverlay(
-      videoInput,
+    addStage(buildCursorStage(
+      vLabel,
       trace.cursorKeyframes,
       trace.cursorOverlayConfig,
       trace.metadata.viewport,
+      graphInputRes,
       tmpDir,
-    )
+    ))
   }
 
-  // Phase 3.46: Apply click ripples on the freeze-extended timeline, using
-  // the already-shifted videoTimeMs.
+  // Click ripples use the already-shifted videoTimeMs.
   if (trace.clickEvents && trace.clickEvents.length > 0 && trace.clickEffectConfig) {
-    videoInput = renderWithClickEffects(
-      videoInput,
+    addStage(buildClickStage(
+      vLabel,
       trace.clickEvents,
       trace.clickEffectConfig,
       trace.metadata.viewport,
+      graphInputRes,
       tmpDir,
-    )
+    ))
   }
 
-  // Phase 3.5: Apply zoom if needed (operates on speed-adjusted video with
-  // baked-in overlays — same invariant as before the reorder).
-  if (hasZoom && trace.subtitles) {
-    videoInput = renderWithZoom(
-      videoInput,
+  // Zoom operates on the video with baked-in overlays — same invariant as
+  // before the collapse — and is what scales to the target resolution.
+  const zoomStage = hasZoom && trace.subtitles
+    ? buildZoomStage(
+      vLabel,
       trace.subtitles,
-      resolution.width,
-      resolution.height,
-      tmpDir,
+      graphInputRes,
+      resolution,
+      graphInputFps,
       trace.zoomConfig,
     )
-  }
+    : null
+  if (zoomStage) addStage(zoomStage)
 
   // Phase 3.7: Generate click sound track if configured
   let clickSoundTrackPath: string | undefined
@@ -949,18 +954,6 @@ export function renderVideo(
     )
     if (clickSoundTrackPath) {
       console.log(`  Click sound: ${trace.clickEvents.length} sounds mixed`)
-    }
-  }
-
-  // Phase 4: Compute extra padding needed if audio is longer than video.
-  // The tpad filter will be added in Phase 5's vFilters to hold the last frame.
-  let tpadDuration = 0
-  if (hasAudio && trace.voiceover) {
-    const videoDur = getVideoDuration(videoInput)
-    const audioDur = trace.voiceover.totalDurationMs / 1000
-    if (audioDur > videoDur + 0.5) {
-      tpadDuration = audioDur - videoDur + 1.0 // +1s buffer
-      console.log(`  Will pad video by ${tpadDuration.toFixed(1)}s to match audio (${audioDur.toFixed(1)}s)`)
     }
   }
 
@@ -1034,13 +1027,11 @@ export function renderVideo(
 
   const vFilters: string[] = []
 
-  // Pad video with last frame to match audio duration
-  if (tpadDuration > 0) {
-    vFilters.push(`tpad=stop_mode=clone:stop_duration=${tpadDuration.toFixed(3)}`)
-  }
-
-  // Scale (only if no zoom was applied — zoom already scaled)
-  if (!hasZoom) {
+  // Scale — unless zoompan already rendered at the target resolution. Keyed
+  // on the stage that was built, not on `hasZoom`: if buildZoomStage ever
+  // declines a zoom `hasZoom` accepted, the output would silently keep the
+  // source resolution.
+  if (!zoomStage) {
     vFilters.push(`scale=${resolution.width}:${resolution.height}`)
   }
 
@@ -1064,16 +1055,31 @@ export function renderVideo(
     }
   }
 
+  // The linear tail (scale, subtitle burn) closes the graph.
   if (vFilters.length > 0) {
-    ffmpegArgs.push('-vf', vFilters.join(','))
+    graph.push(`[${vLabel}]${vFilters.join(',')}[vout]`)
+    vLabel = 'vout'
   }
 
-  if (wantEmbed) {
+  if (graph.length > 0) {
+    ffmpegArgs.push('-filter_complex', graph.join(';'))
+    // The graph's output is labelled, so nothing is auto-mapped: name every
+    // stream this container should carry.
+    ffmpegArgs.push('-map', `[${vLabel}]`)
+    if (finalAudioPath) ffmpegArgs.push('-map', '1:a:0')
+    if (wantEmbed) ffmpegArgs.push('-map', `${subInputIndex}:s:0`)
+  } else if (wantEmbed) {
     // With extra inputs, explicit -map is needed so ffmpeg picks all three
     // streams instead of falling back to its single-best-stream default.
     ffmpegArgs.push('-map', '0:v:0')
     if (finalAudioPath) ffmpegArgs.push('-map', '1:a:0')
     ffmpegArgs.push('-map', `${subInputIndex}:s:0`)
+  }
+
+  // zoompan drives its own frame clock and can outrun the input, so bound the
+  // output to the length the graph is supposed to produce.
+  if (zoomStage) {
+    ffmpegArgs.push('-t', String(graphInputDur + tpadDuration))
   }
 
   if (format === 'mp4') {
