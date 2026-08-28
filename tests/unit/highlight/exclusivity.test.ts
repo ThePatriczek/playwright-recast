@@ -3,7 +3,6 @@ import type { HighlightEvent } from '../../../src/types/text-highlight'
 import {
   makeHighlightsExclusive,
   shiftHighlightsForFreezes,
-  MIN_HIGHLIGHT_WINDOW_MS,
 } from '../../../src/text-highlight/exclusivity'
 
 function makeEvent(overrides: Partial<HighlightEvent>): HighlightEvent {
@@ -52,13 +51,26 @@ describe('makeHighlightsExclusive()', () => {
     expect(result[0]!.endTimeMs).toBe(3000)
   })
 
-  it('keeps a minimum visible window for back-to-back marks', () => {
-    const [first] = makeHighlightsExclusive([
-      makeEvent({ videoTimeMs: 1000, endTimeMs: 5000 }),
-      makeEvent({ videoTimeMs: 1000, endTimeMs: 5000 }),
+  it('shrinks a crowded mark into the gap before the next one', () => {
+    const [first, second] = makeHighlightsExclusive([
+      makeEvent({ videoTimeMs: 1000, endTimeMs: 5000, fadeOut: 400, swipeDuration: 300 }),
+      makeEvent({ videoTimeMs: 1100, endTimeMs: 5000 }),
     ])
 
-    expect(first!.endTimeMs).toBe(1000 + MIN_HIGHLIGHT_WINDOW_MS)
+    expect(first!.endTimeMs).toBe(1100)
+    expect(first!.endTimeMs).toBeLessThanOrEqual(second!.videoTimeMs)
+    expect(first!.swipeDuration).toBe(100)
+    expect(first!.fadeOut).toBe(50)
+  })
+
+  it('drops a mark that shares its start with the next one', () => {
+    const result = makeHighlightsExclusive([
+      makeEvent({ videoTimeMs: 1000, endTimeMs: 5000, width: 10 }),
+      makeEvent({ videoTimeMs: 1000, endTimeMs: 5000, width: 20 }),
+    ])
+
+    expect(result).toHaveLength(1)
+    expect(result[0]!.width).toBe(20)
   })
 
   it('shrinks fadeOut so the clamped window stays a positive clip length', () => {

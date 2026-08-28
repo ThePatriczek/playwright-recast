@@ -1,39 +1,41 @@
 import type { HighlightEvent } from '../types/text-highlight.js'
 
-/** Shortest window a clamped highlight may keep, in ms. */
-export const MIN_HIGHLIGHT_WINDOW_MS = 200
-
 /**
  * End each highlight when the next one begins, so only one is ever on screen.
  *
  * Durations are nominal wall-clock values while `videoTimeMs` is on the
  * speed-mapped output clock, so compressing idle time pulls marks closer
- * together than their durations. Shortens `endTimeMs` (and `fadeOut`, which
- * the renderer subtracts from the clip length) but never below
- * `MIN_HIGHLIGHT_WINDOW_MS`, so a crowded mark still flashes visibly.
+ * together than their durations. A clamped mark keeps whatever window is left:
+ * `fadeOut` (at most half of it, so the mark is solid before it fades) and
+ * `swipeDuration` shrink to fit. Marks sharing a timestamp leave no window at
+ * all, and the earlier one is dropped.
  */
 export function makeHighlightsExclusive(
   events: ReadonlyArray<HighlightEvent>,
 ): HighlightEvent[] {
   const sorted = [...events].sort((a, b) => a.videoTimeMs - b.videoTimeMs)
+  const exclusive: HighlightEvent[] = []
 
-  for (let i = 0; i < sorted.length - 1; i++) {
+  for (let i = 0; i < sorted.length; i++) {
     const current = sorted[i]!
-    const next = sorted[i + 1]!
-    if (current.endTimeMs <= next.videoTimeMs) continue
+    const next = sorted[i + 1]
+    if (next === undefined || current.endTimeMs <= next.videoTimeMs) {
+      exclusive.push(current)
+      continue
+    }
 
-    const clampedEnd = Math.max(
-      next.videoTimeMs,
-      current.videoTimeMs + MIN_HIGHLIGHT_WINDOW_MS,
-    )
-    const window = clampedEnd - current.videoTimeMs
-    // The renderer builds the clip as (end - start - fadeOut), so a fade longer
-    // than the shortened window would produce a non-positive duration.
-    const fadeOut = Math.min(current.fadeOut, Math.max(0, window - MIN_HIGHLIGHT_WINDOW_MS))
-    sorted[i] = { ...current, endTimeMs: clampedEnd, fadeOut }
+    const window = next.videoTimeMs - current.videoTimeMs
+    if (window <= 0) continue
+
+    exclusive.push({
+      ...current,
+      endTimeMs: next.videoTimeMs,
+      fadeOut: Math.min(current.fadeOut, Math.floor(window / 2)),
+      swipeDuration: Math.min(current.swipeDuration, window),
+    })
   }
 
-  return sorted
+  return exclusive
 }
 
 /**
