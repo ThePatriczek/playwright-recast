@@ -2,7 +2,8 @@ import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import * as crypto from 'node:crypto'
-import { execFileSync, spawnSync } from 'node:child_process'
+import { spawnSync } from 'node:child_process'
+import { runFfmpeg } from '../../utils/ffmpeg.js'
 import { fileURLToPath } from 'node:url'
 import type { TtsProvider, TtsOptions, AudioSegment } from '../../types/voiceover.js'
 import { hashValues, hashFile } from './util/hash.js'
@@ -141,13 +142,13 @@ function ensureDir(dir: string): void {
 
 function convertWavToMp3(wavPath: string, mp3Path: string): void {
   ensureDir(path.dirname(mp3Path))
-  execFileSync('ffmpeg', [
+  runFfmpeg([
     '-y', '-hide_banner', '-loglevel', 'error',
     '-i', wavPath,
     '-ac', '1',
     '-c:a', 'libmp3lame', '-b:a', '192k',
     mp3Path,
-  ], { stdio: 'pipe' })
+  ])
 }
 
 export function QwenTtsProvider(config: QwenTtsProviderConfig): TtsProvider {
