@@ -1,0 +1,121 @@
+export type CameraPose = { x: number; y: number; zoom: number }
+export type CameraKeyframe = CameraPose & { atMs: number }
+export type FocusRegion = { x: number; y: number; width: number; height: number; label: string }
+export type CameraCommand = 'moveLeft' | 'moveRight' | 'moveUp' | 'moveDown' | 'zoomIn' | 'zoomOut' | 'hold'
+
+export const overview: CameraPose = { x: 0.5, y: 0.5, zoom: 1 }
+export const commandNames: CameraCommand[] = ['moveLeft', 'moveRight', 'moveUp', 'moveDown', 'zoomIn', 'zoomOut', 'hold']
+
+const clamp = (value: number, low: number, high: number) => Math.max(low, Math.min(high, value))
+
+export function constrainPose(pose: CameraPose): CameraPose {
+  const zoom = clamp(pose.zoom, 1, 1.7)
+  const half = 0.5 / zoom
+  return { x: clamp(pose.x, half, 1 - half), y: clamp(pose.y, half, 1 - half), zoom }
+}
+
+export function applyCommand(pose: CameraPose, command: CameraCommand): CameraPose {
+  const pan = 0.065
+  switch (command) {
+    case 'moveLeft': return constrainPose({ ...pose, x: pose.x - pan })
+    case 'moveRight': return constrainPose({ ...pose, x: pose.x + pan })
+    case 'moveUp': return constrainPose({ ...pose, y: pose.y - pan })
+    case 'moveDown': return constrainPose({ ...pose, y: pose.y + pan })
+    case 'zoomIn': return constrainPose({ ...pose, zoom: pose.zoom + 0.18 })
+    case 'zoomOut': return constrainPose({ ...pose, zoom: pose.zoom - 0.18 })
+    case 'hold': return { ...pose }
+  }
+}
+
+export function cropFor(pose: CameraPose): { left: number; top: number; width: number; height: number } {
+  const size = 1 / pose.zoom
+  return { left: pose.x - size / 2, top: pose.y - size / 2, width: size, height: size }
+}
+
+export function focusInShot(pose: CameraPose, focus: FocusRegion): { x: number; y: number; visibleFraction: number } {
+  const crop = cropFor(pose)
+  const width = Math.max(0, Math.min(crop.left + crop.width, focus.x + focus.width) - Math.max(crop.left, focus.x))
+  const height = Math.max(0, Math.min(crop.top + crop.height, focus.y + focus.height) - Math.max(crop.top, focus.y))
+  return {
+    x: (focus.x + focus.width / 2 - crop.left) / crop.width,
+    y: (focus.y + focus.height / 2 - crop.top) / crop.height,
+    visibleFraction: width * height / Math.max(0.000001, focus.width * focus.height),
+  }
+}
+
+export function availableCommands(pose: CameraPose): Record<string, CameraPose> {
+  return Object.fromEntries(commandNames.flatMap(command => {
+    const next = applyCommand(pose, command)
+    const changed = Math.abs(next.x - pose.x) + Math.abs(next.y - pose.y) + Math.abs(next.zoom - pose.zoom) > 0.0001
+    return changed || command === 'hold' ? [[command, next]] : []
+  }))
+}
+
+export function stabilizeCommand(
+  proposal: { choice: string; confidence: number; probabilities: Record<string, number> },
+  pose: CameraPose,
+  focus: FocusRegion,
+  atMs: number,
+  lastMoveEndMs: number,
+): { command: string; reason: string } {
+  const stay = (reason: string) => ({ command: 'hold', reason })
+  if (proposal.choice === 'hold') return stay('model-stay')
+  const subject = focusInShot(pose, focus)
+  if (atMs - lastMoveEndMs < 2200 && subject.visibleFraction > 0.6) return stay('settling')
+  const advantage = (proposal.probabilities[proposal.choice] || 0) - (proposal.probabilities.hold || 0)
+  if (proposal.confidence < 0.55 || advantage < 0.25) return stay('uncertain-movement')
+  const centered = subject.visibleFraction > 0.98 && subject.x > 0.25 && subject.x < 0.75 && subject.y > 0.25 && subject.y < 0.75
+  if (centered && proposal.choice.startsWith('move')) return stay('already-framed')
+  if (centered && pose.zoom >= 1.25 && proposal.choice === 'zoomIn') return stay('already-readable')
+  return { command: proposal.choice, reason: 'clear-framing-benefit' }
+}
+
+export function poseAt(keyframes: CameraKeyframe[], atMs: number): CameraPose {
+  if (!keyframes.length) return { ...overview }
+  if (atMs <= keyframes[0].atMs) return { ...keyframes[0] }
+  for (let index = 1; index < keyframes.length; index++) {
+    const previous = keyframes[index - 1]
+    const next = keyframes[index]
+    if (atMs > next.atMs) continue
+    const t = clamp((atMs - previous.atMs) / (next.atMs - previous.atMs), 0, 1)
+    const ease = t * t * (3 - 2 * t)
+    return {
+      x: previous.x + (next.x - previous.x) * ease,
+      y: previous.y + (next.y - previous.y) * ease,
+      zoom: previous.zoom + (next.zoom - previous.zoom) * ease,
+    }
+  }
+  return { ...keyframes[keyframes.length - 1] }
+}
+
+export function validatePath(keyframes: CameraKeyframe[]): void {
+  if (!keyframes.length || keyframes[0].atMs !== 0) throw new Error('Camera path must begin at zero')
+  for (let index = 0; index < keyframes.length; index++) {
+    const point = keyframes[index]
+    if (![point.atMs, point.x, point.y, point.zoom].every(Number.isFinite)) throw new Error('Camera path contains a nonfinite value')
+    if (index > 0 && point.atMs <= keyframes[index - 1].atMs) throw new Error('Camera times must strictly increase')
+    const valid = constrainPose(point)
+    if (Math.abs(point.x - valid.x) + Math.abs(point.y - valid.y) + Math.abs(point.zoom - valid.zoom) > 0.00001) throw new Error('Camera crop leaves the source frame')
+  }
+}
+
+export function buildCameraFilter(keyframes: CameraKeyframe[], width: number, height: number, fps = 60): string {
+  validatePath(keyframes)
+  const expression = (property: keyof CameraPose, register: number) => {
+    const parts = [keyframes[0][property].toFixed(8)]
+    for (let index = 1; index < keyframes.length; index++) {
+      const previous = keyframes[index - 1]
+      const next = keyframes[index]
+      const delta = next[property] - previous[property]
+      if (Math.abs(delta) < 0.00000001) continue
+      const start = (previous.atMs / 1000).toFixed(6)
+      const duration = ((next.atMs - previous.atMs) / 1000).toFixed(6)
+      parts.push(`(${delta.toFixed(8)})*(st(${register},clip((in/${fps}-${start})/${duration},0,1))*ld(${register})*(3-2*ld(${register})))`)
+    }
+    return parts.join('+')
+  }
+  const zoom = expression('zoom', 0)
+  const x = `max(0,min(iw-iw/zoom,(${expression('x', 1)})*iw-iw/(2*zoom)))`
+  const y = `max(0,min(ih-ih/zoom,(${expression('y', 2)})*ih-ih/(2*zoom)))`
+  return `fps=${fps},scale=${width * 2}:${height * 2}:flags=lanczos,zoompan=z='${zoom}':x='${x}':y='${y}':d=1:s=${width}x${height}:fps=${fps},setsar=1,format=yuv420p`
+}

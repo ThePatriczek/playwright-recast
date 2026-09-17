@@ -18,6 +18,9 @@ export function isSpeedClockAuthority(
   return (
     speedSegments !== undefined &&
     speedSegments.length > 0 &&
-    speedSegments.some((s) => Math.abs(s.speed - 1.0) > 0.01)
+    speedSegments.some((segment, index) =>
+      Math.abs(segment.speed - 1.0) > 0.01 ||
+      (index > 0 && segment.originalStart - speedSegments[index - 1]!.originalEnd > 0.01),
+    )
   )
 }

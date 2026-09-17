@@ -1,0 +1,10 @@
+{
+  "goal": "Create a project named Atlas demo with Team visibility. Open its Settings, enable Allow comments, save the settings, then open Share project. Show the important controls with restrained zoom and highlighting.",
+  "inputs": [{ "label": "Project name", "value": "Atlas demo" }],
+  "success": {
+    "selector": "[data-complete]",
+    "text": "Atlas demo is ready to share with comments enabled."
+  },
+  "maxSteps": 20,
+  "minConfidence": 0.35
+}

@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Jev camera lab</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 32px; color: #e4e8f2; background: #10131c; font: 15px system-ui, sans-serif; }
+    h1 { margin: 6px 0; font-size: 30px; letter-spacing: -1px; }
+    p { color: #a0abc1; line-height: 1.6; }
+    header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 28px; }
+    .eyebrow { color: #a7b2ff; font-size: 12px; letter-spacing: 2px; text-transform: uppercase; }
+    .badge { color: #a7b2ff; background: #242b48; padding: 8px 14px; border-radius: 30px; }
+    .screens { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+    .label { display: block; margin-bottom: 12px; color: #a0abc1; }
+    .screen { position: relative; overflow: hidden; border-radius: 12px; background: black; aspect-ratio: 16/9; }
+    video { display: block; width: 100%; height: 100%; }
+    #crop { position: absolute; border: 2px solid #8fa3ff; box-shadow: 0 0 0 1000px #10131c60; pointer-events: none; }
+    .target { position: absolute; border: 2px solid #62dba0; pointer-events: none; }
+    .transport { display: flex; align-items: center; gap: 16px; margin: 24px 0; }
+    button { background: #8fa3ff; color: #10131c; padding: 11px 22px; border: 0; border-radius: 8px; font: inherit; cursor: pointer; }
+    input[type=range] { flex: 1; accent-color: #8fa3ff; }
+    .details { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+    .panel { background: #191e2c; border: 1px solid #2b3347; border-radius: 12px; padding: 22px; }
+    #command { color: #a7b2ff; font: 700 27px ui-monospace, monospace; }
+    #scene { margin: 12px 0; min-height: 24px; }
+    #pose { color: #b8c4dc; font: 14px ui-monospace, monospace; }
+    #probabilities { display: grid; grid-template-columns: 110px 1fr 50px; gap: 7px; align-items: center; font: 12px ui-monospace, monospace; }
+    progress { width: 100%; accent-color: #8fa3ff; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 24px; }
+    .actions button { background: #242b48; color: #bac7ff; padding: 8px 13px; font-size: 13px; }
+    .actions button.active { background: #8fa3ff; color: #10131c; }
+    .note { font-size: 13px; }
+    a { color: #a7b2ff; }
+    @media (max-width: 900px) { .screens, .details { grid-template-columns: 1fr; } body { padding: 20px; } }
+  </style>
+</head>
+<body>
+  <header><div><div class="eyebrow">Browser footage · camera control</div><h1>Jev camera lab</h1><p>Stejný průchod aplikací. Kamera řízená krátkými povely.</p></div><span class="badge" id="mode"></span></header>
+  <div class="screens">
+    <div><span class="label">Původní obraz · modře výřez, zeleně cíl</span><div class="screen"><video id="source" src="source.mp4" muted preload="auto" playsinline></video><div id="crop"></div><div id="targets"></div></div></div>
+    <div><span class="label">Výsledná kamera · plynulý pohyb při 60 fps</span><div class="screen"><video id="output" src="camera.mp4" preload="auto" playsinline></video></div></div>
+  </div>
+  <div class="transport"><button id="play">Přehrát</button><input id="seek" type="range" min="0" step="0.01" value="0" aria-label="Čas videa"><span id="time">0.0 s</span></div>
+  <div id="actions" class="actions"></div>
+  <div class="details"><div class="panel"><div id="command">hold</div><div id="scene">Úvodní záběr</div><div id="pose"></div><p class="note" id="decision"></p></div><div class="panel"><div class="label">Pravděpodobnosti vrácené Jev</div><div id="probabilities"></div></div></div>
+  <p id="explanation" class="note">Jev dostává souřadnice a popis DOM před a po akci, aktuální výřez a historii pohybů. Obraz mu neposíláme. Přehrávač ukazuje skutečný vyrenderovaný výsledek. <a href="camera-path.json">Časová osa</a> · <a href="camera-decisions.jsonl">Vstupy a odpovědi</a> · <a href="camera.mp4">MP4</a></p>
+  <script id="data" type="application/json">__CAMERA_DATA__</script>
+  <script>
+    const data = JSON.parse(document.getElementById('data').textContent)
+    const source = document.getElementById('source')
+    const output = document.getElementById('output')
+    const seek = document.getElementById('seek')
+    const play = document.getElementById('play')
+    let lastDecision = null
+    seek.max = data.durationMs / 1000
+    document.getElementById('mode').textContent = data.mode === 'jev' ? 'LIVE JEV DECISIONS' : data.mode === 'showcase' ? 'UKÁZKA AKCÍ · BEZ JEV' : 'SCRIPTED SIMULATION'
+    const actionLabel = action => ['stay', 'hold'].includes(action) ? 'STAY' : action
+    for (const action of [...new Set(data.decisions.map(decision => decision.command))]) {
+      const button = document.createElement('button')
+      button.textContent = actionLabel(action)
+      button.dataset.action = action
+      button.onclick = () => {
+        const decision = data.decisions.find(item => item.command === action)
+        output.currentTime = decision.atMs / 1000
+        source.currentTime = output.currentTime
+      }
+      document.getElementById('actions').append(button)
+    }
+    if (data.mode === 'showcase') {
+      document.getElementById('explanation').firstChild.textContent = 'Ukázka všech osmi akcí je skriptovaná, bez volání Jev. Zdroj tvoří snímky skutečné stránky v Chromu; FOLLOW používá naměřené DOM pozice přetahované karty. Efekty i pohyb jsou vykreslené do MP4. '
+    } else if (data.decisions.some(decision => decision.track?.length)) {
+      document.getElementById('explanation').firstChild.textContent = 'Jev vybírá podle cíle scény, souřadnic a naměřené dráhy prvku. Obraz mu neposíláme. Zdroj tvoří snímky skutečné stránky v Chromu; efekty i pohyb jsou vykreslené do MP4. '
+    }
+    function poseAt(atMs) {
+      const frames = data.keyframes
+      for (let i = 1; i < frames.length; i++) {
+        const a = frames[i - 1]
+        const b = frames[i]
+        if (atMs > b.atMs) continue
+        const t = Math.max(0, Math.min(1, (atMs - a.atMs) / (b.atMs - a.atMs)))
+        const ease = t * t * (3 - 2 * t)
+        return { x: a.x + (b.x - a.x) * ease, y: a.y + (b.y - a.y) * ease, zoom: a.zoom + (b.zoom - a.zoom) * ease }
+      }
+      return frames[frames.length - 1]
+    }
+    function rectangle(id, x, y, width, height) {
+      const element = document.getElementById(id)
+      element.style.left = `${x * 100}%`
+      element.style.top = `${y * 100}%`
+      element.style.width = `${width * 100}%`
+      element.style.height = `${height * 100}%`
+    }
+    function update() {
+      const atMs = output.currentTime * 1000
+      const pose = poseAt(atMs)
+      const size = 1 / pose.zoom
+      rectangle('crop', pose.x - size / 2, pose.y - size / 2, size, size)
+      document.getElementById('pose').textContent = `x ${pose.x.toFixed(3)} · y ${pose.y.toFixed(3)} · zoom ${pose.zoom.toFixed(2)}×`
+      document.getElementById('time').textContent = `${output.currentTime.toFixed(1)} s`
+      seek.value = output.currentTime
+      const decision = data.decisions.find(item => atMs >= item.atMs && atMs < item.endMs) || null
+      const tracking = decision?.track?.filter(sample => sample.atMs <= atMs).at(-1)
+      const targets = decision?.command === 'follow' && tracking ? (tracking.region ? [tracking.region] : []) : decision?.targets || (decision?.focus ? [decision.focus] : [])
+      const layer = document.getElementById('targets')
+      if (layer.childElementCount !== targets.length) {
+        layer.replaceChildren(...targets.map((target, index) => {
+          const element = document.createElement('div')
+          element.className = 'target'
+          element.id = `target-${index}`
+          return element
+        }))
+      }
+      targets.forEach((target, index) => rectangle(`target-${index}`, target.x, target.y, target.width, target.height))
+      if (decision !== lastDecision) {
+        lastDecision = decision
+        document.querySelectorAll('#actions button').forEach(button => button.classList.toggle('active', button.dataset.action === decision?.command))
+        document.getElementById('command').textContent = actionLabel(decision?.command || 'overview')
+        document.getElementById('scene').textContent = decision?.scene || 'Celkový záběr'
+        document.getElementById('decision').textContent = decision ? `Povel na ${((decision.endMs - decision.atMs) / 1000).toFixed(2)} s · API ${Math.round(decision.elapsedMs)} ms · confidence ${decision.confidence?.toFixed(2) ?? 'simulace'} · návrh ${decision.requestedCommand ?? decision.command} · ${decision.reason ?? ''}` : ''
+        const probabilities = document.getElementById('probabilities')
+        probabilities.replaceChildren()
+        if (!Object.keys(decision?.probabilities || {}).length) probabilities.textContent = data.mode === 'showcase' ? 'Skriptovaná ukázka — model nerozhodoval.' : 'Bez rozhodnutí modelu v tomto záběru.'
+        for (const [name, probability] of Object.entries(decision?.probabilities || {}).sort((a, b) => b[1] - a[1])) {
+          const label = document.createElement('span')
+          label.textContent = actionLabel(name)
+          const bar = document.createElement('progress')
+          bar.max = 1
+          bar.value = probability
+          const value = document.createElement('span')
+          value.textContent = `${Math.round(probability * 100)}%`
+          probabilities.append(label, bar, value)
+        }
+      }
+      if (!output.paused && Math.abs(source.currentTime - output.currentTime) > 0.12) source.currentTime = output.currentTime
+      requestAnimationFrame(update)
+    }
+    play.onclick = async () => {
+      if (output.paused) {
+        if (output.ended) { output.currentTime = 0; source.currentTime = 0 }
+        await Promise.all([output.play(), source.play()])
+      } else { output.pause(); source.pause() }
+    }
+    output.onplay = () => { play.textContent = 'Pozastavit' }
+    output.onpause = () => { play.textContent = 'Přehrát'; source.pause() }
+    output.onended = () => { source.pause() }
+    seek.oninput = () => { output.currentTime = Number(seek.value); source.currentTime = Number(seek.value) }
+    requestAnimationFrame(update)
+  </script>
+</body>
+</html>

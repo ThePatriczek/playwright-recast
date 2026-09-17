@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <title>Atlas · Camera actions</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; color: #dfe7ff; background: #0b1020; font: 16px system-ui, sans-serif; }
+    header { height: 100px; padding: 25px 44px; border-bottom: 1px solid #28334d; display: flex; align-items: center; justify-content: space-between; }
+    header strong { font-size: 24px; letter-spacing: -1px; }
+    header span { color: #99a9d0; }
+    main { padding: 36px 44px; }
+    h1 { margin: 0 0 10px; font-size: 34px; letter-spacing: -1px; }
+    p { color: #94a6cd; }
+    .board { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; margin-top: 28px; }
+    .column { height: 355px; padding: 22px; border: 1px solid #2a3655; background: #121b30; border-radius: 18px; }
+    h2 { margin: 0 0 20px; font-size: 15px; color: #a2b4d9; font-weight: 500; }
+    .card { border: 1px solid #425584; border-radius: 12px; padding: 22px; background: #1e2d4b; box-shadow: 0 10px 30px #0002; }
+    .card strong { display: block; margin: 10px 0; font-size: 20px; }
+    .pill { display: inline-block; border-radius: 20px; padding: 5px 10px; background: #344471; color: #c5d4ff; font-size: 12px; }
+    input { display: block; margin-top: 15px; width: 100%; padding: 12px; border: 1px solid #526794; background: #111b31; border-radius: 8px; color: white; font: inherit; }
+    #moving { position: absolute; left: 74px; top: 450px; width: 245px; padding: 16px; cursor: grab; user-select: none; touch-action: none; background: #364a80; z-index: 2; }
+    #moving strong { font-size: 17px; }
+    #result { position: absolute; right: 48px; bottom: 28px; padding: 18px 25px; background: #1c4b44; border: 1px solid #4bb29b; border-radius: 12px; }
+    #status { display: inline-block; background: #225149; color: #92ecd1; margin-top: 12px; padding: 8px 12px; border-radius: 8px; }
+    #moving[hidden], #result[hidden] { display: none; }
+  </style>
+</head>
+<body>
+  <header><strong>◈ Atlas Studio</strong><span>Product walkthrough · camera action showcase</span></header>
+  <main>
+    <h1>Launch workspace</h1><p id="instruction">Přehled projektu a jeho výsledků.</p>
+    <div class="board">
+      <section class="column"><h2>01 / Prepare</h2><div class="card" id="details"><span class="pill">PROJECT</span><strong>Atlas demo</strong><label>Název projektu<input id="name" value="Atlas demo"></label></div></section>
+      <section class="column"><h2>02 / Review</h2><div class="card" id="review"><span class="pill">IN PROGRESS</span><strong>Review design</strong><p>Check the layout with your team.</p></div></section>
+      <section class="column"><h2>03 / Ready</h2><div class="card" id="ready"><span class="pill">TEAM</span><strong>Publish workspace</strong><p>Everything is ready to share.</p><span id="status">Changes saved ✓</span></div></section>
+    </div>
+  </main>
+  <div id="moving" class="card" hidden><span class="pill">DRAG TO REVIEW</span><strong>Preview card ↗</strong></div>
+  <div id="result" hidden>✓ Projekt byl vytvořen a sdílen s týmem.</div>
+  <script>
+    const moving = document.getElementById('moving')
+    let drag = null
+    moving.onpointerdown = event => {
+      const box = moving.getBoundingClientRect()
+      drag = { x: event.clientX - box.x, y: event.clientY - box.y }
+      moving.setPointerCapture(event.pointerId)
+    }
+    moving.onpointermove = event => {
+      if (!drag) return
+      moving.style.left = `${event.clientX - drag.x}px`
+      moving.style.top = `${event.clientY - drag.y}px`
+    }
+    moving.onpointerup = () => { drag = null }
+  </script>
+</body>
+</html>

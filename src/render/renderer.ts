@@ -465,11 +465,7 @@ function renderWithSpeed(
   baselineMs: number,
   tmpDir: string,
 ): string {
-  if (speedSegments.length === 0) return sourceVideo
-
-  // Check if any segment actually changes speed
-  const allRealtime = speedSegments.every((s) => Math.abs(s.speed - 1.0) < 0.01)
-  if (allRealtime) return sourceVideo
+  if (!isSpeedClockAuthority(speedSegments)) return sourceVideo
 
   // Get source video duration for clamping (handles webm without duration header)
   const videoDuration = getVideoDuration(sourceVideo)
