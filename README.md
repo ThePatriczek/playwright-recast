@@ -237,6 +237,7 @@ Every stage is optional and composable:
 | `.subtitlesFromSrt(path)` | Load subtitles from an external SRT file |
 | `.subtitlesFromTrace()` | Auto-generate subtitles from BDD step titles in trace |
 | `.textProcessing(config)` | Sanitize subtitle text before TTS (strip quotes, normalize dashes, custom rules) |
+| `.direct(provider, options)` | Direct camera, emphasis and tempo from sampled video evidence with Jev |
 | `.autoZoom(config)` | Auto-zoom to user actions with customizable easing transitions |
 | `.enrichZoomFromReport(steps)` | Apply zoom coordinates from external report data |
 | `.cursorOverlay(config)` | Animated cursor at click positions (appears, moves, disappears) |
@@ -485,6 +486,60 @@ await normalizeLoudness('input.mp3', 'output.mp3', { targetLufs: -16 })
 ## Zoom
 
 Zoom into specific areas of the video during steps — focus the viewer's attention on the relevant UI element.
+
+### Visual direction with Jev
+
+Use a director when the important result appears somewhere other than the clicked control, or when framing and pacing should depend on what actually becomes visible. The director analyzes a neutral rendered recording, then chooses camera actions, emphasis and timing from bounded candidates.
+
+```typescript
+import { Recast, JevDirector } from 'playwright-recast'
+
+await Recast.from('./test-results/recording')
+  .parse()
+  .direct(JevDirector(), {
+    goal: 'Show report generation, the error if it fails, and the final revenue after retrying.',
+  })
+  .render({ resolution: '720p', fps: 60, embedSubtitles: true })
+  .toFile('report-demo.mp4')
+```
+
+Set `TYPESAFE_API_KEY` in the process environment. `TYPESAFE_EKY` is accepted for compatibility with the demo. The library does not load `.env` implicitly. `JevDirector({ apiKey, model, timeoutMs })` also accepts explicit configuration; it defaults to `jev-latest` and a 30-second request timeout. It sends one request per decision window, with independent camera and tempo questions. HTTP errors, timeouts and malformed choices fail the render; there is no silent mock fallback or automatic retry.
+
+The default `VideoObserver()` requires FFmpeg and the Tesseract executable with English language data (`brew install tesseract` on macOS, or the corresponding system package). It compares sampled video pixels and uses OCR to find text and normalized rectangles. No `zoom()`, `highlight()`, scene selectors or manually authored camera path are needed. Jev receives only structured text, coordinates, changes and recent decisions; it does not receive images or video. OCR runs locally. The observed page text is sent to TypeSafe and is also stored in the director report.
+
+```typescript
+import { JevDirector } from 'playwright-recast/providers/jev'
+import { VideoObserver } from 'playwright-recast/observers/video'
+
+const director = JevDirector({ model: 'jev-latest' })
+const options = {
+  goal: 'Explain the changed totals and ignore unrelated notifications.',
+  observer: VideoObserver({ language: 'eng' }),
+  sampleIntervalMs: 500,
+  decisionIntervalMs: 2000,
+  maxFrames: 900,
+  maxDecisions: 120,
+  maxZoom: 1.45,
+  minimumHoldMs: 2200,
+  minConfidence: 0.55,
+  minAdvantage: 0.25,
+  timing: 'adaptive' as const,
+}
+```
+
+The available actions are `focus`, `fit`, `follow`, `reveal`, `overview`, `spotlight`, `pulse` and `stay`. Targets come from the current observation. `follow` is offered only for measured moving text regions; lost targets stop tracking. `reveal` requires a changed region. `fit` offers nearby regions together. Camera crops stay inside the picture, with a maximum supported zoom of 1.7. Spotlight and pulse are rendered into the video; they are not inspector-only overlays. Uncertain choices use STAY, and movement and emphasis have separate cooldowns. Confidence thresholds are composition heuristics, not calibrated accuracy guarantees.
+
+Adaptive timing offers normal playback, 3x compression of unchanged intervals, 0.75x reading time, and a one-second result hold where the observations permit it. Camera transitions run on the resulting output clock. Audio is retimed with video, holds receive silence, and embedded and sidecar subtitles are remapped. Extra reading/hold time is bounded. `timing: 'preserve'` disables timing changes. A pipeline with `voiceover()` always preserves timing so existing speech and narration freezes remain intact.
+
+`direct()` requires `parse()` and may appear once in a pipeline. It owns the camera: do not combine it with `autoZoom()` or `enrichZoomFromReport()`. Recorded zoom annotations are ignored for the neutral analysis pass. Optional cursor/click/highlight stages still render, but adding manual emphasis is normally unnecessary. With no voiceover, cursor approach freezes are disabled in a directed render to keep the visual and subtitle clocks aligned. Subtitles are burned after camera processing. Direction runs before intro/outro and background music; report times describe the main content before an intro is added.
+
+Directed renders preserve the lead-in for visual analysis instead of applying the legacy compressed-image-size blank-frame heuristic, which can mistake a sparse but meaningful page for a blank frame.
+
+Every directed render writes `<output-name>.director.json` with observations, request states and choices, model distributions, applied decisions, source/output timing, the camera path and remapped subtitles. `reportPath` overrides its location; `onDecision` receives each applied decision. Credentials are never included. The report is written before final encoding so rendering failures can be inspected. Frame and decision budgets fail explicitly instead of silently analyzing only part of a recording.
+
+You can supply a `VisualObserver` to connect another OCR or vision system. It receives a local video path, dimensions, duration and sampling budget, and returns timestamped `VisualObservation[]` starting at zero. Region coordinates must be within 0–1, times must increase, and region IDs must be unique per frame. The built-in observer matches text identities heuristically; repeated text, OCR errors, rapid transitions and canvas-only content limit tracking accuracy. `VideoObserver({ ocr: false })` works without Tesseract but provides only changed pixel regions, without semantic text. Neither mode measures whether an actual viewer has finished reading.
+
+Run the visible-browser example with `npm run poc:director`. It records a report failure and successful retry using ordinary Playwright actions, then directs the recording through this public API and writes an HTML comparison under `test-results/jev/`. See [TypeSafe's state contract](https://docs.typesafe.ai/concepts/state) and [API quick start](https://docs.typesafe.ai/introduction/quickstart).
 
 ### Auto-zoom from trace
 

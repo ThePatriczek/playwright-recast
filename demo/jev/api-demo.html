@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Atlas reports</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #eef2f9; color: #1b2842; font: 18px system-ui, sans-serif; }
+    header { height: 85px; padding: 25px 45px; background: #182641; color: white; font-size: 24px; font-weight: 650; }
+    main { padding: 40px 45px; }
+    h1 { margin: 0 0 10px; font-size: 34px; }
+    p { color: #68758e; line-height: 1.5; }
+    .layout { display: grid; grid-template-columns: 340px 1fr; gap: 36px; margin-top: 30px; }
+    section { padding: 28px; background: white; border: 1px solid #d5deed; border-radius: 16px; }
+    h2 { margin-top: 0; font-size: 22px; }
+    label { display: block; margin-top: 22px; }
+    select { width: 100%; margin-top: 10px; padding: 12px; border: 1px solid #b5c2d7; border-radius: 8px; background: white; font: inherit; }
+    button { width: 100%; margin-top: 28px; padding: 14px; border: 0; border-radius: 8px; background: #415ed4; color: white; font: inherit; cursor: pointer; }
+    button:disabled { opacity: .5; }
+    #result { min-height: 280px; }
+    #result strong { display: block; font-size: 25px; margin-bottom: 16px; }
+    .error { background: #fff1f0; border: 1px solid #db6f68; color: #982d26; border-radius: 10px; padding: 22px; }
+    .success { background: #e9f8f0; border: 1px solid #69ae85; border-radius: 10px; padding: 22px; color: #1c6143; }
+    .metric { font-size: 42px; font-weight: 700; margin: 15px 0; }
+    #notice { position: fixed; right: 30px; top: 100px; padding: 10px 15px; border-radius: 8px; background: #e4e9f5; color: #7b879d; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <header>Atlas Studio / Reports</header>
+  <main><h1>Revenue report</h1><p>Generate a report and review its result.</p>
+    <div class="layout">
+      <section><h2>Report settings</h2><label for="period">Reporting period</label><select id="period"><option>September 2026</option><option>August 2026</option></select><button id="generate">Generate report</button></section>
+      <section><h2>Report result</h2><div id="result"><p>Your report will appear here.</p></div></section>
+    </div>
+  </main>
+  <div id="notice" hidden>Background sync completed</div>
+  <script>
+    let attempts = 0
+    document.getElementById('generate').onclick = () => {
+      const button = document.getElementById('generate')
+      const result = document.getElementById('result')
+      button.disabled = true
+      result.innerHTML = '<p>Generating report. Please wait...</p>'
+      document.getElementById('notice').hidden = false
+      setTimeout(() => { document.getElementById('notice').hidden = true }, 1200)
+      setTimeout(() => {
+        attempts++
+        result.innerHTML = attempts === 1
+          ? '<div class="error"><strong>Report generation failed</strong>Revenue data is temporarily unavailable.<p>Please try again.</p></div>'
+          : '<div class="success"><strong>Revenue report ready</strong><div class="metric">EUR 124,500</div><p>Revenue increased by 18% compared with last month.</p></div>'
+        button.disabled = false
+      }, 2500)
+    }
+  </script>
+</body>
+</html>

@@ -57,6 +57,11 @@
     seek.max = data.durationMs / 1000
     document.getElementById('mode').textContent = data.mode === 'jev' ? 'LIVE JEV DECISIONS' : data.mode === 'showcase' ? 'UKÁZKA AKCÍ · BEZ JEV' : 'SCRIPTED SIMULATION'
     const actionLabel = action => ['stay', 'hold'].includes(action) ? 'STAY' : action
+    function sourceTimeAt(seconds) {
+      const decision = data.decisions.find(item => seconds * 1000 >= item.atMs && seconds * 1000 < item.endMs)
+      if (decision?.sourceStartMs === undefined) return seconds
+      return Math.min(decision.sourceEndMs / 1000 - 1 / 30, decision.sourceStartMs / 1000 + (seconds - decision.atMs / 1000) * decision.speed)
+    }
     for (const action of [...new Set(data.decisions.map(decision => decision.command))]) {
       const button = document.createElement('button')
       button.textContent = actionLabel(action)
@@ -64,11 +69,13 @@
       button.onclick = () => {
         const decision = data.decisions.find(item => item.command === action)
         output.currentTime = decision.atMs / 1000
-        source.currentTime = output.currentTime
+        source.currentTime = sourceTimeAt(output.currentTime)
       }
       document.getElementById('actions').append(button)
     }
-    if (data.mode === 'showcase') {
+    if (data.evidence === 'video') {
+      document.getElementById('explanation').firstChild.textContent = 'Veřejné API Recast.direct(JevDirector()). Cíle jsou nalezené z pixelových změn a OCR skutečného videa, bez ručních zoomů a highlightů. Jev dostává text a souřadnice, nikoli obraz. Vlevo se zdroj synchronizuje podle zvoleného tempa. '
+    } else if (data.mode === 'showcase') {
       document.getElementById('explanation').firstChild.textContent = 'Ukázka všech osmi akcí je skriptovaná, bez volání Jev. Zdroj tvoří snímky skutečné stránky v Chromu; FOLLOW používá naměřené DOM pozice přetahované karty. Efekty i pohyb jsou vykreslené do MP4. '
     } else if (data.decisions.some(decision => decision.track?.length)) {
       document.getElementById('explanation').firstChild.textContent = 'Jev vybírá podle cíle scény, souřadnic a naměřené dráhy prvku. Obraz mu neposíláme. Zdroj tvoří snímky skutečné stránky v Chromu; efekty i pohyb jsou vykreslené do MP4. '
@@ -122,7 +129,7 @@
         const probabilities = document.getElementById('probabilities')
         probabilities.replaceChildren()
         if (!Object.keys(decision?.probabilities || {}).length) probabilities.textContent = data.mode === 'showcase' ? 'Skriptovaná ukázka — model nerozhodoval.' : 'Bez rozhodnutí modelu v tomto záběru.'
-        for (const [name, probability] of Object.entries(decision?.probabilities || {}).sort((a, b) => b[1] - a[1])) {
+        for (const [name, probability] of Object.entries(decision?.probabilities || {}).sort((a, b) => b[1] - a[1]).slice(0, 8)) {
           const label = document.createElement('span')
           label.textContent = actionLabel(name)
           const bar = document.createElement('progress')
@@ -133,7 +140,14 @@
           probabilities.append(label, bar, value)
         }
       }
-      if (!output.paused && Math.abs(source.currentTime - output.currentTime) > 0.12) source.currentTime = output.currentTime
+      if (!output.paused) {
+        const sourceTime = sourceTimeAt(output.currentTime)
+        if (Math.abs(source.currentTime - sourceTime) > 0.12) source.currentTime = sourceTime
+        source.playbackRate = decision?.speed || 1
+        const holding = decision?.sourceEndMs !== undefined && output.currentTime * 1000 >= decision.atMs + (decision.sourceEndMs - decision.sourceStartMs) / decision.speed
+        if (holding) source.pause()
+        else if (source.paused) source.play().catch(() => {})
+      }
       requestAnimationFrame(update)
     }
     play.onclick = async () => {
@@ -145,7 +159,7 @@
     output.onplay = () => { play.textContent = 'Pozastavit' }
     output.onpause = () => { play.textContent = 'Přehrát'; source.pause() }
     output.onended = () => { source.pause() }
-    seek.oninput = () => { output.currentTime = Number(seek.value); source.currentTime = Number(seek.value) }
+    seek.oninput = () => { output.currentTime = Number(seek.value); source.currentTime = sourceTimeAt(Number(seek.value)) }
     requestAnimationFrame(update)
   </script>
 </body>

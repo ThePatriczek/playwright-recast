@@ -49,6 +49,9 @@ import type { IntroConfig, OutroConfig } from '../types/intro-outro.js'
 import { applyIntroOutro } from '../render/intro-outro.js'
 import { resolveBackgroundMusicConfig, type ResolvedBackgroundMusicConfig } from '../background-music/defaults.js'
 import { generateMusicTrack } from '../background-music/music-processor.js'
+import { directVideo } from '../director/renderer.js'
+import { validateDirectorOptions } from '../director/planner.js'
+import type { DirectorOptions, DirectorProvider } from '../types/director.js'
 
 type PipelineState = {
   parsed?: ParsedTrace
@@ -72,6 +75,7 @@ type PipelineState = {
   introConfig?: IntroConfig
   outroConfig?: OutroConfig
   backgroundMusicConfig?: ResolvedBackgroundMusicConfig
+  director?: { provider: DirectorProvider; options: DirectorOptions }
 }
 
 /**
@@ -85,6 +89,10 @@ export class PipelineExecutor {
   ) {}
 
   async execute(outputPath: string): Promise<void> {
+    const directors = this.stages.filter(stage => stage.type === 'direct')
+    if (directors.length > 1) throw new Error('Only one direct() stage is supported')
+    if (directors.length && this.stages.some(stage => stage.type === 'autoZoom' || stage.type === 'enrichZoomFromReport')) throw new Error('direct() owns the camera; remove autoZoom() and enrichZoomFromReport()')
+    for (const director of directors) validateDirectorOptions(director.options)
     assertFfmpegAvailable()
     const state = await this.runStages()
     const outputDir = path.dirname(outputPath)
@@ -112,6 +120,7 @@ export class PipelineExecutor {
     // or shifted — see resolveBlankLeadInMs().
     if (
       state.sourceVideoPath &&
+      !state.director &&
       (state.clickEvents || state.cursorKeyframes || state.highlightEvents)
     ) {
       const blankTmpDir = path.join(outputDir, '.recast-blank-probe')
@@ -146,13 +155,14 @@ export class PipelineExecutor {
     const traceWithVideo: RenderableTrace = {
       ...renderableTrace,
       sourceVideoPath: state.sourceVideoPath,
-      subtitles: state.subtitled?.subtitles,
+      preserveLeadIn: Boolean(state.director),
+      subtitles: state.director ? state.subtitled?.subtitles.map(({ zoom, ...subtitle }) => subtitle) : state.subtitled?.subtitles,
       voiceover: state.voiceovered?.voiceover,
       speedSegments: state.speedMapped?.speedSegments,
       clickEvents: state.clickEvents,
       clickEffectConfig: state.clickEffectConfig,
       cursorKeyframes: state.cursorKeyframes,
-      cursorOverlayConfig: state.cursorOverlayConfig,
+      cursorOverlayConfig: state.director && !state.voiceovered && state.cursorOverlayConfig ? { ...state.cursorOverlayConfig, approachMs: 0 } : state.cursorOverlayConfig,
       zoomConfig: state.zoomConfig,
       interpolateConfig: state.interpolateConfig,
       highlightEvents: state.highlightEvents,
@@ -161,7 +171,18 @@ export class PipelineExecutor {
     }
 
     // Render final video
-    renderVideo(traceWithVideo, renderConfig, outputPath, tmpDir)
+    if (state.director) {
+      const directorDir = fs.mkdtempSync(path.join(tmpDir, 'director-'))
+      const baseVideo = path.join(directorDir, 'base.mp4')
+      renderVideo(traceWithVideo, { ...renderConfig, format: 'mp4', codec: 'libx264', burnSubtitles: false, embedSubtitles: Boolean(state.subtitled?.subtitles.length) }, baseVideo, directorDir)
+      try {
+        const report = await directVideo(baseVideo, outputPath, state.director.provider, state.director.options, renderConfig, directorDir, Boolean(state.voiceovered))
+        if (state.subtitled) state.subtitled.subtitles = report.subtitles
+      } catch (error) {
+        state.parsed?.frameReader.dispose()
+        throw error
+      }
+    } else renderVideo(traceWithVideo, renderConfig, outputPath, tmpDir)
 
     // Phase 6: Apply intro/outro with crossfade transitions
     if (state.introConfig || state.outroConfig) {
@@ -278,6 +299,11 @@ export class PipelineExecutor {
 
     for (const stage of this.stages) {
       switch (stage.type) {
+        case 'direct': {
+          if (!state.parsed) throw new Error('direct() requires parse() first')
+          state.director = { provider: stage.provider, options: stage.options }
+          break
+        }
         case 'parse': {
           const tracePath = this.findTraceZip()
           state.parsed = await parseTrace(tracePath)
@@ -991,7 +1017,7 @@ export class PipelineExecutor {
           // authority this resolves to 0: the speed map already defines
           // output time and the source-time blank offset does not belong in
           // it (#20).
-          if (state.sourceVideoPath && !state._blankTrimApplied) {
+          if (state.sourceVideoPath && !state._blankTrimApplied && !this.stages.some(item => item.type === 'direct')) {
             const blankTmpDir = path.join(path.dirname(state.sourceVideoPath), '.recast-blank-tmp')
             state._blankLeadInMs = resolveBlankLeadInMs(
               state.speedMapped?.speedSegments,
@@ -1055,7 +1081,7 @@ export class PipelineExecutor {
           // Apply blank trim compensation for subtitle-only mode (no
           // voiceover). Resolves to 0 under speed authority — see
           // resolveBlankLeadInMs().
-          if (state.subtitled && state.sourceVideoPath && !state._blankTrimApplied) {
+          if (state.subtitled && state.sourceVideoPath && !state._blankTrimApplied && !this.stages.some(item => item.type === 'direct')) {
             const blankTmpDir = path.join(path.dirname(state.sourceVideoPath), '.recast-blank-tmp')
             state._blankLeadInMs = resolveBlankLeadInMs(
               state.speedMapped?.speedSegments,

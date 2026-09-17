@@ -12,6 +12,7 @@ import type { IntroConfig, OutroConfig } from '../types/intro-outro.js'
 import type { BackgroundMusicConfig } from '../types/background-music.js'
 import type { StageDescriptor, AutoZoomConfig } from './stages.js'
 import { PipelineExecutor } from './executor.js'
+import type { DirectorOptions, DirectorProvider } from '../types/director.js'
 
 /**
  * Immutable, fluent pipeline builder.
@@ -106,6 +107,10 @@ export class Pipeline {
    */
   autoZoom(config: AutoZoomConfig = {}): Pipeline {
     return this.addStage({ type: 'autoZoom', config })
+  }
+
+  direct(provider: DirectorProvider, options: DirectorOptions): Pipeline {
+    return this.addStage({ type: 'direct', provider, options })
   }
 
   /**

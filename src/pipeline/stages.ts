@@ -11,6 +11,7 @@ import type { InterpolateConfig } from '../types/interpolate.js'
 import type { TextHighlightConfig } from '../types/text-highlight.js'
 import type { IntroConfig, OutroConfig } from '../types/intro-outro.js'
 import type { BackgroundMusicConfig } from '../types/background-music.js'
+import type { DirectorOptions, DirectorProvider } from '../types/director.js'
 
 export type StageDescriptor =
   | { type: 'parse' }
@@ -26,6 +27,7 @@ export type StageDescriptor =
   | { type: 'subtitlesFromTrace'; options?: SubtitleOptions }
   | { type: 'textProcessing'; config: TextProcessingConfig }
   | { type: 'autoZoom'; config: AutoZoomConfig }
+  | { type: 'direct'; provider: DirectorProvider; options: DirectorOptions }
   | { type: 'enrichZoomFromReport'; steps: Array<{ zoom?: { x: number; y: number; level: number } | null }> }
   | { type: 'cursorOverlay'; config: CursorOverlayConfig }
   | { type: 'clickEffect'; config: ClickEffectConfig }
