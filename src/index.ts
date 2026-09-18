@@ -1,5 +1,26 @@
 // Public API
 export { Pipeline as Recast } from './pipeline/pipeline.js'
+export { JevDirector } from './director/providers/jev.js'
+export type { JevDirectorConfig } from './director/providers/jev.js'
+export { VideoObserver } from './director/observers/video.js'
+export type { VideoObserverConfig } from './director/observers/video.js'
+export type {
+  DirectorAction,
+  DirectorTempo,
+  DirectorChoice,
+  DirectorQuestion,
+  DirectorRequest,
+  DirectorResponse,
+  DirectorProvider,
+  DirectorOptions,
+  DirectorDecision,
+  DirectorReport,
+  DirectorPose,
+  VisualObserver,
+  VideoObservationInput,
+  VisualObservation,
+  VisualRegion,
+} from './types/director.js'
 
 // Step helpers
 export { setupRecast, narrate, zoom, pace, typeText, highlight, waitForNarration, markClick, click } from './helpers.js'

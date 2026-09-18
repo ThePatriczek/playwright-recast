@@ -73,6 +73,7 @@ export function detectBlankLeadIn(videoPath: string, tmpDir: string): number {
  * handles any combination — callers do not need to provide every field.
  */
 export interface RenderableTrace extends ParsedTrace {
+  preserveLeadIn?: boolean
   sourceVideoPath?: string
   subtitles?: SubtitleEntry[]
   voiceover?: {
@@ -465,11 +466,7 @@ function renderWithSpeed(
   baselineMs: number,
   tmpDir: string,
 ): string {
-  if (speedSegments.length === 0) return sourceVideo
-
-  // Check if any segment actually changes speed
-  const allRealtime = speedSegments.every((s) => Math.abs(s.speed - 1.0) < 0.01)
-  if (allRealtime) return sourceVideo
+  if (!isSpeedClockAuthority(speedSegments)) return sourceVideo
 
   // Get source video duration for clamping (handles webm without duration header)
   const videoDuration = getVideoDuration(sourceVideo)
@@ -765,7 +762,7 @@ export function renderVideo(
   // incompatible origin: the segment seeks below are computed against the
   // ORIGINAL recording clock and would land blankLeadIn seconds late (#20).
   let videoInput = sourceVideo
-  if (!hasSpeed) {
+  if (!hasSpeed && !trace.preserveLeadIn) {
     const blankLeadIn = detectBlankLeadIn(videoInput, tmpDir)
     if (blankLeadIn > 0) {
       const trimmedPath = path.join(tmpDir, 'trimmed-input.mp4')

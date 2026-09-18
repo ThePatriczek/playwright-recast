@@ -28,6 +28,14 @@ describe('isSpeedClockAuthority', () => {
     expect(isSpeedClockAuthority([seg(1.0), seg(4.0), seg(1.0)])).toBe(true)
   })
 
+  it('uses the mapped clock when hidden intervals are removed at normal speed', () => {
+    const segments = [
+      { ...seg(1), originalStart: toMonotonic(0), originalEnd: toMonotonic(1000), outputEnd: 1000 },
+      { ...seg(1), originalStart: toMonotonic(2000), originalEnd: toMonotonic(3000), outputStart: 1000, outputEnd: 2000 },
+    ]
+    expect(isSpeedClockAuthority(segments)).toBe(true)
+  })
+
   it('treats a deviation within 0.01 as real-time (matches the renderer threshold)', () => {
     expect(isSpeedClockAuthority([seg(1.005)])).toBe(false)
     expect(isSpeedClockAuthority([seg(0.995)])).toBe(false)

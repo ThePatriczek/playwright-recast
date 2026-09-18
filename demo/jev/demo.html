@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Atlas Studio</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f5f7fb; color: #17213b; font: 16px system-ui, sans-serif; }
+    aside { position: fixed; inset: 0 auto 0 0; width: 224px; padding: 36px 28px; color: #dae3f6; background: #17213b; }
+    aside strong { font-size: 24px; color: white; }
+    aside p { margin-top: 52px; padding: 14px; background: #2b3855; border-radius: 9px; }
+    aside small { position: absolute; bottom: 32px; left: 28px; color: #a9b8d8; }
+    main { margin-left: 224px; padding: 48px 56px; }
+    header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 36px; }
+    h1 { font-size: 34px; margin: 8px 0; letter-spacing: -1px; }
+    h2 { margin-top: 0; }
+    p { color: #68748c; line-height: 1.6; }
+    .eyebrow { color: #5667c9; font-size: 12px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; }
+    button { border: 0; background: #5362d5; color: white; border-radius: 9px; padding: 13px 21px; font: inherit; cursor: pointer; transition: background .15s; }
+    button:hover { background: #3949b8; }
+    button.secondary { background: #e9edfa; color: #4253b7; }
+    button.secondary:hover { background: #d7def7; }
+    button:disabled { opacity: .4; cursor: default; }
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin: 28px 0; }
+    .card, section { background: white; padding: 27px; border: 1px solid #e3e8f2; border-radius: 14px; }
+    .card strong { display: block; margin-top: 12px; font-size: 30px; }
+    .card span { color: #778399; font-size: 14px; }
+    .empty { padding: 38px; text-align: center; }
+    .toolbar { display: flex; gap: 12px; margin-bottom: 24px; }
+    dialog { width: 450px; border: 1px solid #e3e8f2; border-radius: 16px; padding: 32px; box-shadow: 0 24px 100px #17213b30; }
+    dialog::backdrop { background: #17213b50; }
+    label { display: block; font-size: 14px; font-weight: 600; margin: 22px 0; }
+    input:not([type=checkbox]), select { display: block; width: 100%; margin-top: 9px; border: 1px solid #cbd3e3; border-radius: 8px; padding: 12px; font: inherit; }
+    input[type=checkbox] { width: 18px; height: 18px; vertical-align: middle; accent-color: #5362d5; margin-right: 10px; }
+    .badge { display: inline-block; border-radius: 30px; background: #e8f5ee; color: #2c8052; padding: 5px 12px; font-size: 13px; }
+    .actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 28px; }
+    .share-link { padding: 14px; background: #f2f4fa; border-radius: 8px; color: #5362d5; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <aside><strong>Atlas Studio</strong><p>Projects</p><small>Browser director demo</small></aside>
+  <main>
+    <header><div><div class="eyebrow">Your workspace</div><h1 id="page-title">Projects</h1><p id="page-description">Bring your next idea to life.</p></div><button id="new-project">New project</button></header>
+    <div id="dashboard">
+      <div class="grid"><div class="card"><span>Active projects</span><strong>0</strong></div><div class="card"><span>Team members</span><strong>4</strong></div><div class="card"><span>Workspace</span><strong>Atlas</strong></div></div>
+      <section class="empty"><h2>A fresh start</h2><p>Create your first project, set up collaboration<br>and share it with your team.</p></section>
+    </div>
+    <div id="project" hidden>
+      <div class="toolbar"><button class="secondary" id="overview">Overview</button><button class="secondary" id="settings">Settings</button><button id="share">Share project</button></div>
+      <section id="overview-panel"><span class="badge" id="visibility-badge">Team workspace</span><h2 style="margin-top:24px">Ready for your next idea</h2><p>Your project is created. Configure collaboration in Settings,<br>then share the project with your team.</p><p id="saved-status">Comments are disabled.</p></section>
+      <section id="settings-panel" hidden><h2>Project settings</h2><p>Choose how your team collaborates on this project.</p><label><input type="checkbox" id="comments">Allow comments</label><button id="save-settings">Save settings</button></section>
+    </div>
+  </main>
+  <dialog id="create-dialog"><form id="create-form"><h2>Create a project</h2><p>Give your idea a home.</p><label>Project name<input name="name" required autocomplete="off"></label><label>Visibility<select name="visibility"><option value="private">Private</option><option value="team">Team</option></select></label><div class="actions"><button type="button" class="secondary" id="cancel">Cancel</button><button type="submit">Create project</button></div></form></dialog>
+  <dialog id="share-dialog"><span class="badge">Sharing enabled</span><h2 style="margin-top:24px">Share your project</h2><p data-complete></p><div class="share-link">atlas.example/projects/demo</div><div class="actions"><button id="close-share">Done</button></div></dialog>
+  <script>
+    const byId = id => document.getElementById(id)
+    let projectName = ''
+    let visibility = 'private'
+    let comments = false
+    byId('new-project').onclick = () => byId('create-dialog').showModal()
+    byId('cancel').onclick = () => byId('create-dialog').close()
+    byId('create-form').onsubmit = event => {
+      event.preventDefault()
+      const data = new FormData(event.target)
+      projectName = String(data.get('name')).trim()
+      if (!projectName) return
+      visibility = String(data.get('visibility'))
+      byId('create-dialog').close()
+      byId('dashboard').hidden = true
+      byId('new-project').hidden = true
+      byId('project').hidden = false
+      byId('page-title').textContent = projectName
+      byId('page-description').textContent = 'A place for your team to create together.'
+      byId('visibility-badge').textContent = visibility === 'team' ? 'Team workspace' : 'Private workspace'
+    }
+    byId('settings').onclick = () => {
+      byId('overview-panel').hidden = true
+      byId('settings-panel').hidden = false
+      byId('comments').checked = comments
+    }
+    byId('overview').onclick = () => {
+      byId('settings-panel').hidden = true
+      byId('overview-panel').hidden = false
+    }
+    byId('save-settings').onclick = () => {
+      comments = byId('comments').checked
+      byId('saved-status').textContent = comments ? 'Comments are enabled. Settings saved.' : 'Comments are disabled. Settings saved.'
+      byId('overview').click()
+    }
+    byId('share').onclick = () => {
+      document.querySelector('[data-complete]').textContent = visibility === 'team' && comments ? `${projectName} is ready to share with comments enabled.` : 'Enable Team visibility and save Allow comments in Settings before sharing.'
+      byId('share-dialog').showModal()
+    }
+    byId('close-share').onclick = () => byId('share-dialog').close()
+  </script>
+</body>
+</html>

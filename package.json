@@ -69,6 +69,14 @@
     "./mcp": {
       "types": "./dist/mcp/server.d.ts",
       "default": "./dist/mcp/server.js"
+    },
+    "./providers/jev": {
+      "types": "./dist/director/providers/jev.d.ts",
+      "default": "./dist/director/providers/jev.js"
+    },
+    "./observers/video": {
+      "types": "./dist/director/observers/video.d.ts",
+      "default": "./dist/director/observers/video.js"
     }
   },
   "files": [
@@ -77,11 +85,17 @@
     "LICENSE"
   ],
   "scripts": {
+    "poc:jev": "npx --yes --package=node@22.23.2 node demo/jev/run.mjs",
+    "poc:jev:install": "npx --yes --package=node@22.23.2 node node_modules/@playwright/test/cli.js install chromium",
+    "poc:jev:check": "tsc --noEmit -p demo/jev/tsconfig.json",
+    "poc:camera": "npm run build && npx --yes --package=node@22.23.2 node --experimental-strip-types demo/jev/camera.mts",
     "build": "tsc",
     "test": "vitest run",
     "test:watch": "vitest watch",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run build && cp -R src/voiceover/providers/qwen-sidecar dist/voiceover/providers/"
+    "prepublishOnly": "npm run build && cp -R src/voiceover/providers/qwen-sidecar dist/voiceover/providers/",
+    "poc:camera:showcase": "npx --yes --package=node@22.23.2 node --experimental-strip-types demo/jev/camera-showcase.mts",
+    "poc:director": "npm run build && npx --yes --package=node@22.23.2 node --experimental-strip-types demo/jev/api-demo.mts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
