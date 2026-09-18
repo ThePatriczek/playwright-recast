@@ -951,6 +951,7 @@ Contributions welcome! Please check the [issues](https://github.com/ThePatriczek
 git clone https://github.com/ThePatriczek/playwright-recast.git
 cd playwright-recast
 npm install
+npx playwright install --with-deps chromium
 npm test
 ```
 

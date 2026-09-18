@@ -13,7 +13,7 @@ export async function readBrowserState(page: Page, root: string): Promise<Browse
       const box = element.getBoundingClientRect()
       const style = getComputedStyle(element)
       if (!element.checkVisibility() || style.opacity === '0' || box.width <= 0 || box.height <= 0 || box.bottom <= 0 || box.top >= innerHeight || box.right <= 0 || box.left >= innerWidth) return []
-      const inputType = element.getAttribute('type') || ''
+      const inputType = element instanceof HTMLInputElement ? element.type : element.getAttribute('type') || ''
       if (['password', 'hidden', 'file'].includes(inputType)) return []
       const labelIds = (element.getAttribute('aria-labelledby') || '').split(/\s+/)
       const labelledText = labelIds.map(id => document.getElementById(id)?.textContent || '').join(' ').trim()

@@ -44,6 +44,61 @@ describe('visual direction', () => {
     expect(plan.outputDurationMs).toBe(3000)
   })
 
+  it('follows moving text across 500ms decision boundaries without static emphasis', async () => {
+    const moving: VisualObservation[] = Array.from({ length: 8 }, (_, index) => ({
+      atMs: index * 500,
+      changeFraction: 0.01,
+      regions: [{ ...errorRegion, id: 'moving', x: 0.1 + index * 0.05, changed: index > 0 }],
+    }))
+    const provider: DirectorProvider = { name: 'test', async decide(request) {
+      const follow = Object.keys(request.questions.camera.criteria).find(key => key.startsWith('follow_'))
+      return choose(request, follow ?? 'stay')
+    } }
+    const plan = await planDirection(provider, { goal: 'Follow the moving result' }, moving, 4000, true)
+
+    expect(plan.decisions).toHaveLength(8)
+    for (const request of plan.requests.slice(0, -1)) {
+      const choices = Object.keys(request.questions.camera.criteria)
+      expect(choices).toContain('follow_0')
+      expect(choices.some(key => key.startsWith('spotlight_') || key.startsWith('pulse_'))).toBe(false)
+    }
+    expect(plan.decisions[0].action).toBe('follow')
+    expect(plan.requests[0].state.after).toEqual(moving[1])
+    expect(plan.decisions[0].to.zoom).toBeGreaterThan(1)
+    expect(plan.keyframes.some(point => point.atMs === 500 && point.zoom > 1)).toBe(true)
+  })
+
+  it('does not promote boundary-only results into earlier camera or tempo choices', async () => {
+    const appearing: VisualObservation[] = [
+      { atMs: 0, regions: [], changeFraction: 0 },
+      { atMs: 500, regions: [errorRegion], changeFraction: 0.15 },
+      { atMs: 1000, regions: [{ ...errorRegion, changed: false }], changeFraction: 0 },
+    ]
+    const provider: DirectorProvider = { name: 'test', decide: async request => choose(request, 'stay') }
+    const plan = await planDirection(provider, { goal: 'Show the result when it appears' }, appearing, 1500, false)
+
+    expect(plan.decisions[0].sourceEndMs).toBe(500)
+    expect(Object.keys(plan.requests[0].questions.camera.criteria)).toEqual(['stay'])
+    expect(Object.keys(plan.requests[0].questions.tempo.criteria)).toEqual(['normal', 'fast'])
+    expect(plan.requests[0].state.observations).toEqual([appearing[0]])
+    expect(plan.requests[1].questions.camera.criteria).toHaveProperty('reveal_0')
+  })
+
+  it('does not follow a lost target through the next boundary to a later reappearance', async () => {
+    const tracked: VisualObservation[] = [
+      { atMs: 0, regions: [{ ...errorRegion, x: 0.1, changed: false }], changeFraction: 0 },
+      { atMs: 500, regions: [{ ...errorRegion, x: 0.2 }], changeFraction: 0.15 },
+      { atMs: 1000, regions: [], changeFraction: 0.15 },
+      { atMs: 1500, regions: [{ ...errorRegion, x: 0.8 }], changeFraction: 0.15 },
+    ]
+    const provider: DirectorProvider = { name: 'test', decide: async request => choose(request, 'stay') }
+    const plan = await planDirection(provider, { goal: 'Follow only visible results' }, tracked, 2000, true)
+
+    expect(plan.requests[0].questions.camera.criteria).toHaveProperty('follow_0')
+    expect(plan.requests[1].questions.camera.criteria).not.toHaveProperty('follow_0')
+    expect(Object.keys(plan.requests[2].questions.camera.criteria)).toEqual(['stay'])
+  })
+
   it('checks the decision budget before making any paid requests', async () => {
     const decide = vi.fn()
     await expect(planDirection({ name: 'test', decide }, { goal: 'Show result', maxDecisions: 1 }, observations, 3000, false)).rejects.toThrow('budget exceeded')

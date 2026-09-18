@@ -114,6 +114,7 @@ Each pass writes `source.mp4`, `camera.mp4`, `camera-path.json`, `camera-decisio
 
 ```sh
 npm run poc:jev:check
+npx playwright install --with-deps chromium
 npm test -- tests/unit/jev
 ```
 
