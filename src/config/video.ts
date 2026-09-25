@@ -64,8 +64,8 @@ export function recastVideo(options: RecastVideoOptions): RecastVideoUse {
     throw new Error(`recastVideo: scale must be a number >= 1, got ${requested}`)
   }
   const { width, height } = options.viewport
-  if (!Number.isInteger(width) || !Number.isInteger(height)) {
-    throw new Error(`recastVideo: viewport must be whole CSS pixels, got ${width}x${height}`)
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1) {
+    throw new Error(`recastVideo: viewport must be positive, whole CSS pixels, got ${width}x${height}`)
   }
   const scale = exactScale(options.viewport, requested)
   const size = { width: Math.round(width * scale), height: Math.round(height * scale) }

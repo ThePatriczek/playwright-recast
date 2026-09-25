@@ -51,7 +51,7 @@ import { applyIntroOutro } from '../render/intro-outro.js'
 import { resolveBackgroundMusicConfig, type ResolvedBackgroundMusicConfig } from '../background-music/defaults.js'
 import { generateMusicTrack } from '../background-music/music-processor.js'
 import { directVideo } from '../director/renderer.js'
-import { validateDirectorOptions } from '../director/planner.js'
+import { DEFAULT_MAX_ZOOM, validateDirectorOptions } from '../director/planner.js'
 import type { DirectorOptions, DirectorProvider } from '../types/director.js'
 
 type PipelineState = {
@@ -165,6 +165,7 @@ export class PipelineExecutor {
       cursorKeyframes: state.cursorKeyframes,
       cursorOverlayConfig: state.director && !state.voiceovered && state.cursorOverlayConfig ? { ...state.cursorOverlayConfig, approachMs: 0 } : state.cursorOverlayConfig,
       zoomConfig: state.zoomConfig,
+      cameraMaxZoom: state.director ? state.director.options.maxZoom ?? DEFAULT_MAX_ZOOM : undefined,
       interpolateConfig: state.interpolateConfig,
       highlightEvents: state.highlightEvents,
       highlightConfig: state.highlightConfig,

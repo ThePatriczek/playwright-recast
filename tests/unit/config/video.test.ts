@@ -34,8 +34,8 @@ describe('recastVideo()', () => {
     expect(use.video.size).toEqual(size)
   })
 
-  it('rejects a fractional viewport', () => {
-    expect(() => recastVideo({ viewport: { width: 1920.5, height: 1080 } })).toThrow(/whole CSS pixels/)
+  it.each([{ width: 1920.5, height: 1080 }, { width: 0, height: 0 }, { width: -1920, height: 1080 }])('rejects viewport %o', (viewport) => {
+    expect(() => recastVideo({ viewport })).toThrow(/positive, whole CSS pixels/)
   })
 
   it.each([0.5, 0, -2, Number.NaN])('rejects scale %s', (scale) => {

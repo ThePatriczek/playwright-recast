@@ -16,6 +16,9 @@ interface Candidate {
   targetIds: string[]
 }
 
+/** The camera's zoom limit without `options.maxZoom`. */
+export const DEFAULT_MAX_ZOOM = 1.45
+
 export function validateDirectorOptions(options: DirectorOptions): void {
   if (!options.goal?.trim()) throw new Error('direct() requires a presentation goal')
   for (const name of ['sampleIntervalMs', 'decisionIntervalMs', 'maxFrames', 'maxDecisions', 'minimumHoldMs'] as const) {
@@ -112,7 +115,7 @@ export async function planDirection(provider: DirectorProvider, options: Directo
     // tempo evidence in the half-open window so results are not shown early.
     const after = observations.find(observation => observation.atMs === sourceEndMs)
     const cameraWindow = after ? [...window, after] : window
-    const candidates = candidatesFor(pose, cameraWindow, sourceStartMs, sourceEndMs, options.maxZoom ?? 1.45)
+    const candidates = candidatesFor(pose, cameraWindow, sourceStartMs, sourceEndMs, options.maxZoom ?? DEFAULT_MAX_ZOOM)
     const novelText = window.some(observation => observation.regions.some(region => region.kind === 'text' && region.changed))
     const stable = window.every(observation => observation.changeFraction < 0.025)
     const settling = window.slice(1).every(observation => observation.changeFraction < 0.025)
