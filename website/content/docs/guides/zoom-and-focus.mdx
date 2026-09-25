@@ -143,6 +143,16 @@ When two zoom targets are close together in time, the camera pans smoothly betwe
 
 This behavior is automatic -- no configuration needed. The renderer detects adjacent zoom segments and interpolates position between them.
 
+### Stabilizing the pan
+
+Targets only a few pixels apart, such as consecutive lines of one code block, make the camera sway between them. `panStabilizationThreshold` keeps it still: per axis, it pans only once the next target is more than that fraction of the crop's size away from what is shown.
+
+```typescript
+.render({ resolution: '1440p', zoom: { panStabilizationThreshold: 0.3 } })
+```
+
+Each axis decides on its own, so a target further down but at the same indentation pans vertically only. A change of zoom level always moves the camera. Applies to every zoom source: `zoom()`, `autoZoom()` and report data.
+
 ## Combining zoom approaches
 
 You can combine `autoZoom()` with `enrichZoomFromReport()`. The report data takes precedence for steps where it is defined, and auto-zoom fills in the rest:

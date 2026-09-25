@@ -30,6 +30,15 @@ export interface RenderConfig {
   embedSubtitles?: boolean | { language?: string; title?: string; default?: boolean }
   subtitleStyle?: SubtitleStyle
   cursorOverlay?: boolean
+  /** Camera behaviour for every zoom source (`zoom()`, `autoZoom()`, report data). */
+  zoom?: {
+    /**
+     * Keeps the camera still between nearby targets: per axis it pans only once
+     * the next target at the same level is more than this fraction of the crop's
+     * size away from the visible centre, e.g. `0.3`. Default: 0 (off)
+     */
+    panStabilizationThreshold?: number
+  }
   codec?: string
   crf?: number
 }
