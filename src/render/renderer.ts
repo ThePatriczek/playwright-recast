@@ -729,11 +729,12 @@ function mergeFreezes(
  */
 function shiftForFreezes(
   originalMs: number,
-  freezes: Array<{ atVideoMs: number; durationMs: number; sourceMs?: number }>,
+  freezes: Array<{ atVideoMs: number; durationMs: number; sourceMs?: number; sourceTraceMs?: number }>,
+  traceMs?: number,
 ): number {
   let shift = 0
   for (const f of freezes) {
-    if (isAfterHold({ ms: originalMs }, f)) shift += f.durationMs
+    if (isAfterHold({ ms: originalMs, traceMs }, f)) shift += f.durationMs
   }
   return originalMs + shift
 }
@@ -814,7 +815,7 @@ export function renderVideo(
   // voiceover stage so the audio + subtitles stay in sync, arriving here inside
   // trace.voiceover.freezes. Only when there is no voiceover do we compute them
   // here — there's no audio to keep in sync, but the video still needs the hold.
-  const approachFreezes: Array<{ atVideoMs: number; durationMs: number }> = []
+  const approachFreezes: Array<{ atVideoMs: number; durationMs: number; sourceMs: number }> = []
   if (!trace.voiceover && trace.cursorKeyframes) {
     const approachMs = trace.cursorOverlayConfig?.approachMs ?? 500
     // Align here rather than upstream: this path has no audio or subtitles to
@@ -823,11 +824,9 @@ export function renderVideo(
     const approachFps = probeVideoFps(videoInput)
     for (const kf of trace.cursorKeyframes) {
       if (kf.approach) {
-        approachFreezes.push(alignFreezeToFrame(
-          Math.max(0, Math.round(kf.videoTimeSec * 1000) - 2), // -2ms: ripple + cursor shift into the hold
-          Math.round(approachMs),
-          approachFps,
-        ))
+        const at = Math.round(kf.videoTimeSec * 1000) - 2 // -2ms: ripple + cursor shift into the hold
+        // Unclamped source, so a click at 0 still counts as after its hold.
+        approachFreezes.push({ ...alignFreezeToFrame(Math.max(0, at), Math.round(approachMs), approachFps), sourceMs: at })
       }
     }
   }
@@ -840,7 +839,7 @@ export function renderVideo(
     videoInput = applyVoiceoverFreezes(videoInput, allFreezes, tmpDir)
     if (trace.clickEvents) {
       for (const ce of trace.clickEvents) {
-        ce.videoTimeMs = shiftForFreezes(ce.videoTimeMs, holds)
+        ce.videoTimeMs = shiftForFreezes(ce.videoTimeMs, holds, ce.traceMs)
       }
     }
     if (trace.cursorKeyframes) {
