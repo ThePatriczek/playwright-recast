@@ -91,27 +91,34 @@ export function buildZoomFilter(
  * camera's position on that axis when its target lies within `threshold` x the
  * crop's size (width for x, height for y) of the camera's visible centre -
  * the edge-clamped one, since that is what the viewer sees. The other axis
- * still pans if its target is outside. A change of level always moves both.
+ * still pans if its target is outside. A change of level always moves both,
+ * and so does a zoom-out between the cues (see buildSegments()).
  * Without this, targets a few pixels apart (lines of one code block) make the
  * camera sway between cues. `threshold <= 0` returns the keyframes unchanged.
  */
-export function stabilizePan(keyframes: ZoomKeyframe[], threshold: number): ZoomKeyframe[] {
+export function stabilizePan(
+  keyframes: ZoomKeyframe[],
+  threshold: number,
+  config: Pick<ZoomExprConfig, 'transitionMs' | 'containInCue'>,
+): ZoomKeyframe[] {
   if (threshold <= 0) return keyframes
   const visible = (c: number, level: number) => Math.min(Math.max(c, 0.5 / level), 1 - 0.5 / level)
-  let camera: { x: number; y: number; level: number } | undefined
+  let camera: { x: number; y: number; level: number; endMs: number } | undefined
   return [...keyframes].sort((a, b) => a.atMs - b.atMs).map((kf) => {
     const level = kf.level ?? 1.0
     const x = kf.x ?? 0.5
     const y = kf.y ?? 0.5
     const reach = threshold / level
-    const next = camera && camera.level === level
+    const stillZoomed = camera !== undefined && !config.containInCue &&
+      kf.atMs - camera.endMs < 2 * config.transitionMs
+    const next = camera && stillZoomed && camera.level === level
       ? {
           x: Math.abs(x - visible(camera.x, level)) <= reach ? camera.x : x,
           y: Math.abs(y - visible(camera.y, level)) <= reach ? camera.y : y,
           level,
         }
       : { x, y, level }
-    camera = next
+    camera = { ...next, endMs: kf.atMs + (kf.transitionMs ?? 2000) }
     return { ...kf, x: next.x, y: next.y }
   })
 }

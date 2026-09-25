@@ -204,15 +204,15 @@ function buildZoomStage(
   const zoomSubs = subtitles.filter((s) => s.zoom && s.zoom.level > 1.0)
   if (zoomSubs.length === 0) return null
 
-  const keyframes = stabilizePan(stepZoomsToKeyframes(subtitles), panStabilizationThreshold)
-  if (keyframes.length === 0) return null
-
   const config: ZoomExprConfig = {
     transitionMs: zoomConfig?.transitionMs ?? 400,
     easing: zoomConfig?.easing ?? 'ease-in-out',
     fps,
     containInCue: zoomConfig?.containInCue ?? false,
   }
+
+  const keyframes = stabilizePan(stepZoomsToKeyframes(subtitles), panStabilizationThreshold, config)
+  if (keyframes.length === 0) return null
 
   const filter = buildZoomFilter(keyframes, srcRes, targetRes, config)
   console.log(`  Zoom: zoompan single-pass (${keyframes.length} keyframes, ${fps}fps, easing: ${typeof config.easing === 'string' ? config.easing : 'custom'})`)
