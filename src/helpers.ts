@@ -247,7 +247,8 @@ async function measureBox(locator: Locator, text?: string | true): Promise<Box |
         mirror.style.position = 'absolute'
         mirror.style.visibility = 'hidden'
         mirror.style.width = `${el.offsetWidth}px`
-        mirror.style.whiteSpace = 'pre-wrap'
+        // An input stays on one line and scrolls; a textarea wraps.
+        mirror.style.whiteSpace = el instanceof HTMLInputElement ? 'pre' : 'pre-wrap'
 
         const before = document.createTextNode(value.slice(0, idx))
         const mark = document.createElement('span')
@@ -260,10 +261,10 @@ async function measureBox(locator: Locator, text?: string | true): Promise<Box |
         const markRect = mark.getBoundingClientRect()
         const mirrorRect = mirror.getBoundingClientRect()
 
-        // Offset: mark position relative to mirror, then add element position
+        // Offset: mark position relative to mirror, then add element position, less its scroll
         const result = {
-          x: elRect.left + (markRect.left - mirrorRect.left),
-          y: elRect.top + (markRect.top - mirrorRect.top),
+          x: elRect.left + (markRect.left - mirrorRect.left) - el.scrollLeft,
+          y: elRect.top + (markRect.top - mirrorRect.top) - el.scrollTop,
           width: markRect.width,
           height: markRect.height,
         }
@@ -272,21 +273,27 @@ async function measureBox(locator: Locator, text?: string | true): Promise<Box |
         return result
       }
 
-      // For regular elements: use Range API to find text node and measure
+      // For regular elements: search the concatenated text nodes, so a match may
+      // span inline children (a code editor splits a line into token spans)
       const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
-      let node: Node | null
-      while ((node = walker.nextNode())) {
-        const content = node.textContent ?? ''
-        const idx = content.indexOf(needle)
-        if (idx === -1) continue
-
-        const range = document.createRange()
-        range.setStart(node, idx)
-        range.setEnd(node, idx + needle.length)
-        const rect = range.getBoundingClientRect()
-        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+      const nodes: Array<{ node: Node; start: number }> = []
+      let content = ''
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        nodes.push({ node, start: content.length })
+        content += node.textContent ?? ''
       }
-      return null
+      const idx = content.indexOf(needle)
+      if (idx === -1) return null
+      // The node holding `offset`; an end offset belongs to the node it closes.
+      const at = (offset: number, end: boolean) => {
+        const hit = [...nodes].reverse().find((n) => (end ? n.start < offset : n.start <= offset))!
+        return [hit.node, offset - hit.start] as const
+      }
+      const range = document.createRange()
+      range.setStart(...at(idx, false))
+      range.setEnd(...at(idx + needle.length, true))
+      const rect = range.getBoundingClientRect()
+      return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
     }
     const found = find()
     return found ? { text: found, element } : null

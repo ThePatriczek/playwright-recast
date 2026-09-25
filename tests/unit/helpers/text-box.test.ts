@@ -11,13 +11,16 @@ const browser: Browser | undefined = fs.existsSync(chromium.executablePath()) ? 
 const VIEWPORT = { width: 1000, height: 500 }
 // An iframe offset by (200, 100) holding a full-width "line" whose text is
 // short, one whose text is wider than a 2x zoom frame (500px), one just
-// narrower, and a full-width input with a short value.
+// narrower, a full-width input with a short value, a line split into token
+// spans, and an input whose long value scrolls.
 const FRAME = `
   <style>body{margin:0;font:16px monospace} div{width:780px;height:20px;white-space:pre}</style>
   <div id="short">  SELECT 1</div>
   <div id="long">${'x'.repeat(70)}</div>
   <div id="fits">${'x'.repeat(49)}</div>
-  <input id="field" style="width:780px;font:16px monospace" value="abc">`
+  <input id="field" style="width:780px;font:16px monospace" value="abc">
+  <div id="tokens"><span>SEL</span><span>ECT</span> 1</div>
+  <input id="scrolled" style="width:200px;font:16px monospace;padding:0;border:0" value="${'a'.repeat(60)}TARGET">`
 const PAGE = `<body style="margin:0"><iframe style="position:absolute;left:200px;top:100px;width:800px;height:300px;border:0" srcdoc="${FRAME.replace(/"/g, '&quot;')}"></iframe></body>`
 
 function capture() {
@@ -72,6 +75,28 @@ describe.skipIf(!browser)('text boxes in zoom() and highlight()', () => {
     await zoom(frame().locator('#field'), 2, { text: true })
     // The control's centre is at 200 + 390; its three-character value starts near 200.
     expect(payload(steps, ZOOM_TITLE_PREFIX).x * VIEWPORT.width).toBeLessThan(260)
+  })
+
+  it('finds a substring split across token spans', async () => {
+    const inFrame = await frame().locator('#tokens').evaluate((el) => {
+      const r = document.createRange(); r.setStart(el.firstChild!.firstChild!, 0); r.setEnd(el.childNodes[2]!, 2)
+      const b = r.getBoundingClientRect(); return { x: b.x, width: b.width }
+    })
+    await highlight(frame().locator('#tokens'), { text: 'SELECT 1' })
+    const box = payload(steps, HIGHLIGHT_TITLE_PREFIX)
+    expect(box.x).toBeCloseTo(200 + inFrame.x, 1)
+    expect(box.width).toBeCloseTo(inFrame.width, 1)
+  })
+
+  it("measures a long input value on one line, where it scrolled to", async () => {
+    const field = frame().locator('#scrolled')
+    await field.evaluate((el: HTMLInputElement) => { el.scrollLeft = el.scrollWidth })
+    await highlight(field, { text: 'TARGET' })
+    const box = payload(steps, HIGHLIGHT_TITLE_PREFIX)
+    const input = (await field.boundingBox())!
+    // Scrolled to the end, TARGET is the value's visible tail, on the input's own line.
+    expect(box.x + box.width).toBeCloseTo(input.x + input.width, -1)
+    expect(box.y).toBeCloseTo(input.y, -1)
   })
 
   it('places a text highlight inside an iframe in page space', async () => {
