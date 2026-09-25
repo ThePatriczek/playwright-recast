@@ -201,7 +201,8 @@ export async function generateVoiceover(
       if (nextOriginalStartMs !== undefined) {
         // Rounds up: a short hold leaves captions ahead of the voice.
         const aligned = alignNarrationHold(originalEndsMs[si]!, overflow, outputFps)
-        freezes.push(aligned)
+        const endTraceMs = trace.subtitles[si]!.endTraceMs
+        freezes.push(endTraceMs !== undefined ? { ...aligned, sourceTraceMs: endTraceMs } : aligned)
         timeShift += aligned.durationMs
       } else {
         timeShift += overflow

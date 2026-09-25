@@ -42,4 +42,6 @@ export interface HighlightEvent {
   fadeOut: number
   /** End with the narration this mark belongs to, see `highlight({duration: 'narration'})` */
   untilNarrationEnd?: boolean
+  /** Raw trace time of the highlight() marker, to order it against holds exactly */
+  traceMs?: number
 }

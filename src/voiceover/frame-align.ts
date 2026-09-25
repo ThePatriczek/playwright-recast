@@ -8,6 +8,24 @@
  * once, keeps every consumer on the same numbers.
  */
 
+/**
+ * Whether an overlay event plays after `hold`, and is shifted by it.
+ *
+ * By raw trace time where both sides have one: `highlight()`, `narrate()` and
+ * `waitForNarration()` can run within a millisecond, and their video times,
+ * rounded and remapped along different paths, tie or even swap. Otherwise
+ * against the unaligned `sourceMs`, strictly: alignment moves the hold up to a
+ * frame later, past an event set right after `waitForNarration()`, and one set
+ * just before it can round onto its point.
+ */
+export function isAfterHold(
+  event: { ms: number; traceMs?: number },
+  hold: { atVideoMs: number; sourceMs?: number; sourceTraceMs?: number },
+): boolean {
+  if (event.traceMs !== undefined && hold.sourceTraceMs !== undefined) return hold.sourceTraceMs < event.traceMs
+  return hold.sourceMs !== undefined ? hold.sourceMs < event.ms : hold.atVideoMs <= event.ms
+}
+
 /** Milliseconds occupied by one frame at `fps`. */
 export function msPerFrame(fps: number): number {
   return 1000 / fps
@@ -49,19 +67,24 @@ export function alignMsUpToFrame(ms: number, fps: number): number {
  * negative; the position still aligns.
  *
  * A non-positive, missing, or NaN frame rate returns the inputs untouched.
+ *
+ * `sourceMs` keeps the unaligned position. Overlays compare against it: an
+ * event just after the hold was asked for (a highlight right after
+ * `waitForNarration()`) can still lie before the aligned position, and would
+ * otherwise be placed before the hold, a whole narration early.
  */
 export function alignFreezeToFrame(
   atVideoMs: number,
   durationMs: number,
   fps: number,
-): { atVideoMs: number; durationMs: number } {
-  if (!(fps > 0)) return { atVideoMs, durationMs }
+): { atVideoMs: number; durationMs: number; sourceMs: number } {
+  if (!(fps > 0)) return { atVideoMs, durationMs, sourceMs: atVideoMs }
   const per = msPerFrame(fps)
   const aligned = alignMsUpToFrame(atVideoMs, fps)
   const shift = aligned - atVideoMs
   const rawDuration = Math.max(0, durationMs - shift)
   const quantisedDuration = Math.round(rawDuration / per) * per + 0 // normalize -0 to 0
-  return { atVideoMs: aligned, durationMs: quantisedDuration }
+  return { atVideoMs: aligned, durationMs: quantisedDuration, sourceMs: atVideoMs }
 }
 
 /**
@@ -74,10 +97,11 @@ export function alignNarrationHold(
   atVideoMs: number,
   durationMs: number,
   fps: number,
-): { atVideoMs: number; durationMs: number } {
-  if (!(fps > 0)) return { atVideoMs, durationMs }
+): { atVideoMs: number; durationMs: number; sourceMs: number } {
+  if (!(fps > 0)) return { atVideoMs, durationMs, sourceMs: atVideoMs }
   return {
     atVideoMs: alignMsUpToFrame(atVideoMs, fps),
     durationMs: alignMsUpToFrame(Math.max(0, durationMs), fps),
+    sourceMs: atVideoMs,
   }
 }
