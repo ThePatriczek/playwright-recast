@@ -15,10 +15,14 @@ export interface RecastVideoOptions {
   scale?: number
 }
 
-export type RecastVideoUse = Pick<
-  NonNullable<PlaywrightTestConfig['use']>,
-  'viewport' | 'deviceScaleFactor' | 'video' | 'headless' | 'launchOptions'
->
+/** Concrete, so `launchOptions.args` can be merged without casts. */
+export interface RecastVideoUse {
+  viewport: { width: number; height: number }
+  deviceScaleFactor: number
+  headless: true
+  launchOptions: { args: string[] }
+  video: { mode: 'on'; size: { width: number; height: number } }
+}
 
 /**
  * Playwright `use` options that record the video at `viewport x scale` device
@@ -52,5 +56,5 @@ export function recastVideo(options: RecastVideoOptions): RecastVideoUse {
     launchOptions: { args: [`--force-device-scale-factor=${scale}`] },
     // Chromium rounds a decimal scale's frame to whole pixels; the video must match.
     video: { mode: 'on', size: { width: Math.round(width * scale), height: Math.round(height * scale) } },
-  }
+  } satisfies NonNullable<PlaywrightTestConfig['use']>
 }
