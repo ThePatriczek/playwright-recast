@@ -11,6 +11,7 @@
 
 ### Bug fixes
 
+- **A highlight, click or cursor move right after `waitForNarration()` showed a whole narration early** - the hold moves up to the next frame, so an overlay set within those milliseconds counted as before it. Overlays now compare against where the hold was asked for.
 - **A `zoom()` set just before its `narrate()` was dropped, or zoomed at the wrong line** - a zoom now belongs to the narration whose audio is playing, else the next one, and starts with it.
 - **Zoom missed its target unless pinned to a frame edge** - the zoompan crop used zoomed instead of input coordinates, off by about the zoom factor. Most visible with a source larger than the output.
 

@@ -30,7 +30,7 @@ import { chunkSubtitles } from '../subtitles/subtitle-chunker.js'
 import { filterRenderableSubtitles } from '../subtitles/renderable.js'
 import { interpolateVideo } from '../interpolate/interpolator.js'
 import { isSpeedClockAuthority } from '../speed/clock-authority.js'
-import { alignFreezeToFrame } from '../voiceover/frame-align.js'
+import { alignFreezeToFrame, isAfterHold } from '../voiceover/frame-align.js'
 import { runFfmpeg } from '../utils/ffmpeg.js'
 
 /**
@@ -729,11 +729,11 @@ function mergeFreezes(
  */
 function shiftForFreezes(
   originalMs: number,
-  freezes: Array<{ atVideoMs: number; durationMs: number }>,
+  freezes: Array<{ atVideoMs: number; durationMs: number; sourceMs?: number }>,
 ): number {
   let shift = 0
   for (const f of freezes) {
-    if (f.atVideoMs <= originalMs) shift += f.durationMs
+    if (isAfterHold({ ms: originalMs }, f)) shift += f.durationMs
   }
   return originalMs + shift
 }
@@ -831,22 +831,26 @@ export function renderVideo(
       }
     }
   }
-  const allFreezes = mergeFreezes([...voiceoverFreezes, ...approachFreezes])
+  // The video needs coincident holds merged (see mergeFreezes()); overlays
+  // shift by the same total from the unmerged holds, each with its own source,
+  // so an overlay between two holds on one frame lands between them.
+  const holds = [...voiceoverFreezes, ...approachFreezes]
+  const allFreezes = mergeFreezes(holds)
   if (allFreezes.length > 0) {
     videoInput = applyVoiceoverFreezes(videoInput, allFreezes, tmpDir)
     if (trace.clickEvents) {
       for (const ce of trace.clickEvents) {
-        ce.videoTimeMs = shiftForFreezes(ce.videoTimeMs, allFreezes)
+        ce.videoTimeMs = shiftForFreezes(ce.videoTimeMs, holds)
       }
     }
     if (trace.cursorKeyframes) {
       for (const kf of trace.cursorKeyframes) {
         kf.videoTimeSec =
-          shiftForFreezes(kf.videoTimeSec * 1000, allFreezes) / 1000
+          shiftForFreezes(kf.videoTimeSec * 1000, holds) / 1000
       }
     }
     if (trace.highlightEvents && !trace.highlightsOnFreezeClock) {
-      trace.highlightEvents = shiftHighlightsForFreezes(trace.highlightEvents, allFreezes)
+      trace.highlightEvents = shiftHighlightsForFreezes(trace.highlightEvents, holds)
     }
   }
 

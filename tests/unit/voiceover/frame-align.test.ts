@@ -44,6 +44,12 @@ describe('alignMsUpToFrame', () => {
 })
 
 describe('alignFreezeToFrame', () => {
+  it('keeps the unaligned position as sourceMs', () => {
+    // 100ms aligns up to 120ms; an event at 110ms is after the requested hold.
+    expect(alignFreezeToFrame(100, 500, 25).sourceMs).toBe(100)
+    expect(alignNarrationHold(100, 500, 25).sourceMs).toBe(100)
+  })
+
   it('moves the fractional remainder from the position into the duration, then quantises it', () => {
     // 100ms is 2.5 frames at 25fps; the hold starts 20ms later, so the raw
     // hold shrinks by 20ms to 480ms — which is already a whole number of
@@ -70,7 +76,7 @@ describe('alignFreezeToFrame', () => {
 
   it('leaves an already-aligned freeze untouched', () => {
     const r = alignFreezeToFrame(120, 480, 25)
-    expect(r).toEqual({ atVideoMs: 120, durationMs: 480 })
+    expect(r).toEqual({ atVideoMs: 120, durationMs: 480, sourceMs: 120 })
   })
 
   it('clamps the duration at zero rather than going negative', () => {
@@ -81,14 +87,15 @@ describe('alignFreezeToFrame', () => {
   })
 
   it('returns inputs unchanged for a non-positive frame rate', () => {
-    expect(alignFreezeToFrame(100, 500, 0)).toEqual({ atVideoMs: 100, durationMs: 500 })
+    expect(alignFreezeToFrame(100, 500, 0)).toEqual({ atVideoMs: 100, durationMs: 500, sourceMs: 100 })
   })
 
   it('returns inputs unchanged for a NaN or missing frame rate', () => {
-    expect(alignFreezeToFrame(100, 500, NaN)).toEqual({ atVideoMs: 100, durationMs: 500 })
+    expect(alignFreezeToFrame(100, 500, NaN)).toEqual({ atVideoMs: 100, durationMs: 500, sourceMs: 100 })
     expect(alignFreezeToFrame(100, 500, undefined as unknown as number)).toEqual({
       atVideoMs: 100,
       durationMs: 500,
+      sourceMs: 100,
     })
   })
 })
@@ -122,7 +129,7 @@ describe('alignNarrationHold', () => {
   })
 
   it('leaves an already-aligned hold untouched', () => {
-    expect(alignNarrationHold(120, 480, 25)).toEqual({ atVideoMs: 120, durationMs: 480 })
+    expect(alignNarrationHold(120, 480, 25)).toEqual({ atVideoMs: 120, durationMs: 480, sourceMs: 120 })
   })
 
   it('never moves the hold position backwards', () => {
@@ -136,11 +143,12 @@ describe('alignNarrationHold', () => {
   })
 
   it('returns inputs unchanged for a non-positive, NaN, or missing frame rate', () => {
-    expect(alignNarrationHold(100, 500, 0)).toEqual({ atVideoMs: 100, durationMs: 500 })
-    expect(alignNarrationHold(100, 500, NaN)).toEqual({ atVideoMs: 100, durationMs: 500 })
+    expect(alignNarrationHold(100, 500, 0)).toEqual({ atVideoMs: 100, durationMs: 500, sourceMs: 100 })
+    expect(alignNarrationHold(100, 500, NaN)).toEqual({ atVideoMs: 100, durationMs: 500, sourceMs: 100 })
     expect(alignNarrationHold(100, 500, undefined as unknown as number)).toEqual({
       atVideoMs: 100,
       durationMs: 500,
+      sourceMs: 100,
     })
   })
 })

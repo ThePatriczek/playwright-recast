@@ -566,6 +566,7 @@ export class PipelineExecutor {
                 swipeDuration: data.swipeDuration ?? hlDefaults.swipeDuration,
                 fadeOut,
                 ...(untilNarrationEnd ? { untilNarrationEnd } : {}),
+                traceMs: action.startTime as number,
               })
             } catch {
               // skip malformed markers

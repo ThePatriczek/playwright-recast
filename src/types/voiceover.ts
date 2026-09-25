@@ -90,6 +90,12 @@ export interface VoiceoverFreeze {
   atVideoMs: number
   /** How long to hold the frame, in ms. */
   durationMs: number
+  /** Where the hold was asked for, before frame alignment moved `atVideoMs`
+   *  up to a frame boundary. Events after it belong after the hold. */
+  sourceMs?: number
+  /** Raw trace time of the marker that asked for the hold, when known. Orders
+   *  events against it exactly; rounded video times can tie or swap. */
+  sourceTraceMs?: number
 }
 
 /** Trace after voiceover has been generated */
