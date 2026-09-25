@@ -885,10 +885,6 @@ export function renderVideo(
   const graphInputRes = probeResolution(videoInput)
   const graphInputFps = probeVideoFps(videoInput)
 
-  const maxZoom = Math.max(1, ...(trace.subtitles ?? []).map((s) => s.zoom?.level ?? 1))
-  const upscale = upscaleWarning(graphInputRes, resolution, maxZoom)
-  if (upscale) console.warn(`  Warning: ${upscale}`)
-
   // Highlights first, so one is visible for exactly as long as it was
   // configured for — and never alongside the next one.
   if (trace.highlightEvents && trace.highlightEvents.length > 0) {
@@ -933,6 +929,10 @@ export function renderVideo(
   // Zoom operates on the video with baked-in overlays — same invariant as
   // before the collapse — and is what scales to the target resolution.
   if (trace.voiceover) moveZoomsToSpokenNarration(trace.voiceover.entries)
+  // After the move above, which can drop a stale zoom.
+  const maxZoom = Math.max(1, ...(trace.subtitles ?? []).map((s) => s.zoom?.level ?? 1))
+  const upscale = upscaleWarning(graphInputRes, resolution, maxZoom)
+  if (upscale) console.warn(`  Warning: ${upscale}`)
   const zoomStage = hasZoom && trace.subtitles
     ? buildZoomStage(
       vLabel,

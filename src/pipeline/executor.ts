@@ -25,9 +25,7 @@ import { processSpeed } from '../speed/speed-processor.js'
 import { generateSubtitles } from '../subtitles/subtitle-generator.js'
 import { parseSrt } from '../subtitles/srt-parser.js'
 import { generateVoiceover } from '../voiceover/voiceover-processor.js'
-import { renderVideo, detectBlankLeadIn, probeVideoFps, probeResolution, type RenderableTrace } from '../render/renderer.js'
-import { upscaleWarning } from '../render/sharpness.js'
-import { resolveResolution } from '../types/render.js'
+import { renderVideo, detectBlankLeadIn, probeVideoFps, type RenderableTrace } from '../render/renderer.js'
 import {
   resolveBlankLeadInMs,
   shiftSubtitlesForBlankLead,
@@ -180,10 +178,6 @@ export class PipelineExecutor {
       renderVideo(traceWithVideo, { ...renderConfig, format: 'mp4', codec: 'libx264', burnSubtitles: false, embedSubtitles: Boolean(state.subtitled?.subtitles.length) }, baseVideo, directorDir)
       try {
         const report = await directVideo(baseVideo, outputPath, state.director.provider, state.director.options, renderConfig, directorDir, Boolean(state.voiceovered))
-        // The camera zooms after the base render, so only its plan knows how far.
-        const cameraZoom = Math.max(1, ...report.keyframes.map((k) => k.zoom))
-        const upscale = cameraZoom > 1 && upscaleWarning(probeResolution(traceWithVideo.sourceVideoPath!), resolveResolution(renderConfig.resolution), cameraZoom)
-        if (upscale) console.warn(`  Warning: ${upscale}`)
         if (state.subtitled) state.subtitled.subtitles = report.subtitles
       } catch (error) {
         state.parsed?.frameReader.dispose()
