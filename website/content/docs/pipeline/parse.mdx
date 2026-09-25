@@ -55,6 +55,7 @@ A zoom enlarges source pixels, so a 1920px recording rendered at 1440p with a 1.
 
 ```typescript
 // playwright.config.ts
+import { defineConfig } from '@playwright/test'
 import { recastVideo } from 'playwright-recast/config'
 
 export default defineConfig({
@@ -65,7 +66,7 @@ export default defineConfig({
 })
 ```
 
-The page still lays out at 1920x1080, but the video is recorded at 3840x2160. `recastVideo()` sets the three things that have to agree, each of which fails silently on its own: `--force-device-scale-factor` (headless Chromium ignores `deviceScaleFactor` for the video), `video.size` of viewport x scale (Playwright pads a smaller frame with gray instead of scaling it), and headless mode (headed Chromium follows the OS display scale). Decimal scales work: for a sharp 1.8x zoom into 1440p, `scale: 2.4` records 4608x2592. In general, `scale = output width x max zoom / viewport width`. Chromium only.
+The page still lays out at 1920x1080, but the video is recorded at 3840x2160. `recastVideo()` sets the three things that have to agree, each of which fails silently on its own: `--force-device-scale-factor` (headless Chromium ignores `deviceScaleFactor` for the video), `video.size` of viewport x scale (Playwright pads a smaller frame with gray instead of scaling it), and headless mode (headed Chromium follows the OS display scale). Decimal scales work: for a sharp 1.8x zoom into 1440p, `scale: 2.4` records 4608x2592. In general, `scale = max zoom x max(output width / viewport width, output height / viewport height)`. Chromium only.
 
 A higher scale costs render time and disk, growing with the recorded pixels (scale²). The render grows less than that, since voiceover and timing don't depend on it: 2 -> 2.4 is 44% more pixels and rendered 25% slower on a 3.5-minute screencast.
 
