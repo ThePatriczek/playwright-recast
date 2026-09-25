@@ -123,6 +123,53 @@ describe('makeHighlightsExclusive()', () => {
 })
 
 describe('shiftHighlightsForFreezes()', () => {
+  it('places a mark set right after a hold was asked for after the hold', () => {
+    // waitForNarration() at 1010ms asks for a 3000ms hold; frame alignment
+    // moves it to 1040ms. A mark at 1015ms, right after, must still follow it.
+    const [mark] = shiftHighlightsForFreezes(
+      [makeEvent({ videoTimeMs: 1015, endTimeMs: 3015 })],
+      [{ atVideoMs: 1040, durationMs: 3000, sourceMs: 1010 }],
+    )
+
+    expect(mark!.videoTimeMs).toBe(4015)
+  })
+
+  it('orders by raw trace time where rounded video times swap', () => {
+    // highlight() 0.5ms before waitForNarration(), but its video time came out
+    // 1ms after the hold's.
+    const [mark] = shiftHighlightsForFreezes(
+      [makeEvent({ videoTimeMs: 1011, endTimeMs: 3011, traceMs: 500.7 })],
+      [{ atVideoMs: 1040, durationMs: 3000, sourceMs: 1010, sourceTraceMs: 501.2 }],
+    )
+
+    expect(mark!.videoTimeMs).toBe(1011)
+  })
+
+  it('places a mark between two holds on one frame after the first only', () => {
+    // Two narrations closed 15ms apart align onto the same frame; the mark
+    // set between them follows the first hold, not the second.
+    const [mark] = shiftHighlightsForFreezes(
+      [makeEvent({ videoTimeMs: 1025, endTimeMs: 3025, traceMs: 510 })],
+      [
+        { atVideoMs: 1040, durationMs: 3000, sourceMs: 1010, sourceTraceMs: 500 },
+        { atVideoMs: 1040, durationMs: 5000, sourceMs: 1026, sourceTraceMs: 516 },
+      ],
+    )
+
+    expect(mark!.videoTimeMs).toBe(4025)
+  })
+
+  it('keeps a mark set just before its narration, rounded onto the hold, before it', () => {
+    // highlight(), narrate(), waitForNarration() within one millisecond: the
+    // mark and the requested hold round to the same 1010ms.
+    const [mark] = shiftHighlightsForFreezes(
+      [makeEvent({ videoTimeMs: 1010, endTimeMs: 3010 })],
+      [{ atVideoMs: 1040, durationMs: 3000, sourceMs: 1010 }],
+    )
+
+    expect(mark!.videoTimeMs).toBe(1010)
+  })
+
   it('keeps the configured duration when a freeze lands inside the window', () => {
     const [shifted] = shiftHighlightsForFreezes(
       [makeEvent({ videoTimeMs: 1000, endTimeMs: 3000 })],

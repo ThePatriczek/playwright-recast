@@ -566,6 +566,7 @@ export class PipelineExecutor {
                 swipeDuration: data.swipeDuration ?? hlDefaults.swipeDuration,
                 fadeOut,
                 ...(untilNarrationEnd ? { untilNarrationEnd } : {}),
+                traceMs: action.startTime as number,
               })
             } catch {
               // skip malformed markers
@@ -903,6 +904,7 @@ export class PipelineExecutor {
             x: rc.x,
             y: rc.y,
             videoTimeMs: Math.max(0, Math.round(remapClickTime(rc.traceTimeMs))),
+            traceMs: rc.traceTimeMs,
           }))
 
           state.clickEvents = clickEvents

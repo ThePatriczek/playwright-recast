@@ -27,4 +27,6 @@ export interface ClickEvent {
   y: number
   /** Timestamp in video time (ms), after speed remapping */
   videoTimeMs: number
+  /** Raw trace time, to order the click against holds where rounded video times tie */
+  traceMs?: number
 }

@@ -30,7 +30,7 @@ import { chunkSubtitles } from '../subtitles/subtitle-chunker.js'
 import { filterRenderableSubtitles } from '../subtitles/renderable.js'
 import { interpolateVideo } from '../interpolate/interpolator.js'
 import { isSpeedClockAuthority } from '../speed/clock-authority.js'
-import { alignFreezeToFrame } from '../voiceover/frame-align.js'
+import { alignFreezeToFrame, isAfterHold } from '../voiceover/frame-align.js'
 import { runFfmpeg } from '../utils/ffmpeg.js'
 
 /**
@@ -729,11 +729,12 @@ function mergeFreezes(
  */
 function shiftForFreezes(
   originalMs: number,
-  freezes: Array<{ atVideoMs: number; durationMs: number }>,
+  freezes: Array<{ atVideoMs: number; durationMs: number; sourceMs?: number; sourceTraceMs?: number }>,
+  traceMs?: number,
 ): number {
   let shift = 0
   for (const f of freezes) {
-    if (f.atVideoMs <= originalMs) shift += f.durationMs
+    if (isAfterHold({ ms: originalMs, traceMs }, f)) shift += f.durationMs
   }
   return originalMs + shift
 }
@@ -814,7 +815,7 @@ export function renderVideo(
   // voiceover stage so the audio + subtitles stay in sync, arriving here inside
   // trace.voiceover.freezes. Only when there is no voiceover do we compute them
   // here — there's no audio to keep in sync, but the video still needs the hold.
-  const approachFreezes: Array<{ atVideoMs: number; durationMs: number }> = []
+  const approachFreezes: Array<{ atVideoMs: number; durationMs: number; sourceMs: number }> = []
   if (!trace.voiceover && trace.cursorKeyframes) {
     const approachMs = trace.cursorOverlayConfig?.approachMs ?? 500
     // Align here rather than upstream: this path has no audio or subtitles to
@@ -823,30 +824,32 @@ export function renderVideo(
     const approachFps = probeVideoFps(videoInput)
     for (const kf of trace.cursorKeyframes) {
       if (kf.approach) {
-        approachFreezes.push(alignFreezeToFrame(
-          Math.max(0, Math.round(kf.videoTimeSec * 1000) - 2), // -2ms: ripple + cursor shift into the hold
-          Math.round(approachMs),
-          approachFps,
-        ))
+        const at = Math.round(kf.videoTimeSec * 1000) - 2 // -2ms: ripple + cursor shift into the hold
+        // Unclamped source, so a click at 0 still counts as after its hold.
+        approachFreezes.push({ ...alignFreezeToFrame(Math.max(0, at), Math.round(approachMs), approachFps), sourceMs: at })
       }
     }
   }
-  const allFreezes = mergeFreezes([...voiceoverFreezes, ...approachFreezes])
+  // The video needs coincident holds merged (see mergeFreezes()); overlays
+  // shift by the same total from the unmerged holds, each with its own source,
+  // so an overlay between two holds on one frame lands between them.
+  const holds = [...voiceoverFreezes, ...approachFreezes]
+  const allFreezes = mergeFreezes(holds)
   if (allFreezes.length > 0) {
     videoInput = applyVoiceoverFreezes(videoInput, allFreezes, tmpDir)
     if (trace.clickEvents) {
       for (const ce of trace.clickEvents) {
-        ce.videoTimeMs = shiftForFreezes(ce.videoTimeMs, allFreezes)
+        ce.videoTimeMs = shiftForFreezes(ce.videoTimeMs, holds, ce.traceMs)
       }
     }
     if (trace.cursorKeyframes) {
       for (const kf of trace.cursorKeyframes) {
         kf.videoTimeSec =
-          shiftForFreezes(kf.videoTimeSec * 1000, allFreezes) / 1000
+          shiftForFreezes(kf.videoTimeSec * 1000, holds) / 1000
       }
     }
     if (trace.highlightEvents && !trace.highlightsOnFreezeClock) {
-      trace.highlightEvents = shiftHighlightsForFreezes(trace.highlightEvents, allFreezes)
+      trace.highlightEvents = shiftHighlightsForFreezes(trace.highlightEvents, holds)
     }
   }
 

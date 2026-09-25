@@ -25,6 +25,10 @@ export interface SubtitleEntry {
   keyword?: string
   /** Optional zoom instruction for this step */
   zoom?: StepZoom
+  /** Raw trace time of the marker that closes this narration's window (the
+   *  next narrate() or waitForNarration()). Orders overlays against its hold
+   *  exactly, where rounded video times can tie. */
+  endTraceMs?: number
 }
 
 /** Subtitle format */
