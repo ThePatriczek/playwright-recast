@@ -5,6 +5,8 @@ export interface RecastVideoOptions {
   viewport: { width: number; height: number }
   /**
    * Device pixels per CSS pixel in the recording, at least 1; decimals work.
+   * Rounded up to the next scale that gives whole, even device pixels, by at
+   * most 2 / gcd(width, height): 1.3334 records at 1.35 for 1920x1080.
    * Pixel-sharp while `scale x viewport >= output x zoom` on both axes, so pick
    * `max(1, max zoom x max(output width / viewport width, output height /
    * viewport height))` (2.4 for 1.8x at 1440p from 1920x1080). Costs grow
@@ -22,6 +24,19 @@ export interface RecastVideoUse {
   headless: true
   launchOptions: { args: string[] }
   video: { mode: 'on'; size: { width: number; height: number } }
+}
+
+const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b))
+
+/**
+ * The smallest scale >= `scale` at which the viewport is whole, even device
+ * pixels on both axes, i.e. a multiple of 2 / gcd(width, height). Only those
+ * record exactly: VP8 (4:2:0) takes even sizes only, and any other size makes
+ * Playwright pad Chromium's frame gray or rescale it.
+ */
+function exactScale({ width, height }: { width: number; height: number }, scale: number): number {
+  const g = gcd(width, height)
+  return (2 * Math.ceil((scale * g) / 2 - 1e-9)) / g
 }
 
 /**
@@ -44,17 +59,21 @@ export interface RecastVideoUse {
  * ```
  */
 export function recastVideo(options: RecastVideoOptions): RecastVideoUse {
-  const scale = options.scale ?? 2
-  if (!Number.isFinite(scale) || scale < 1) {
-    throw new Error(`recastVideo: scale must be a number >= 1, got ${scale}`)
+  const requested = options.scale ?? 2
+  if (!Number.isFinite(requested) || requested < 1) {
+    throw new Error(`recastVideo: scale must be a number >= 1, got ${requested}`)
   }
   const { width, height } = options.viewport
+  if (!Number.isInteger(width) || !Number.isInteger(height)) {
+    throw new Error(`recastVideo: viewport must be whole CSS pixels, got ${width}x${height}`)
+  }
+  const scale = exactScale(options.viewport, requested)
+  const size = { width: Math.round(width * scale), height: Math.round(height * scale) }
   return {
     viewport: { width, height },
     deviceScaleFactor: scale,
     headless: true,
     launchOptions: { args: [`--force-device-scale-factor=${scale}`] },
-    // Chromium rounds a decimal scale's frame to whole pixels; the video must match.
-    video: { mode: 'on', size: { width: Math.round(width * scale), height: Math.round(height * scale) } },
+    video: { mode: 'on', size },
   } satisfies NonNullable<PlaywrightTestConfig['use']>
 }

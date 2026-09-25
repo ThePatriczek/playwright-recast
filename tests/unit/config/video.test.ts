@@ -18,9 +18,24 @@ describe('recastVideo()', () => {
     expect(use.launchOptions).toEqual({ args: ['--force-device-scale-factor=3'] })
   })
 
-  it('rounds the video size for a decimal scale', () => {
-    const use = recastVideo({ viewport: { width: 1920, height: 1080 }, scale: 1.3334 })
-    expect(use.video).toEqual({ mode: 'on', size: { width: 2560, height: 1440 } })
+  it('takes a decimal scale that gives whole, even pixels as is', () => {
+    const use = recastVideo({ viewport: { width: 1920, height: 1080 }, scale: 4 / 3 })
+    expect(use.video.size).toEqual({ width: 2560, height: 1440 })
+  })
+
+  it.each([
+    [{ width: 1920, height: 1080 }, 1.3334, 1.35, { width: 2592, height: 1458 }],
+    [{ width: 320, height: 240 }, 1.33, 1.35, { width: 432, height: 324 }],
+    [{ width: 1366, height: 768 }, 1.5, 2, { width: 2732, height: 1536 }],
+  ])('rounds %o x %s up to %s, the next whole, even size', (viewport, requested, scale, size) => {
+    const use = recastVideo({ viewport, scale: requested })
+    expect(use.deviceScaleFactor).toBeCloseTo(scale, 10)
+    expect(use.launchOptions.args).toEqual([`--force-device-scale-factor=${use.deviceScaleFactor}`])
+    expect(use.video.size).toEqual(size)
+  })
+
+  it('rejects a fractional viewport', () => {
+    expect(() => recastVideo({ viewport: { width: 1920.5, height: 1080 } })).toThrow(/whole CSS pixels/)
   })
 
   it.each([0.5, 0, -2, Number.NaN])('rejects scale %s', (scale) => {

@@ -13,7 +13,7 @@ const VIEWPORT = { width: 320, height: 240 }
 const available = fs.existsSync(chromium.executablePath())
 let tmpDir: string
 
-/** Record a full-bleed red page with recastVideo()'s options. */
+/** Record a black page with a red marker in its bottom-right corner. */
 async function record(scale: number): Promise<string> {
   const use = recastVideo({ viewport: VIEWPORT, scale })
   const browser = await chromium.launch({ headless: use.headless, args: use.launchOptions.args })
@@ -23,7 +23,7 @@ async function record(scale: number): Promise<string> {
     recordVideo: { dir: tmpDir, size: use.video.size },
   })
   const page = await context.newPage()
-  await page.setContent('<body style="margin:0;background:#f00"></body>')
+  await page.setContent('<body style="margin:0;background:#000"><div style="position:fixed;right:0;bottom:0;width:8px;height:8px;background:#f00"></div></body>')
   await page.waitForTimeout(500)
   const video = page.video()!
   await context.close()
@@ -38,7 +38,7 @@ function size(file: string): { width: number; height: number } {
   return { width: width!, height: height! }
 }
 
-/** RGB of the bottom-right pixel (2x2 crop: 4:2:0 needs even sizes): page content, or gray padding. */
+/** RGB of the bottom-right pixel (2x2 crop: 4:2:0 needs even sizes): red marker when exact, gray when padded, black when cropped. */
 function bottomRight(file: string): number[] {
   const rgb = execFileSync('ffmpeg', [
     '-v', 'error', '-ss', '0.3', '-i', file, '-frames:v', '1',
@@ -51,9 +51,10 @@ describe.skipIf(!available)('recastVideo() recording', () => {
   beforeAll(() => { tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'recast-video-')) })
   afterAll(() => { fs.rmSync(tmpDir, { recursive: true, force: true }) })
 
-  it.each([2, 1.5])('records the page at viewport x %s, unpadded', async (scale) => {
+  // 1.33 gives 425.6 x 319.2 and records at 1.35.
+  it.each([2, 1.5, 1.33])('records the page at viewport x %s, unpadded and uncropped', async (scale) => {
     const file = await record(scale)
-    expect(size(file)).toEqual({ width: VIEWPORT.width * scale, height: VIEWPORT.height * scale })
+    expect(size(file)).toEqual(recastVideo({ viewport: VIEWPORT, scale }).video.size)
     const [r, g, b] = bottomRight(file)
     expect(r).toBeGreaterThan(200)
     expect(g).toBeLessThan(60)
