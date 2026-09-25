@@ -19,7 +19,7 @@ describe('stabilizePan()', () => {
   })
 
   it('measures from the new camera position after a pan', () => {
-    const out = stabilizePan([kf(0, 0.5, 0.3, config), kf(1000, 0.5, 0.7), kf(2000, 0.5, 0.6)], 0.3, config)
+    const out = stabilizePan([kf(0, 0.5, 0.3), kf(1000, 0.5, 0.7), kf(2000, 0.5, 0.6)], 0.3, config)
     expect(centres(out)).toEqual([[0.5, 0.3], [0.5, 0.7], [0.5, 0.7]])
   })
 
