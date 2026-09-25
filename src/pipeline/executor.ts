@@ -12,6 +12,7 @@ import {
   ZOOM_TITLE_PREFIX,
 } from '../helpers.js'
 import { buildNarrationSubtitles, isNarrationBoundaryTitle } from './narration-subtitles.js'
+import { cueForZoomMarker } from './zoom-markers.js'
 import {
   parseClickMarkersFromRecordingContext,
   resolveClickMarkers,
@@ -587,21 +588,20 @@ export class PipelineExecutor {
                 const data = JSON.parse(action.title.slice(ZOOM_TITLE_PREFIX.length)) as {
                   x: number; y: number; level: number
                 }
-                const tMs = toVideoMs(action.startTime as number)
-                const sub = state.subtitled.subtitles.find(
-                  (s) => tMs >= s.startMs && tMs < s.endMs,
-                )
+                // Cues start on whole ms; unrounded, a marker in the same ms as its narrate() misses it.
+                const tMs = Math.round(toVideoMs(action.startTime as number))
+                const sub = cueForZoomMarker(state.subtitled.subtitles, tMs)
                 if (sub) {
-                  // Start zoom at the actual zoom() marker time within the
-                  // narration window (not at the narration's start), so the
-                  // zoom kicks in only once the target is visible. The
+                  // Start at the zoom() marker when it falls inside the cue,
+                  // so the zoom kicks in only once the target is visible; a
+                  // marker set before its narration starts with it. The
                   // renderer holds the zoom until `sub.endMs` since we leave
                   // `zoom.endMs` undefined.
                   sub.zoom = {
                     x: data.x,
                     y: data.y,
                     level: data.level,
-                    startMs: Math.round(tMs),
+                    startMs: Math.max(tMs, sub.startMs),
                   }
                 }
               } catch {
