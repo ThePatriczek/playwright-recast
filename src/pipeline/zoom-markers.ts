@@ -29,7 +29,9 @@ export function moveZoomsToSpokenNarration(
   entries: ReadonlyArray<{ subtitle: SubtitleEntry; outputStartMs: number; outputEndMs: number; spokenEndMs?: number }>,
 ): void {
   const sorted = [...entries].sort((a, b) => a.outputStartMs - b.outputStartMs)
-  for (const entry of sorted) {
+  // Zooms only move forward; last first, so a narration whose own stale zoom
+  // moves on is free for the one moving in.
+  for (const entry of [...sorted].reverse()) {
     const zoom = entry.subtitle.zoom
     if (!zoom || zoom.endMs !== undefined) continue
     const t = zoom.startMs ?? entry.subtitle.startMs

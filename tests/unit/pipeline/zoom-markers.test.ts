@@ -61,6 +61,20 @@ describe('moveZoomsToSpokenNarration()', () => {
     expect(s2.zoom).toBeUndefined()
   })
 
+  it('moves chained stale zooms each to the next narration', () => {
+    // Both narrations are spoken over a wait; each zoom comes after its audio.
+    const zoom = (x: number, startMs: number) => ({ x, y: 0.5, level: 1.5, startMs })
+    const s1: SubtitleEntry = { index: 1, startMs: 1000, endMs: 10_000, text: 'one', zoom: zoom(0.1, 9_000) }
+    const s2: SubtitleEntry = { index: 2, startMs: 10_000, endMs: 20_000, text: 'two', zoom: zoom(0.2, 19_000) }
+    const s3: SubtitleEntry = { index: 3, startMs: 20_000, endMs: 24_000, text: 'three' }
+    moveZoomsToSpokenNarration([
+      { subtitle: s1, outputStartMs: 1000, outputEndMs: 10_000, spokenEndMs: 3000 },
+      { subtitle: s2, outputStartMs: 10_000, outputEndMs: 20_000, spokenEndMs: 12_000 },
+      { subtitle: s3, outputStartMs: 20_000, outputEndMs: 24_000, spokenEndMs: 24_000 },
+    ])
+    expect([s1.zoom?.x, s2.zoom?.x, s3.zoom?.x]).toEqual([undefined, 0.1, 0.2])
+  })
+
   it('leaves a narration its own zoom and drops the stale one', () => {
     const { s1, s2 } = setup(9_500, true)
     expect(s1.zoom).toBeUndefined()
