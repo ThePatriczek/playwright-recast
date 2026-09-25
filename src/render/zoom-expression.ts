@@ -36,12 +36,12 @@ type Segment =
  *
  * Uses ffmpeg `zoompan` filter with `d=1` (1:1 frame mapping for video).
  * Time is derived from `in/FPS` (frame counter / fps).
- * Zoompan `z` = zoom level, `x`/`y` = top-left crop position in zoomed coordinates.
+ * Zoompan `z` = zoom level, `x`/`y` = top-left crop position in input pixels.
  *
  * Zoompan coordinate system:
  * - `z` = zoom level (1.0 = no zoom, 1.5 = 1.5x)
  * - `x`, `y` = top-left corner of the visible region in INPUT pixels
- * - Visible region = iw/z × ih/z input pixels, scaled to s (output size)
+ * - Visible region = iw/z x ih/z input pixels, scaled to s (output size)
  * - To center at (cx, cy) fraction: x = cx*iw - iw/z/2, y = cy*ih - ih/z/2
  *   (clamped to 0 .. iw - iw/z for x, 0 .. ih - ih/z for y)
  */
