@@ -9,6 +9,7 @@
 
 ### Bug fixes
 
+- **A `zoom()` set just before its `narrate()` was dropped, or zoomed at the wrong line** - a zoom now belongs to the narration whose audio is playing, else the next one, and starts with it.
 - **Zoom missed its target unless pinned to a frame edge** - the zoompan crop used zoomed instead of input coordinates, off by about the zoom factor. Most visible with a source larger than the output.
 
 ## 0.21.0 (2026-08-28)

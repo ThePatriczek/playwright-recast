@@ -3,6 +3,7 @@ import * as path from 'node:path'
 import { execFileSync } from 'node:child_process'
 import type { RenderConfig } from '../types/render.js'
 import { resolveResolution } from '../types/render.js'
+import { moveZoomsToSpokenNarration } from '../pipeline/zoom-markers.js'
 import type { SubtitleEntry } from '../types/subtitle.js'
 import type { SpeedSegment } from '../types/speed.js'
 import type { ParsedTrace } from '../types/trace.js'
@@ -82,7 +83,7 @@ export interface RenderableTrace extends ParsedTrace {
   subtitles?: SubtitleEntry[]
   voiceover?: {
     audioTrackPath: string
-    entries: Array<{ outputStartMs: number; outputEndMs: number; spokenEndMs?: number }>
+    entries: Array<{ subtitle: SubtitleEntry; outputStartMs: number; outputEndMs: number; spokenEndMs?: number }>
     totalDurationMs: number
     freezes?: Array<{ atVideoMs: number; durationMs: number }>
   }
@@ -926,6 +927,7 @@ export function renderVideo(
 
   // Zoom operates on the video with baked-in overlays — same invariant as
   // before the collapse — and is what scales to the target resolution.
+  if (trace.voiceover) moveZoomsToSpokenNarration(trace.voiceover.entries)
   const zoomStage = hasZoom && trace.subtitles
     ? buildZoomStage(
       vLabel,
