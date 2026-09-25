@@ -3,29 +3,20 @@ import { execFileSync } from 'node:child_process'
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import { chromium, type Browser } from 'playwright-core'
+import { chromium } from 'playwright-core'
 import { recastVideo } from '../../../src/config/video'
 
 // Each of the three settings fails silently on its own, so only a real
-// recording shows they agree. Skipped where Chromium is not installed.
+// recording shows they agree. Skipped where Chromium is not installed; a
+// launch failure with these options fails the test.
 const VIEWPORT = { width: 320, height: 240 }
+const available = fs.existsSync(chromium.executablePath())
 let tmpDir: string
-
-async function launch(scale: number): Promise<Browser | undefined> {
-  const use = recastVideo({ viewport: VIEWPORT, scale })
-  try {
-    return await chromium.launch({ headless: use.headless, args: use.launchOptions.args })
-  } catch {
-    return undefined
-  }
-}
-
-const available = await launch(1).then(async (b) => { await b?.close(); return b !== undefined })
 
 /** Record a full-bleed red page with recastVideo()'s options. */
 async function record(scale: number): Promise<string> {
   const use = recastVideo({ viewport: VIEWPORT, scale })
-  const browser = (await launch(scale))!
+  const browser = await chromium.launch({ headless: use.headless, args: use.launchOptions.args })
   const context = await browser.newContext({
     viewport: use.viewport,
     deviceScaleFactor: use.deviceScaleFactor,

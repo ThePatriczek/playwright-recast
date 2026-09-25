@@ -6,10 +6,10 @@ export interface RecastVideoOptions {
   /**
    * Device pixels per CSS pixel in the recording, at least 1; decimals work.
    * Pixel-sharp while `scale x viewport >= output x zoom` on both axes, so pick
-   * `max zoom x max(output width / viewport width, output height / viewport
-   * height)` (2.4 for 1.8x at 1440p from 1920x1080). Costs grow with the
-   * pixels (scale²), the render less than that: 2 -> 2.4 is 44% more pixels
-   * and rendered 25% slower in one measurement.
+   * `max(1, max zoom x max(output width / viewport width, output height /
+   * viewport height))` (2.4 for 1.8x at 1440p from 1920x1080). Costs grow
+   * with the pixels (scale²), the render less than that: 2 -> 2.4 is 44% more
+   * pixels and rendered 25% slower in one measurement.
    * Default 2.
    */
   scale?: number
