@@ -3,6 +3,7 @@ import * as path from 'node:path'
 import { execFileSync } from 'node:child_process'
 import type { RenderConfig } from '../types/render.js'
 import { resolveResolution } from '../types/render.js'
+import { upscaleWarning } from './sharpness.js'
 import { moveZoomsToSpokenNarration } from '../pipeline/zoom-markers.js'
 import type { SubtitleEntry } from '../types/subtitle.js'
 import type { SpeedSegment } from '../types/speed.js'
@@ -883,6 +884,10 @@ export function renderVideo(
   // No overlay stage resizes or retimes, so probe the input once.
   const graphInputRes = probeResolution(videoInput)
   const graphInputFps = probeVideoFps(videoInput)
+
+  const maxZoom = Math.max(1, ...(trace.subtitles ?? []).map((s) => s.zoom?.level ?? 1))
+  const upscale = upscaleWarning(graphInputRes, resolution, maxZoom)
+  if (upscale) console.warn(`  Warning: ${upscale}`)
 
   // Highlights first, so one is visible for exactly as long as it was
   // configured for — and never alongside the next one.

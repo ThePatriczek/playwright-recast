@@ -46,6 +46,10 @@
       "types": "./dist/suite/config.d.ts",
       "default": "./dist/suite/config.js"
     },
+    "./config": {
+      "types": "./dist/config/video.d.ts",
+      "default": "./dist/config/video.js"
+    },
     "./providers/openai": {
       "types": "./dist/voiceover/providers/openai.d.ts",
       "default": "./dist/voiceover/providers/openai.js"

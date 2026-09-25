@@ -172,6 +172,10 @@ await Recast
   .toFile('demo.mp4')
 ```
 
+## Keeping zoomed text sharp
+
+A zoom enlarges source pixels. To stay sharp, record at `output size x zoom` or more, e.g. with `recastVideo()` from `playwright-recast/config` - see [Sharp text when zooming](/docs/pipeline/parse#sharp-text-when-zooming). The renderer warns when it has to upscale.
+
 ## Next steps
 
 - [Click Effects and Cursor](/docs/guides/click-effects-and-cursor) -- visual click highlighting with cursor animation
