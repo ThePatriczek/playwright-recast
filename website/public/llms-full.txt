@@ -2159,8 +2159,8 @@ Render animated marker overlays on text captured by the `highlight()` helper.
 |--------|------|---------|-------------|
 | `color` | `string` | `'#FFEB3B'` | Highlight color (hex) |
 | `opacity` | `number` | `0.35` | Highlight opacity 0.0-1.0 |
-| `duration` | `number` | `3000` | Visibility duration in ms |
-| `fadeOut` | `number` | `500` | Fade-out duration in ms |
+| `duration` | `number` | `2000` | Visibility duration in ms |
+| `fadeOut` | `number` | `0` | Fade-out duration in ms |
 | `swipeDuration` | `number` | `300` | Swipe-in animation duration in ms |
 | `padding` | `{ x?: number; y?: number }` | — | Padding around bounding box in px |
 | `filter` | `(highlight: HighlightEvent) => boolean` | — | Filter which highlights to render |
@@ -2811,8 +2811,8 @@ interface TextProcessingRule {
 interface TextHighlightConfig {
   color?: string                            // Default: '#FFEB3B'
   opacity?: number                          // Default: 0.35
-  duration?: number                         // Default: 3000
-  fadeOut?: number                          // Default: 500
+  duration?: number                         // Default: 2000
+  fadeOut?: number                          // Default: 0
   swipeDuration?: number                   // Default: 300
   padding?: { x?: number; y?: number }
   filter?: (highlight: HighlightEvent) => boolean
@@ -3611,8 +3611,8 @@ await highlight(paragraph, { text: 'important detail' })
 | `opts.text` | `string` | `undefined` | Specific text to highlight (substring match). If omitted, highlights the entire element. |
 | `opts.color` | `string` | `'#FFEB3B'` | Highlight color as hex `#RRGGBB` |
 | `opts.opacity` | `number` | `0.35` | Highlight opacity (0.0--1.0) |
-| `opts.duration` | `number` | `3000` | Visibility duration in milliseconds |
-| `opts.fadeOut` | `number` | `500` | Fade out duration in milliseconds |
+| `opts.duration` | `number` | `2000` | Visibility duration in milliseconds |
+| `opts.fadeOut` | `number` | `0` | Fade out duration in milliseconds |
 | `opts.swipeDuration` | `number` | `300` | Swipe-in animation duration in milliseconds |
 
 ## Highlighting specific text

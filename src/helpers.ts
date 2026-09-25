@@ -251,10 +251,10 @@ export async function zoom(
  * @param opts.text Specific text to highlight (substring). If omitted, highlights entire element.
  * @param opts.color Highlight color as hex '#RRGGBB' (default: '#FFEB3B' yellow)
  * @param opts.opacity Opacity 0.0–1.0 (default: 0.35)
- * @param opts.duration Visibility duration in ms (default: 3000), or `'narration'` to
+ * @param opts.duration Visibility duration in ms (default: 2000), or `'narration'` to
  *   stay until the narration it belongs to has been spoken: the one playing when
  *   the mark appears, else the next one. Falls back to the default without voiceover.
- * @param opts.fadeOut Fade out duration in ms (default: 500)
+ * @param opts.fadeOut Fade out duration in ms (default: 0)
  * @param opts.swipeDuration Swipe animation duration in ms (default: 300)
  */
 export async function highlight(
