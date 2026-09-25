@@ -30,8 +30,8 @@ describe('cueForZoomMarker()', () => {
 describe('moveZoomsToSpokenNarration()', () => {
   // Narration 1 is spoken over a wait: its audio ends at 3000 but its
   // subtitle stays open until narration 2 starts at 10000.
-  const setup = (zoomAt: number, ownZoomOn2 = false) => {
-    const zoom = { x: 0.4, y: 0.6, level: 1.3 }
+  const setup = (zoomAt: number, ownZoomOn2 = false, zoomEnd?: number) => {
+    const zoom = { x: 0.4, y: 0.6, level: 1.3, ...(zoomEnd !== undefined ? { endMs: zoomEnd } : {}) }
     const s1: SubtitleEntry = { index: 1, startMs: 1000, endMs: 10_000, text: 'planning', zoom: { ...zoom, startMs: zoomAt } }
     const s2: SubtitleEntry = { index: 2, startMs: 10_000, endMs: 14_000, text: 'answer', ...(ownZoomOn2 ? { zoom: { x: 0.1, y: 0.1, level: 2, startMs: 11_000 } } : {}) }
     // Silence pads narration 1's cue to 10000; the speech ends at 3000.
@@ -52,6 +52,12 @@ describe('moveZoomsToSpokenNarration()', () => {
   it('keeps a zoom set while its narration is spoken', () => {
     const { s1, s2 } = setup(2_000)
     expect(s1.zoom?.startMs).toBe(2_000)
+    expect(s2.zoom).toBeUndefined()
+  })
+
+  it('keeps an autoZoom() window, which follows the actions', () => {
+    const { s1, s2 } = setup(9_500, false, 10_000)
+    expect(s1.zoom).toEqual({ x: 0.4, y: 0.6, level: 1.3, startMs: 9_500, endMs: 10_000 })
     expect(s2.zoom).toBeUndefined()
   })
 

@@ -21,8 +21,9 @@ export function cueForZoomMarker<T extends Pick<SubtitleEntry, 'startMs' | 'endM
  * marker, so one spoken over a wait still owned a zoom set after its audio
  * had ended, and zoomed at the end of its window instead of during the line
  * the zoom was meant for. A narration that already has a zoom of its own
- * keeps it: that one was set later. Mutates the subtitles, which the entries
- * reference, like the voiceover stage itself.
+ * keeps it: that one was set later. A zoom with its own `endMs` (autoZoom())
+ * follows the actions, not the narration, and stays. Mutates the subtitles,
+ * which the entries reference, like the voiceover stage itself.
  */
 export function moveZoomsToSpokenNarration(
   entries: ReadonlyArray<{ subtitle: SubtitleEntry; outputStartMs: number; outputEndMs: number; spokenEndMs?: number }>,
@@ -30,7 +31,7 @@ export function moveZoomsToSpokenNarration(
   const sorted = [...entries].sort((a, b) => a.outputStartMs - b.outputStartMs)
   for (const entry of sorted) {
     const zoom = entry.subtitle.zoom
-    if (!zoom) continue
+    if (!zoom || zoom.endMs !== undefined) continue
     const t = zoom.startMs ?? entry.subtitle.startMs
     // The speech, not the cue's window: silence pads that to the next marker.
     const owner = sorted.find((e) => e.outputStartMs <= t && t < (e.spokenEndMs ?? e.outputEndMs))
