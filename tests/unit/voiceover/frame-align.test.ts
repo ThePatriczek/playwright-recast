@@ -4,6 +4,7 @@ import {
   alignMsUpToFrame,
   alignFreezeToFrame,
   alignNarrationHold,
+  isAfterHold,
 } from '../../../src/voiceover/frame-align'
 
 describe('msPerFrame', () => {
@@ -150,5 +151,26 @@ describe('alignNarrationHold', () => {
       durationMs: 500,
       sourceMs: 100,
     })
+  })
+})
+
+describe('isAfterHold', () => {
+  it('orders by raw trace time where both have one, as rounded video times tie', () => {
+    // A wait at 1000.4 and a click at 1000.49 both round to 1000.
+    expect(isAfterHold({ ms: 1000, traceMs: 1000.49 }, { atVideoMs: 1040, sourceMs: 1000, sourceTraceMs: 1000.4 })).toBe(true)
+    expect(isAfterHold({ ms: 1000, traceMs: 1000.3 }, { atVideoMs: 1040, sourceMs: 1000, sourceTraceMs: 1000.4 })).toBe(false)
+  })
+
+  it('compares strictly against the unaligned source otherwise', () => {
+    expect(isAfterHold({ ms: 1010 }, { atVideoMs: 1040, sourceMs: 1000 })).toBe(true)
+    expect(isAfterHold({ ms: 1000 }, { atVideoMs: 1040, sourceMs: 1000 })).toBe(false)
+  })
+
+  it('counts a click at 0 as after its approach hold, whose source is -2', () => {
+    expect(isAfterHold({ ms: 0 }, { atVideoMs: 0, sourceMs: -2 })).toBe(true)
+  })
+
+  it('falls back to the aligned position, inclusively, without a source', () => {
+    expect(isAfterHold({ ms: 1040 }, { atVideoMs: 1040 })).toBe(true)
   })
 })

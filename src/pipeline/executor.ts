@@ -904,6 +904,7 @@ export class PipelineExecutor {
             x: rc.x,
             y: rc.y,
             videoTimeMs: Math.max(0, Math.round(remapClickTime(rc.traceTimeMs))),
+            traceMs: rc.traceTimeMs,
           }))
 
           state.clickEvents = clickEvents
