@@ -85,6 +85,38 @@ export function buildZoomFilter(
 }
 
 /**
+ * Keep the camera still for zoom targets it already shows well.
+ *
+ * Per axis, a keyframe at the same level as the previous camera keeps the
+ * camera's position on that axis when its target lies within `threshold` x the
+ * crop's size (width for x, height for y) of the camera's visible centre -
+ * the edge-clamped one, since that is what the viewer sees. The other axis
+ * still pans if its target is outside. A change of level always moves both.
+ * Without this, targets a few pixels apart (lines of one code block) make the
+ * camera sway between cues. `threshold <= 0` returns the keyframes unchanged.
+ */
+export function stabilizePan(keyframes: ZoomKeyframe[], threshold: number): ZoomKeyframe[] {
+  if (threshold <= 0) return keyframes
+  const visible = (c: number, level: number) => Math.min(Math.max(c, 0.5 / level), 1 - 0.5 / level)
+  let camera: { x: number; y: number; level: number } | undefined
+  return [...keyframes].sort((a, b) => a.atMs - b.atMs).map((kf) => {
+    const level = kf.level ?? 1.0
+    const x = kf.x ?? 0.5
+    const y = kf.y ?? 0.5
+    const reach = threshold / level
+    const next = camera && camera.level === level
+      ? {
+          x: Math.abs(x - visible(camera.x, level)) <= reach ? camera.x : x,
+          y: Math.abs(y - visible(camera.y, level)) <= reach ? camera.y : y,
+          level,
+        }
+      : { x, y, level }
+    camera = next
+    return { ...kf, x: next.x, y: next.y }
+  })
+}
+
+/**
  * Convert ZoomKeyframe[] to internal format.
  */
 function toInternal(keyframes: ZoomKeyframe[]): InternalKeyframe[] {

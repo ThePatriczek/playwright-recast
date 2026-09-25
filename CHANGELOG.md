@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Features
+
+- **`render({ zoom: { panStabilizationThreshold } })`** - keeps the camera still between nearby zoom targets at the same level, per axis. Off by default.
+
 ### Bug fixes
 
 - **Zoom missed its target unless pinned to a frame edge** - the zoompan crop used zoomed instead of input coordinates, off by about the zoom factor. Most visible with a source larger than the output.

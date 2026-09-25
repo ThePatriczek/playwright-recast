@@ -11,7 +11,7 @@ import type { CursorKeyframe } from '../types/cursor-overlay.js'
 import type { ResolvedCursorOverlayConfig } from '../cursor-overlay/defaults.js'
 import { writeDefaultCursorImage } from '../cursor-overlay/defaults.js'
 import { buildOverlayExpressions, buildEnableExpression } from '../cursor-overlay/expression-builder.js'
-import { buildZoomFilter, stepZoomsToKeyframes, type ZoomExprConfig } from './zoom-expression.js'
+import { buildZoomFilter, stabilizePan, stepZoomsToKeyframes, type ZoomExprConfig } from './zoom-expression.js'
 import { generateRippleClip } from '../click-effect/ripple-generator.js'
 import type { HighlightEvent } from '../types/text-highlight.js'
 import { generateHighlightClip } from '../text-highlight/highlight-generator.js'
@@ -199,11 +199,12 @@ function buildZoomStage(
   targetRes: { width: number; height: number },
   fps: number,
   zoomConfig?: { transitionMs?: number; easing?: import('../types/easing.js').EasingSpec; containInCue?: boolean },
+  panStabilizationThreshold = 0,
 ): GraphStage | null {
   const zoomSubs = subtitles.filter((s) => s.zoom && s.zoom.level > 1.0)
   if (zoomSubs.length === 0) return null
 
-  const keyframes = stepZoomsToKeyframes(subtitles)
+  const keyframes = stabilizePan(stepZoomsToKeyframes(subtitles), panStabilizationThreshold)
   if (keyframes.length === 0) return null
 
   const config: ZoomExprConfig = {
@@ -926,6 +927,7 @@ export function renderVideo(
       resolution,
       graphInputFps,
       trace.zoomConfig,
+      config.zoom?.panStabilizationThreshold,
     )
     : null
   if (zoomStage) addStage(zoomStage)
