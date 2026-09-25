@@ -8,9 +8,11 @@
 - **`highlight(locator, { duration: 'narration' })`** - the mark ends when its narration has been spoken: the one playing when it appears, else the next one. Falls back to the default duration without a voiceover.
 - **`recastVideo({ viewport, scale })` in `playwright-recast/config`** - Playwright `use` options that record at viewport x scale device pixels, so zoomed text stays sharp. Sets the three options that each fail silently on their own. Chromium only.
 - **The renderer warns when zoomed text gets upscaled** - past 1.25x at the tightest zoom, naming the recording size that would be sharp.
+- **`zoom(locator, level, { text, align })`** - zooms onto text inside the element (a substring, or `true` for all of it) instead of its box. `align: 'start'` keeps the start of a target wider than the frame in view.
 
 ### Bug fixes
 
+- **`highlight({ text })` inside an iframe was off by the iframe's offset** - the text box is now moved into page space.
 - **A `zoom()` set just before its `narrate()` was dropped, or zoomed at the wrong line** - a zoom now belongs to the narration whose audio is playing, else the next one, and starts with it.
 - **Zoom missed its target unless pinned to a frame edge** - the zoompan crop used zoomed instead of input coordinates, off by about the zoom factor. Most visible with a source larger than the output.
 

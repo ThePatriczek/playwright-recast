@@ -205,6 +205,111 @@ function resolveAutoWait(
   return maxMs !== undefined ? Math.min(maxMs, clampedLow) : clampedLow
 }
 
+type Box = { x: number; y: number; width: number; height: number }
+
+/**
+ * Page-space box of `locator`, or of text inside it: a substring, or with
+ * `true` the element's whole text content (a block element's box spans its
+ * container; its text often does not).
+ *
+ * Text is measured in the element's own frame, then moved by the element's
+ * offset between that frame and the page, so it lands right inside iframes.
+ */
+async function measureBox(locator: Locator, text?: string | true): Promise<Box | null> {
+  const elementBox = await locator.boundingBox()
+  if (!elementBox || !text) return elementBox
+  const measured = await locator.evaluate((el, searchText): { text: Box; element: Box } | null => {
+    const elementRect = el.getBoundingClientRect()
+    const element = { x: elementRect.x, y: elementRect.y, width: elementRect.width, height: elementRect.height }
+    const isFormElement = el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement
+    if (searchText === true && !isFormElement) {
+      const range = document.createRange()
+      range.selectNodeContents(el)
+      const rect = range.getBoundingClientRect()
+      return { text: { x: rect.x, y: rect.y, width: rect.width, height: rect.height }, element }
+    }
+    // A form control's whole text is its value; an empty one has none to measure.
+    const needle = searchText === true ? (el as HTMLInputElement | HTMLTextAreaElement).value : searchText
+    if (!needle) return { text: element, element }
+    const find = (): Box | null => {
+      if (isFormElement) {
+        // For input/textarea: create a temporary mirror div to measure text position
+        const value = el.value
+        const idx = value.indexOf(needle)
+        if (idx === -1) return null
+
+        const style = window.getComputedStyle(el)
+        const mirror = document.createElement('div')
+        // Copy relevant styles; getPropertyValue() takes CSS names only
+        for (const prop of ['font', 'letter-spacing', 'word-spacing', 'text-indent', 'padding', 'border', 'overflow-wrap', 'line-height'] as const) {
+          mirror.style.setProperty(prop, style.getPropertyValue(prop))
+        }
+        mirror.style.position = 'absolute'
+        mirror.style.visibility = 'hidden'
+        // offsetWidth includes padding and border, so size the mirror's border box
+        mirror.style.boxSizing = 'border-box'
+        mirror.style.width = `${el.offsetWidth}px`
+        // An input, or a textarea with wrap="off", stays on one line and scrolls
+        const oneLine = el instanceof HTMLInputElement || el.wrap === 'off'
+        mirror.style.whiteSpace = oneLine ? 'pre' : 'pre-wrap'
+
+        const before = document.createTextNode(value.slice(0, idx))
+        const mark = document.createElement('span')
+        mark.textContent = needle
+        const after = document.createTextNode(value.slice(idx + needle.length))
+        mirror.append(before, mark, after)
+        document.body.appendChild(mirror)
+
+        const elRect = el.getBoundingClientRect()
+        const markRect = mark.getBoundingClientRect()
+        const mirrorRect = mirror.getBoundingClientRect()
+
+        // Offset: mark position relative to mirror, then add element position, less its scroll
+        const result = {
+          x: elRect.left + (markRect.left - mirrorRect.left) - el.scrollLeft,
+          y: elRect.top + (markRect.top - mirrorRect.top) - el.scrollTop,
+          width: markRect.width,
+          height: markRect.height,
+        }
+
+        document.body.removeChild(mirror)
+        return result
+      }
+
+      // For regular elements: search the concatenated text nodes, so a match may
+      // span inline children (a code editor splits a line into token spans)
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+      const nodes: Array<{ node: Node; start: number }> = []
+      let content = ''
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        nodes.push({ node, start: content.length })
+        content += node.textContent ?? ''
+      }
+      const idx = content.indexOf(needle)
+      if (idx === -1) return null
+      // The node holding `offset`; an end offset belongs to the node it closes.
+      const at = (offset: number, end: boolean) => {
+        const hit = [...nodes].reverse().find((n) => (end ? n.start < offset : n.start <= offset))!
+        return [hit.node, offset - hit.start] as const
+      }
+      const range = document.createRange()
+      range.setStart(...at(idx, false))
+      range.setEnd(...at(idx + needle.length, true))
+      const rect = range.getBoundingClientRect()
+      return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+    }
+    const found = find()
+    return found ? { text: found, element } : null
+  }, text)
+  if (!measured) return null
+  return {
+    x: elementBox.x + measured.text.x - measured.element.x,
+    y: elementBox.y + measured.text.y - measured.element.y,
+    width: measured.text.width,
+    height: measured.text.height,
+  }
+}
+
 /**
  * Zoom into a Playwright element during this step.
  * Gets the element's bounding box and stores relative coordinates as annotation.
@@ -212,19 +317,30 @@ function resolveAutoWait(
  *
  * @param locator Playwright Locator to zoom into
  * @param level Zoom level (1.0 = no zoom, 1.5 = 1.5x closer)
+ * @param opts.text Zoom onto text inside the element instead of its box: a
+ *   substring, or `true` for its whole text content (a line of code spans the
+ *   editor, its text does not)
+ * @param opts.align `'start'` keeps the start of a target wider than the zoomed
+ *   frame in view instead of centring it (default: `'center'`)
  */
 export async function zoom(
   locator: Locator,
   level: number = 1.5,
+  opts?: { text?: string | true; align?: 'center' | 'start' },
 ): Promise<void> {
   const page = locator.page()
   const viewport = page.viewportSize()
   if (!viewport) return
 
-  const box = await locator.boundingBox()
+  const box = await measureBox(locator, opts?.text)
   if (!box) return
 
-  const x = (box.x + box.width / 2) / viewport.width
+  // The zoomed frame is viewport / level wide; a wider target centred in it
+  // loses its start. 5% margin keeps the first character off the edge.
+  const frameWidth = viewport.width / level
+  const x = opts?.align === 'start' && box.width > frameWidth
+    ? (box.x + frameWidth * 0.45) / viewport.width
+    : (box.x + box.width / 2) / viewport.width
   const y = (box.y + box.height / 2) / viewport.height
   const payload = { x, y, level }
 
@@ -270,72 +386,7 @@ export async function highlight(
 ): Promise<void> {
   const { text, ...styleOpts } = opts ?? {}
 
-  let box: { x: number; y: number; width: number; height: number } | null
-
-  if (text) {
-    // Measure bounding box of specific text inside the element.
-    // Works for regular elements (via Range API) and input/textarea (via overlay measurement).
-    box = await locator.evaluate((el, searchText) => {
-      const isFormElement = el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement
-      if (isFormElement) {
-        // For input/textarea: create a temporary mirror div to measure text position
-        const value = el.value
-        const idx = value.indexOf(searchText)
-        if (idx === -1) return null
-
-        const style = window.getComputedStyle(el)
-        const mirror = document.createElement('div')
-        // Copy relevant styles
-        for (const prop of ['font', 'fontSize', 'fontFamily', 'fontWeight', 'letterSpacing', 'wordSpacing', 'textIndent', 'padding', 'paddingLeft', 'paddingTop', 'paddingRight', 'border', 'boxSizing', 'whiteSpace', 'wordWrap', 'overflowWrap', 'lineHeight'] as const) {
-          mirror.style.setProperty(prop, style.getPropertyValue(prop))
-        }
-        mirror.style.position = 'absolute'
-        mirror.style.visibility = 'hidden'
-        mirror.style.width = `${el.offsetWidth}px`
-        mirror.style.whiteSpace = 'pre-wrap'
-
-        const before = document.createTextNode(value.slice(0, idx))
-        const mark = document.createElement('span')
-        mark.textContent = searchText
-        const after = document.createTextNode(value.slice(idx + searchText.length))
-        mirror.append(before, mark, after)
-        document.body.appendChild(mirror)
-
-        const elRect = el.getBoundingClientRect()
-        const markRect = mark.getBoundingClientRect()
-        const mirrorRect = mirror.getBoundingClientRect()
-
-        // Offset: mark position relative to mirror, then add element position
-        const result = {
-          x: elRect.left + (markRect.left - mirrorRect.left),
-          y: elRect.top + (markRect.top - mirrorRect.top),
-          width: markRect.width,
-          height: markRect.height,
-        }
-
-        document.body.removeChild(mirror)
-        return result
-      }
-
-      // For regular elements: use Range API to find text node and measure
-      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
-      let node: Node | null
-      while ((node = walker.nextNode())) {
-        const content = node.textContent ?? ''
-        const idx = content.indexOf(searchText)
-        if (idx === -1) continue
-
-        const range = document.createRange()
-        range.setStart(node, idx)
-        range.setEnd(node, idx + searchText.length)
-        const rect = range.getBoundingClientRect()
-        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
-      }
-      return null
-    }, text)
-  } else {
-    box = await locator.boundingBox()
-  }
+  const box = await measureBox(locator, text)
 
   if (!box) return
 

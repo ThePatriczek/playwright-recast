@@ -24,6 +24,19 @@ await zoom(sidebar, 1.3)
 |-----------|------|---------|-------------|
 | `locator` | `Locator` | (required) | Playwright Locator pointing to the element to zoom into |
 | `level` | `number` | `1.5` | Zoom level: `1.0` = no zoom, `2.0` = 2x closer |
+| `opts.text` | `string \| true` | - | Zoom onto text inside the element instead of its box: a substring, or `true` for its whole text content |
+| `opts.align` | `'center' \| 'start'` | `'center'` | `'start'` keeps the start of a target wider than the zoomed frame in view |
+
+## Zooming onto text
+
+A block element's box spans its container even when its text is short - a line of code spans the whole editor. `text` zooms onto the text itself, and `align: 'start'` keeps a long line's beginning in frame instead of centring it:
+
+```typescript
+const line = page.frameLocator('iframe').locator('.cm-line').filter({ hasText: 'MATCH' })
+await zoom(line, 1.8, { text: true, align: 'start' })
+```
+
+Text is measured inside the element's own frame and placed in page space, so it works inside iframes.
 
 ## How it works
 
