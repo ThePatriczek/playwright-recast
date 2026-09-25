@@ -240,15 +240,18 @@ async function measureBox(locator: Locator, text?: string | true): Promise<Box |
 
         const style = window.getComputedStyle(el)
         const mirror = document.createElement('div')
-        // Copy relevant styles
-        for (const prop of ['font', 'fontSize', 'fontFamily', 'fontWeight', 'letterSpacing', 'wordSpacing', 'textIndent', 'padding', 'paddingLeft', 'paddingTop', 'paddingRight', 'border', 'boxSizing', 'whiteSpace', 'wordWrap', 'overflowWrap', 'lineHeight'] as const) {
+        // Copy relevant styles; getPropertyValue() takes CSS names only
+        for (const prop of ['font', 'letter-spacing', 'word-spacing', 'text-indent', 'padding', 'border', 'overflow-wrap', 'line-height'] as const) {
           mirror.style.setProperty(prop, style.getPropertyValue(prop))
         }
         mirror.style.position = 'absolute'
         mirror.style.visibility = 'hidden'
+        // offsetWidth includes padding and border, so size the mirror's border box
+        mirror.style.boxSizing = 'border-box'
         mirror.style.width = `${el.offsetWidth}px`
-        // An input stays on one line and scrolls; a textarea wraps.
-        mirror.style.whiteSpace = el instanceof HTMLInputElement ? 'pre' : 'pre-wrap'
+        // An input, or a textarea with wrap="off", stays on one line and scrolls
+        const oneLine = el instanceof HTMLInputElement || el.wrap === 'off'
+        mirror.style.whiteSpace = oneLine ? 'pre' : 'pre-wrap'
 
         const before = document.createTextNode(value.slice(0, idx))
         const mark = document.createElement('span')

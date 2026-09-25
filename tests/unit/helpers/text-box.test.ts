@@ -12,7 +12,8 @@ const VIEWPORT = { width: 1000, height: 500 }
 // An iframe offset by (200, 100) holding a full-width "line" whose text is
 // short, one whose text is wider than a 2x zoom frame (500px), one just
 // narrower, a full-width input with a short value, a line split into token
-// spans, and an input whose long value scrolls.
+// spans, an input whose long value scrolls, and form controls whose
+// spacing, box sizing or wrap mode move the text.
 const FRAME = `
   <style>body{margin:0;font:16px monospace} div{width:780px;height:20px;white-space:pre}</style>
   <div id="short">  SELECT 1</div>
@@ -20,7 +21,10 @@ const FRAME = `
   <div id="fits">${'x'.repeat(49)}</div>
   <input id="field" style="width:780px;font:16px monospace" value="abc">
   <div id="tokens"><span>SEL</span><span>ECT</span> 1</div>
-  <input id="scrolled" style="width:200px;font:16px monospace;padding:0;border:0" value="${'a'.repeat(60)}TARGET">`
+  <input id="scrolled" style="width:200px;font:16px monospace;padding:0;border:0" value="${'a'.repeat(60)}TARGET">
+  <input id="spaced" style="width:400px;font:16px monospace;letter-spacing:6px;padding:0;border:0" value="abcdefTARGET">
+  <textarea id="boxed" style="box-sizing:content-box;width:200px;padding:0 40px;border:0;font:16px monospace;resize:none">${'word '.repeat(4)}TARGET</textarea>
+  <textarea id="nowrap" wrap="off" style="width:200px;height:24px;font:16px monospace;padding:0;border:0;resize:none">${'word '.repeat(12)}TARGET</textarea>`
 const PAGE = `<body style="margin:0"><iframe style="position:absolute;left:200px;top:100px;width:800px;height:300px;border:0" srcdoc="${FRAME.replace(/"/g, '&quot;')}"></iframe></body>`
 
 function capture() {
@@ -97,6 +101,41 @@ describe.skipIf(!browser)('text boxes in zoom() and highlight()', () => {
     // Scrolled to the end, TARGET is the value's visible tail, on the input's own line.
     expect(box.x + box.width).toBeCloseTo(input.x + input.width, -1)
     expect(box.y).toBeCloseTo(input.y, -1)
+  })
+
+  // Where the text really is, measured by selecting it in the control itself.
+  const selected = (id: string) => frame().locator(id).evaluate((el: HTMLInputElement | HTMLTextAreaElement) => {
+    const start = el.value.indexOf('TARGET')
+    const probe = document.createElement('div')
+    const style = getComputedStyle(el)
+    for (const p of style) probe.style.setProperty(p, style.getPropertyValue(p))
+    probe.style.position = 'absolute'
+    probe.style.whiteSpace = el instanceof HTMLInputElement || el.wrap === 'off' ? 'pre' : 'pre-wrap'
+    const mark = document.createElement('span')
+    mark.textContent = 'TARGET'
+    probe.append(el.value.slice(0, start), mark)
+    el.after(probe)
+    const r = el.getBoundingClientRect(), p = probe.getBoundingClientRect(), m = mark.getBoundingClientRect()
+    probe.remove()
+    return { x: r.x + m.x - p.x - el.scrollLeft, y: r.y + m.y - p.y - el.scrollTop }
+  })
+
+  it.each(['#spaced', '#boxed'])('measures %s with its own letter spacing and box sizing', async (id) => {
+    const expected = await selected(id)
+    await highlight(frame().locator(id), { text: 'TARGET' })
+    const box = payload(steps, HIGHLIGHT_TITLE_PREFIX)
+    expect(box.x).toBeCloseTo(200 + expected.x, 0)
+    expect(box.y).toBeCloseTo(100 + expected.y, 0)
+  })
+
+  it('measures a textarea with wrap="off" on one line, where it scrolled to', async () => {
+    const field = frame().locator('#nowrap')
+    await field.evaluate((el: HTMLTextAreaElement) => { el.scrollLeft = el.scrollWidth })
+    await highlight(field, { text: 'TARGET' })
+    const box = payload(steps, HIGHLIGHT_TITLE_PREFIX)
+    const area = (await field.boundingBox())!
+    expect(box.x + box.width).toBeCloseTo(area.x + area.width, -1)
+    expect(box.y).toBeCloseTo(area.y, -1)
   })
 
   it('places a text highlight inside an iframe in page space', async () => {
