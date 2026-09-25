@@ -5,6 +5,7 @@
 ### Features
 
 - **`render({ zoom: { panStabilizationThreshold } })`** - keeps the camera still between nearby zoom targets at the same level, per axis. Off by default.
+- **`highlight(locator, { duration: 'narration' })`** - the mark ends when its narration has been spoken: the one playing when it appears, else the next one. Falls back to the default duration without a voiceover.
 
 ### Bug fixes
 

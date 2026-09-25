@@ -152,4 +152,15 @@ describe('captions stay aligned with the narration track', () => {
     const worst = Math.max(...drift.map(Math.abs))
     expect(worst, `worst drift ${worst.toFixed(0)}ms across 120 cues`).toBeLessThan(100)
   })
+
+  it('ends each spokenEndMs where its speech ends in the track', async () => {
+    const tmpDir = path.join(TMP_ROOT, 'spoken-end')
+    fs.mkdirSync(tmpDir, { recursive: true })
+    const { voiceover } = await generateVoiceover(makeTrace(10), fixedLengthProvider(), tmpDir, undefined, [], FPS)
+    const starts = measuredSegmentStarts(tmpDir)
+    for (const e of voiceover.entries) {
+      const seg = path.join(tmpDir, `seg-${e.subtitle.index}.mp3`)
+      expect(e.spokenEndMs).toBeCloseTo(starts.get(e.subtitle.index)! + durationMs(seg), 0)
+    }
+  })
 }, 300_000)

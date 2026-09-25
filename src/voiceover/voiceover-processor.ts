@@ -167,6 +167,8 @@ export async function generateVoiceover(
 
     const audioDuration = getAudioDurationMs(segPath)
     const windowDuration = subtitle.endMs - subtitle.startMs
+    // Where the track really is, not the cue start: the gap above can over- or undershoot.
+    const spokenEndMs = audioEndMs + audioDuration
 
     // A tiny/zero window (fast trace + waitForNarration, no autoWait) falls
     // through to the overflow branch below: the audio plays, the subtitle
@@ -211,6 +213,7 @@ export async function generateVoiceover(
       audio,
       outputStartMs: subtitle.startMs,
       outputEndMs: subtitle.endMs,
+      spokenEndMs,
     })
   }
 

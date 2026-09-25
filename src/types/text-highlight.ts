@@ -6,9 +6,9 @@ export interface TextHighlightConfig {
   color?: string
   /** Default highlight opacity 0.0–1.0. Default: 0.35 */
   opacity?: number
-  /** Default visibility duration in ms. Default: 3000 */
+  /** Default visibility duration in ms. Default: 2000 */
   duration?: number
-  /** Default fade out duration in ms. Default: 500 */
+  /** Default fade out duration in ms. Default: 0 */
   fadeOut?: number
   /** Default swipe animation duration in ms. Default: 300 */
   swipeDuration?: number
@@ -40,4 +40,6 @@ export interface HighlightEvent {
   swipeDuration: number
   /** Fade out duration in ms */
   fadeOut: number
+  /** End with the narration this mark belongs to, see `highlight({duration: 'narration'})` */
+  untilNarrationEnd?: boolean
 }

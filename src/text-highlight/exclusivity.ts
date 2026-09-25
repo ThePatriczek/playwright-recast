@@ -48,6 +48,31 @@ export function makeHighlightsExclusive(
 }
 
 /**
+ * End each `untilNarrationEnd` highlight when its narration's audio ends.
+ *
+ * A mark belongs to the narration being spoken when it appears, else to the
+ * next one: `highlight()` usually runs just before the `narrate()` it
+ * illustrates. "Spoken" is the speech itself, not the cue's window, which
+ * silence pads out to the next marker. Both inputs must be on the output
+ * (freeze-extended) timeline. Marks with no narration at or after them keep
+ * their end.
+ */
+export function endHighlightsWithNarration(
+  events: ReadonlyArray<HighlightEvent>,
+  narrations: ReadonlyArray<{ outputStartMs: number; outputEndMs: number; spokenEndMs?: number }>,
+): HighlightEvent[] {
+  const sorted = [...narrations].sort((a, b) => a.outputStartMs - b.outputStartMs)
+  const spokenEnd = (n: (typeof sorted)[number]) => n.spokenEndMs ?? n.outputEndMs
+  return events.map((event) => {
+    if (!event.untilNarrationEnd) return event
+    const owner =
+      sorted.find((n) => n.outputStartMs <= event.videoTimeMs && event.videoTimeMs < spokenEnd(n)) ??
+      sorted.find((n) => n.outputStartMs >= event.videoTimeMs)
+    return owner ? { ...event, endTimeMs: Math.round(spokenEnd(owner)) } : event
+  })
+}
+
+/**
  * Move highlights onto the freeze-extended timeline, keeping each one's
  * configured duration.
  *
