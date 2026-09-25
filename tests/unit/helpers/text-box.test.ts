@@ -1,20 +1,23 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
+import * as fs from 'node:fs'
 import { chromium, type Browser, type Page } from 'playwright-core'
 import type { TestInfo } from '@playwright/test'
 import { zoom, highlight, setupRecast, ZOOM_TITLE_PREFIX, HIGHLIGHT_TITLE_PREFIX } from '../../../src/helpers'
 
 // Real layout, not a fake locator: text boxes and iframe offsets only exist
-// in a browser. Skipped where Chromium is not installed.
-let browser: Browser | undefined
-try { browser = await chromium.launch() } catch { browser = undefined }
+// in a browser. Skipped where Chromium is not installed; a launch failure fails.
+const browser: Browser | undefined = fs.existsSync(chromium.executablePath()) ? await chromium.launch() : undefined
 
 const VIEWPORT = { width: 1000, height: 500 }
 // An iframe offset by (200, 100) holding a full-width "line" whose text is
-// short, and one whose text is wider than a 2x zoom frame (500px).
+// short, one whose text is wider than a 2x zoom frame (500px), one just
+// narrower, and a full-width input with a short value.
 const FRAME = `
   <style>body{margin:0;font:16px monospace} div{width:780px;height:20px;white-space:pre}</style>
   <div id="short">  SELECT 1</div>
-  <div id="long">${'x'.repeat(70)}</div>`
+  <div id="long">${'x'.repeat(70)}</div>
+  <div id="fits">${'x'.repeat(49)}</div>
+  <input id="field" style="width:780px;font:16px monospace" value="abc">`
 const PAGE = `<body style="margin:0"><iframe style="position:absolute;left:200px;top:100px;width:800px;height:300px;border:0" srcdoc="${FRAME.replace(/"/g, '&quot;')}"></iframe></body>`
 
 function capture() {
@@ -53,6 +56,22 @@ describe.skipIf(!browser)('text boxes in zoom() and highlight()', () => {
     await zoom(frame().locator('#long'), 2, { text: true, align: 'start' })
     // Frame is 500px wide at 2x; the centre sits 45% of it past the text start (x=200).
     expect(payload(steps, ZOOM_TITLE_PREFIX).x).toBeCloseTo((200 + 225) / VIEWPORT.width, 3)
+  })
+
+  it('centres a target that fits the zoomed frame, even with align start', async () => {
+    const text = await frame().locator('#fits').evaluate((el) => {
+      const r = document.createRange(); r.selectNodeContents(el); const b = r.getBoundingClientRect()
+      return { width: b.width, center: b.x + b.width / 2 }
+    })
+    expect(text.width).toBeGreaterThan(450) // past 90% of the 500px frame, still inside it
+    await zoom(frame().locator('#fits'), 2, { text: true, align: 'start' })
+    expect(payload(steps, ZOOM_TITLE_PREFIX).x).toBeCloseTo((200 + text.center) / VIEWPORT.width, 3)
+  })
+
+  it("zooms onto an input's value, not the full-width control", async () => {
+    await zoom(frame().locator('#field'), 2, { text: true })
+    // The control's centre is at 200 + 390; its three-character value starts near 200.
+    expect(payload(steps, ZOOM_TITLE_PREFIX).x * VIEWPORT.width).toBeLessThan(260)
   })
 
   it('places a text highlight inside an iframe in page space', async () => {

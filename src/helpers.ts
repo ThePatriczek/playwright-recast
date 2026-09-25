@@ -221,19 +221,21 @@ async function measureBox(locator: Locator, text?: string | true): Promise<Box |
   const measured = await locator.evaluate((el, searchText): { text: Box; element: Box } | null => {
     const elementRect = el.getBoundingClientRect()
     const element = { x: elementRect.x, y: elementRect.y, width: elementRect.width, height: elementRect.height }
-    if (searchText === true) {
-      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) return { text: element, element }
+    const isFormElement = el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement
+    if (searchText === true && !isFormElement) {
       const range = document.createRange()
       range.selectNodeContents(el)
       const rect = range.getBoundingClientRect()
       return { text: { x: rect.x, y: rect.y, width: rect.width, height: rect.height }, element }
     }
+    // A form control's whole text is its value; an empty one has none to measure.
+    const needle = searchText === true ? (el as HTMLInputElement | HTMLTextAreaElement).value : searchText
+    if (!needle) return { text: element, element }
     const find = (): Box | null => {
-      const isFormElement = el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement
       if (isFormElement) {
         // For input/textarea: create a temporary mirror div to measure text position
         const value = el.value
-        const idx = value.indexOf(searchText)
+        const idx = value.indexOf(needle)
         if (idx === -1) return null
 
         const style = window.getComputedStyle(el)
@@ -249,8 +251,8 @@ async function measureBox(locator: Locator, text?: string | true): Promise<Box |
 
         const before = document.createTextNode(value.slice(0, idx))
         const mark = document.createElement('span')
-        mark.textContent = searchText
-        const after = document.createTextNode(value.slice(idx + searchText.length))
+        mark.textContent = needle
+        const after = document.createTextNode(value.slice(idx + needle.length))
         mirror.append(before, mark, after)
         document.body.appendChild(mirror)
 
@@ -275,12 +277,12 @@ async function measureBox(locator: Locator, text?: string | true): Promise<Box |
       let node: Node | null
       while ((node = walker.nextNode())) {
         const content = node.textContent ?? ''
-        const idx = content.indexOf(searchText)
+        const idx = content.indexOf(needle)
         if (idx === -1) continue
 
         const range = document.createRange()
         range.setStart(node, idx)
-        range.setEnd(node, idx + searchText.length)
+        range.setEnd(node, idx + needle.length)
         const rect = range.getBoundingClientRect()
         return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
       }
@@ -326,7 +328,7 @@ export async function zoom(
   // The zoomed frame is viewport / level wide; a wider target centred in it
   // loses its start. 5% margin keeps the first character off the edge.
   const frameWidth = viewport.width / level
-  const x = opts?.align === 'start' && box.width > frameWidth * 0.9
+  const x = opts?.align === 'start' && box.width > frameWidth
     ? (box.x + frameWidth * 0.45) / viewport.width
     : (box.x + box.width / 2) / viewport.width
   const y = (box.y + box.height / 2) / viewport.height
