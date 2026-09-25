@@ -41,7 +41,8 @@ function size(file: string): { width: number; height: number } {
 /** RGB of the bottom-right pixel (2x2 crop: 4:2:0 needs even sizes): red marker when exact, gray when padded, black when cropped. */
 function bottomRight(file: string): number[] {
   const rgb = execFileSync('ffmpeg', [
-    '-v', 'error', '-ss', '0.3', '-i', file, '-frames:v', '1',
+    // The last frame: an early one can still show the blank page before setContent().
+    '-v', 'error', '-sseof', '-0.1', '-i', file, '-frames:v', '1',
     '-vf', 'crop=2:2:iw-2:ih-2', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-',
   ])
   return [...rgb.subarray(9, 12)]
