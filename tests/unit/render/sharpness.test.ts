@@ -31,4 +31,9 @@ describe('upscaleWarning()', () => {
     expect(warning).toMatch(/upscaled 2\.40x .* zoom 1\.8; text will be soft\./)
     expect(warning).toMatch(/Record at 4608x2592 or more/)
   })
+
+  it('scales the source uniformly for a size that would be sharp', () => {
+    // 1440/1080 on the tighter axis; 2560x1440 would still be short on width.
+    expect(upscaleWarning({ width: 2560, height: 1080 }, p1440, 1)).toMatch(/Record at 3414x1440 or more/)
+  })
 })

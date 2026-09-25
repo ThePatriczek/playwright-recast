@@ -25,7 +25,9 @@ import { processSpeed } from '../speed/speed-processor.js'
 import { generateSubtitles } from '../subtitles/subtitle-generator.js'
 import { parseSrt } from '../subtitles/srt-parser.js'
 import { generateVoiceover } from '../voiceover/voiceover-processor.js'
-import { renderVideo, detectBlankLeadIn, probeVideoFps, type RenderableTrace } from '../render/renderer.js'
+import { renderVideo, detectBlankLeadIn, probeVideoFps, probeResolution, type RenderableTrace } from '../render/renderer.js'
+import { upscaleWarning } from '../render/sharpness.js'
+import { resolveResolution } from '../types/render.js'
 import {
   resolveBlankLeadInMs,
   shiftSubtitlesForBlankLead,
@@ -51,7 +53,7 @@ import { applyIntroOutro } from '../render/intro-outro.js'
 import { resolveBackgroundMusicConfig, type ResolvedBackgroundMusicConfig } from '../background-music/defaults.js'
 import { generateMusicTrack } from '../background-music/music-processor.js'
 import { directVideo } from '../director/renderer.js'
-import { DEFAULT_MAX_ZOOM, validateDirectorOptions } from '../director/planner.js'
+import { validateDirectorOptions } from '../director/planner.js'
 import type { DirectorOptions, DirectorProvider } from '../types/director.js'
 
 type PipelineState = {
@@ -165,7 +167,6 @@ export class PipelineExecutor {
       cursorKeyframes: state.cursorKeyframes,
       cursorOverlayConfig: state.director && !state.voiceovered && state.cursorOverlayConfig ? { ...state.cursorOverlayConfig, approachMs: 0 } : state.cursorOverlayConfig,
       zoomConfig: state.zoomConfig,
-      cameraMaxZoom: state.director ? state.director.options.maxZoom ?? DEFAULT_MAX_ZOOM : undefined,
       interpolateConfig: state.interpolateConfig,
       highlightEvents: state.highlightEvents,
       highlightConfig: state.highlightConfig,
@@ -179,6 +180,10 @@ export class PipelineExecutor {
       renderVideo(traceWithVideo, { ...renderConfig, format: 'mp4', codec: 'libx264', burnSubtitles: false, embedSubtitles: Boolean(state.subtitled?.subtitles.length) }, baseVideo, directorDir)
       try {
         const report = await directVideo(baseVideo, outputPath, state.director.provider, state.director.options, renderConfig, directorDir, Boolean(state.voiceovered))
+        // The camera zooms after the base render, so only its plan knows how far.
+        const cameraZoom = Math.max(1, ...report.keyframes.map((k) => k.zoom))
+        const upscale = cameraZoom > 1 && upscaleWarning(probeResolution(traceWithVideo.sourceVideoPath!), resolveResolution(renderConfig.resolution), cameraZoom)
+        if (upscale) console.warn(`  Warning: ${upscale}`)
         if (state.subtitled) state.subtitled.subtitles = report.subtitles
       } catch (error) {
         state.parsed?.frameReader.dispose()

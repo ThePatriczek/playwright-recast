@@ -26,7 +26,8 @@ export function upscaleWarning(
   const factor = upscaleFactor(source, target, maxZoom)
   if (factor <= 1.25) return null
   const effect = factor <= 1.5 ? 'slightly soft' : 'soft'
-  const needed = `${Math.ceil(target.width * maxZoom)}x${Math.ceil(target.height * maxZoom)}`
+  // The recording scales uniformly, so grow the source by the factor, not the target by the zoom.
+  const needed = `${Math.ceil(source.width * factor)}x${Math.ceil(source.height * factor)}`
   return `Source ${source.width}x${source.height} is upscaled ${factor.toFixed(2)}x ` +
     `for ${target.width}x${target.height} at zoom ${maxZoom}; text will be ${effect}. ` +
     `Record at ${needed} or more, e.g. with a higher scale in recastVideo() from 'playwright-recast/config'.`

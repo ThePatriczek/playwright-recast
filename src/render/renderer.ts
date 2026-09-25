@@ -94,8 +94,6 @@ export interface RenderableTrace extends ParsedTrace {
   cursorKeyframes?: CursorKeyframe[]
   cursorOverlayConfig?: ResolvedCursorOverlayConfig
   zoomConfig?: { transitionMs?: number; easing?: import('../types/easing.js').EasingSpec; containInCue?: boolean }
-  /** Zoom the director's camera applies after this render, for the sharpness check. */
-  cameraMaxZoom?: number
   interpolateConfig?: import('../types/interpolate.js').InterpolateConfig
   highlightEvents?: import('../types/text-highlight.js').HighlightEvent[]
   /** Highlight times are already on the freeze-extended clock. */
@@ -887,7 +885,7 @@ export function renderVideo(
   const graphInputRes = probeResolution(videoInput)
   const graphInputFps = probeVideoFps(videoInput)
 
-  const maxZoom = Math.max(1, trace.cameraMaxZoom ?? 1, ...(trace.subtitles ?? []).map((s) => s.zoom?.level ?? 1))
+  const maxZoom = Math.max(1, ...(trace.subtitles ?? []).map((s) => s.zoom?.level ?? 1))
   const upscale = upscaleWarning(graphInputRes, resolution, maxZoom)
   if (upscale) console.warn(`  Warning: ${upscale}`)
 
