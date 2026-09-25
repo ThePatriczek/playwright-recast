@@ -205,77 +205,30 @@ function resolveAutoWait(
   return maxMs !== undefined ? Math.min(maxMs, clampedLow) : clampedLow
 }
 
-/**
- * Zoom into a Playwright element during this step.
- * Gets the element's bounding box and stores relative coordinates as annotation.
- * The renderer applies crop+scale during this step's time window.
- *
- * @param locator Playwright Locator to zoom into
- * @param level Zoom level (1.0 = no zoom, 1.5 = 1.5x closer)
- */
-export async function zoom(
-  locator: Locator,
-  level: number = 1.5,
-): Promise<void> {
-  const page = locator.page()
-  const viewport = page.viewportSize()
-  if (!viewport) return
-
-  const box = await locator.boundingBox()
-  if (!box) return
-
-  const x = (box.x + box.width / 2) / viewport.width
-  const y = (box.y + box.height / 2) / viewport.height
-  const payload = { x, y, level }
-
-  _getTestInfo().annotations.push({
-    type: 'zoom',
-    description: JSON.stringify(payload),
-  })
-
-  if (_step) {
-    await _step(`${ZOOM_TITLE_PREFIX}${JSON.stringify(payload)}`, async () => {})
-  }
-}
+type Box = { x: number; y: number; width: number; height: number }
 
 /**
- * Highlight text in the demo video.
+ * Page-space box of `locator`, or of text inside it: a substring, or with
+ * `true` the element's whole text content (a block element's box spans its
+ * container; its text often does not).
  *
- * - `highlight(locator)` — highlights the entire element
- * - `highlight(locator, { text: 'substring' })` — highlights only the matching text inside the element
- *
- * For input/textarea elements, the text option uses a temporary overlay measurement
- * since form elements don't expose text node bounding boxes.
- *
- * @param locator Playwright Locator pointing to the element containing the text
- * @param opts.text Specific text to highlight (substring). If omitted, highlights entire element.
- * @param opts.color Highlight color as hex '#RRGGBB' (default: '#FFEB3B' yellow)
- * @param opts.opacity Opacity 0.0–1.0 (default: 0.35)
- * @param opts.duration Visibility duration in ms (default: 2000), or `'narration'` to
- *   stay until the narration it belongs to has been spoken: the one playing when
- *   the mark appears, else the next one. Falls back to the default without voiceover.
- * @param opts.fadeOut Fade out duration in ms (default: 0)
- * @param opts.swipeDuration Swipe animation duration in ms (default: 300)
+ * Text is measured in the element's own frame, then moved by the element's
+ * offset between that frame and the page, so it lands right inside iframes.
  */
-export async function highlight(
-  locator: Locator,
-  opts?: {
-    text?: string
-    color?: string
-    opacity?: number
-    duration?: number | 'narration'
-    fadeOut?: number
-    swipeDuration?: number
-  },
-): Promise<void> {
-  const { text, ...styleOpts } = opts ?? {}
-
-  let box: { x: number; y: number; width: number; height: number } | null
-
-  if (text) {
-    // Measure bounding box of specific text inside the element.
-    // Works for regular elements (via Range API) and input/textarea (via overlay measurement).
-    box = await locator.evaluate((el, searchText) => {
+async function measureBox(locator: Locator, text?: string | true): Promise<Box | null> {
+  const elementBox = await locator.boundingBox()
+  if (!elementBox || !text) return elementBox
+  const measured = await locator.evaluate((el, searchText): { text: Box; element: Box } | null => {
+    const elementRect = el.getBoundingClientRect()
+    const element = { x: elementRect.x, y: elementRect.y, width: elementRect.width, height: elementRect.height }
+    if (searchText === true) {
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) return { text: element, element }
+      const range = document.createRange()
+      range.selectNodeContents(el)
+      const rect = range.getBoundingClientRect()
+      return { text: { x: rect.x, y: rect.y, width: rect.width, height: rect.height }, element }
+    }
+    const find = (): Box | null => {
       const isFormElement = el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement
       if (isFormElement) {
         // For input/textarea: create a temporary mirror div to measure text position
@@ -332,10 +285,96 @@ export async function highlight(
         return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
       }
       return null
-    }, text)
-  } else {
-    box = await locator.boundingBox()
+    }
+    const found = find()
+    return found ? { text: found, element } : null
+  }, text)
+  if (!measured) return null
+  return {
+    x: elementBox.x + measured.text.x - measured.element.x,
+    y: elementBox.y + measured.text.y - measured.element.y,
+    width: measured.text.width,
+    height: measured.text.height,
   }
+}
+
+/**
+ * Zoom into a Playwright element during this step.
+ * Gets the element's bounding box and stores relative coordinates as annotation.
+ * The renderer applies crop+scale during this step's time window.
+ *
+ * @param locator Playwright Locator to zoom into
+ * @param level Zoom level (1.0 = no zoom, 1.5 = 1.5x closer)
+ * @param opts.text Zoom onto text inside the element instead of its box: a
+ *   substring, or `true` for its whole text content (a line of code spans the
+ *   editor, its text does not)
+ * @param opts.align `'start'` keeps the start of a target wider than the zoomed
+ *   frame in view instead of centring it (default: `'center'`)
+ */
+export async function zoom(
+  locator: Locator,
+  level: number = 1.5,
+  opts?: { text?: string | true; align?: 'center' | 'start' },
+): Promise<void> {
+  const page = locator.page()
+  const viewport = page.viewportSize()
+  if (!viewport) return
+
+  const box = await measureBox(locator, opts?.text)
+  if (!box) return
+
+  // The zoomed frame is viewport / level wide; a wider target centred in it
+  // loses its start. 5% margin keeps the first character off the edge.
+  const frameWidth = viewport.width / level
+  const x = opts?.align === 'start' && box.width > frameWidth * 0.9
+    ? (box.x + frameWidth * 0.45) / viewport.width
+    : (box.x + box.width / 2) / viewport.width
+  const y = (box.y + box.height / 2) / viewport.height
+  const payload = { x, y, level }
+
+  _getTestInfo().annotations.push({
+    type: 'zoom',
+    description: JSON.stringify(payload),
+  })
+
+  if (_step) {
+    await _step(`${ZOOM_TITLE_PREFIX}${JSON.stringify(payload)}`, async () => {})
+  }
+}
+
+/**
+ * Highlight text in the demo video.
+ *
+ * - `highlight(locator)` — highlights the entire element
+ * - `highlight(locator, { text: 'substring' })` — highlights only the matching text inside the element
+ *
+ * For input/textarea elements, the text option uses a temporary overlay measurement
+ * since form elements don't expose text node bounding boxes.
+ *
+ * @param locator Playwright Locator pointing to the element containing the text
+ * @param opts.text Specific text to highlight (substring). If omitted, highlights entire element.
+ * @param opts.color Highlight color as hex '#RRGGBB' (default: '#FFEB3B' yellow)
+ * @param opts.opacity Opacity 0.0–1.0 (default: 0.35)
+ * @param opts.duration Visibility duration in ms (default: 2000), or `'narration'` to
+ *   stay until the narration it belongs to has been spoken: the one playing when
+ *   the mark appears, else the next one. Falls back to the default without voiceover.
+ * @param opts.fadeOut Fade out duration in ms (default: 0)
+ * @param opts.swipeDuration Swipe animation duration in ms (default: 300)
+ */
+export async function highlight(
+  locator: Locator,
+  opts?: {
+    text?: string
+    color?: string
+    opacity?: number
+    duration?: number | 'narration'
+    fadeOut?: number
+    swipeDuration?: number
+  },
+): Promise<void> {
+  const { text, ...styleOpts } = opts ?? {}
+
+  const box = await measureBox(locator, text)
 
   if (!box) return
 
