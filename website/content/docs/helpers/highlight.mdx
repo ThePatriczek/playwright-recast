@@ -33,7 +33,7 @@ await highlight(paragraph, { text: 'important detail' })
 | `opts.text` | `string` | `undefined` | Specific text to highlight (substring match). If omitted, highlights the entire element. |
 | `opts.color` | `string` | `'#FFEB3B'` | Highlight color as hex `#RRGGBB` |
 | `opts.opacity` | `number` | `0.35` | Highlight opacity (0.0--1.0) |
-| `opts.duration` | `number` | `3000` | Visibility duration in milliseconds |
+| `opts.duration` | `number \| 'narration'` | `3000` | Visibility duration in milliseconds, or `'narration'` to end with the narration the mark belongs to |
 | `opts.fadeOut` | `number` | `500` | Fade out duration in milliseconds |
 | `opts.swipeDuration` | `number` | `300` | Swipe-in animation duration in milliseconds |
 
@@ -58,6 +58,16 @@ await highlight(heading, {
   duration: 5000,        // Show for 5 seconds
   swipeDuration: 500,    // Slower reveal animation
 })
+```
+
+## Lasting exactly as long as the narration
+
+With `duration: 'narration'` the mark ends when its narration's audio ends, so it neither clears mid-sentence nor lingers into the next action. It belongs to the narration playing when it appears, else to the next one, so it can be set just before the `narrate()` it illustrates. Without a voiceover it falls back to the default duration.
+
+```typescript
+await highlight(line, { duration: 'narration' })
+await narrate('This line mounts the model stage.')
+await waitForNarration()
 ```
 
 ## Example in a BDD step

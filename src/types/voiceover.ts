@@ -71,7 +71,10 @@ export interface VoiceoverEntry {
   subtitle: SubtitleEntry
   audio: AudioSegment
   outputStartMs: number
+  /** End of the cue's window, which silence pads out to the next marker. */
   outputEndMs: number
+  /** Where the speech itself ends, on the same timeline. */
+  spokenEndMs: number
 }
 
 /**

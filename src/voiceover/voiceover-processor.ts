@@ -211,6 +211,7 @@ export async function generateVoiceover(
       audio,
       outputStartMs: subtitle.startMs,
       outputEndMs: subtitle.endMs,
+      spokenEndMs: subtitle.startMs + audioDuration,
     })
   }
 

@@ -15,7 +15,11 @@ import { buildZoomFilter, stabilizePan, stepZoomsToKeyframes, type ZoomExprConfi
 import { generateRippleClip } from '../click-effect/ripple-generator.js'
 import type { HighlightEvent } from '../types/text-highlight.js'
 import { generateHighlightClip } from '../text-highlight/highlight-generator.js'
-import { makeHighlightsExclusive, shiftHighlightsForFreezes } from '../text-highlight/exclusivity.js'
+import {
+  endHighlightsWithNarration,
+  makeHighlightsExclusive,
+  shiftHighlightsForFreezes,
+} from '../text-highlight/exclusivity.js'
 import { writeDefaultClickSound } from '../click-effect/defaults.js'
 import { generateClickSoundTrack, getAudioDurationMs as getClickAudioDurationMs } from '../click-effect/sound-track.js'
 import { writeSrt } from '../subtitles/srt-writer.js'
@@ -78,7 +82,7 @@ export interface RenderableTrace extends ParsedTrace {
   subtitles?: SubtitleEntry[]
   voiceover?: {
     audioTrackPath: string
-    entries: unknown[]
+    entries: Array<{ outputStartMs: number; outputEndMs: number }>
     totalDurationMs: number
     freezes?: Array<{ atVideoMs: number; durationMs: number }>
   }
@@ -882,9 +886,12 @@ export function renderVideo(
   // Highlights first, so one is visible for exactly as long as it was
   // configured for — and never alongside the next one.
   if (trace.highlightEvents && trace.highlightEvents.length > 0) {
+    const highlights = trace.voiceover
+      ? endHighlightsWithNarration(trace.highlightEvents, trace.voiceover.entries)
+      : trace.highlightEvents
     addStage(buildHighlightStage(
       vLabel,
-      makeHighlightsExclusive(trace.highlightEvents),
+      makeHighlightsExclusive(highlights),
       trace.metadata.viewport,
       graphInputRes,
       tmpDir,

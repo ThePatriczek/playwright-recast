@@ -40,4 +40,6 @@ export interface HighlightEvent {
   swipeDuration: number
   /** Fade out duration in ms */
   fadeOut: number
+  /** End with the narration this mark belongs to, see `highlight({duration: 'narration'})` */
+  untilNarrationEnd?: boolean
 }

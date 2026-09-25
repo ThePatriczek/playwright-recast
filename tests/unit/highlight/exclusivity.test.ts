@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import type { HighlightEvent } from '../../../src/types/text-highlight'
 import {
+  endHighlightsWithNarration,
   makeHighlightsExclusive,
   shiftHighlightsForFreezes,
 } from '../../../src/text-highlight/exclusivity'
@@ -160,5 +161,51 @@ describe('shiftHighlightsForFreezes()', () => {
     const shifted = shiftHighlightsForFreezes(clamped, [{ atVideoMs: 1500, durationMs: 6000 }])
 
     expect(shifted[0]!.endTimeMs).toBeLessThanOrEqual(shifted[1]!.videoTimeMs)
+  })
+})
+
+describe('endHighlightsWithNarration()', () => {
+  const narrations = [
+    { outputStartMs: 1000, outputEndMs: 4000 },
+    { outputStartMs: 6000, outputEndMs: 9000 },
+  ]
+
+  it('ends a mark placed just before narrate() with that narration', () => {
+    const [mark] = endHighlightsWithNarration(
+      [makeEvent({ videoTimeMs: 5990, endTimeMs: 20_000, untilNarrationEnd: true })],
+      narrations,
+    )
+
+    expect(mark!.endTimeMs).toBe(9000)
+  })
+
+  it('ends a mark placed mid-narration with the narration playing', () => {
+    const [mark] = endHighlightsWithNarration(
+      [makeEvent({ videoTimeMs: 2000, endTimeMs: 3000, untilNarrationEnd: true })],
+      narrations,
+    )
+
+    expect(mark!.endTimeMs).toBe(4000)
+  })
+
+  it('keeps the end of a mark with no narration at or after it', () => {
+    const input = [makeEvent({ videoTimeMs: 9500, endTimeMs: 12_500, untilNarrationEnd: true })]
+
+    expect(endHighlightsWithNarration(input, narrations)).toEqual(input)
+  })
+
+  it('ends with the speech, not the silence padding the cue to the next marker', () => {
+    const [mark] = endHighlightsWithNarration(
+      [makeEvent({ videoTimeMs: 990, endTimeMs: 20_000, untilNarrationEnd: true })],
+      [{ outputStartMs: 1000, outputEndMs: 9000, spokenEndMs: 3500 }],
+    )
+
+    expect(mark!.endTimeMs).toBe(3500)
+  })
+
+  it('leaves marks with a fixed duration alone', () => {
+    const input = [makeEvent({ videoTimeMs: 5990, endTimeMs: 20_000 })]
+
+    expect(endHighlightsWithNarration(input, narrations)).toEqual(input)
   })
 })
