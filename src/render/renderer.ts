@@ -3,6 +3,7 @@ import * as path from 'node:path'
 import { execFileSync } from 'node:child_process'
 import type { RenderConfig } from '../types/render.js'
 import { resolveResolution } from '../types/render.js'
+import { upscaleWarning } from './sharpness.js'
 import { moveZoomsToSpokenNarration } from '../pipeline/zoom-markers.js'
 import type { SubtitleEntry } from '../types/subtitle.js'
 import type { SpeedSegment } from '../types/speed.js'
@@ -928,6 +929,10 @@ export function renderVideo(
   // Zoom operates on the video with baked-in overlays — same invariant as
   // before the collapse — and is what scales to the target resolution.
   if (trace.voiceover) moveZoomsToSpokenNarration(trace.voiceover.entries)
+  // After the move above, which can drop a stale zoom.
+  const maxZoom = Math.max(1, ...(trace.subtitles ?? []).map((s) => s.zoom?.level ?? 1))
+  const upscale = upscaleWarning(graphInputRes, resolution, maxZoom)
+  if (upscale) console.warn(`  Warning: ${upscale}`)
   const zoomStage = hasZoom && trace.subtitles
     ? buildZoomStage(
       vLabel,

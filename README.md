@@ -102,7 +102,7 @@ sudo apt install ffmpeg
 
 **Trace inputs.** Two layouts work:
 
-- **Test-results directory** (preferred): pass a folder or `trace.zip` whose sibling is a `.webm` recorded by Playwright's `recordVideo` (`use: { video: 'on' }`). Native frame rate, best quality.
+- **Test-results directory** (preferred): pass a folder or `trace.zip` whose sibling is a `.webm` recorded by Playwright's `recordVideo` (`use: { video: 'on' }`). Native frame rate, best quality. For sharp zooms, record at a higher device scale with `recastVideo()` from `playwright-recast/config`.
 - **Standalone `trace.zip`**: pass the zip alone — the pipeline assembles the source video from screencast JPEG frames stored inside the trace. Variable cadence (~capture rate), but works out of the box on traces from the Playwright trace viewer or test runs without `recordVideo`.
 
 ### CLI Usage

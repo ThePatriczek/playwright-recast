@@ -6,6 +6,8 @@
 
 - **`render({ zoom: { panStabilizationThreshold } })`** - keeps the camera still between nearby zoom targets at the same level, per axis. Off by default.
 - **`highlight(locator, { duration: 'narration' })`** - the mark ends when its narration has been spoken: the one playing when it appears, else the next one. Falls back to the default duration without a voiceover.
+- **`recastVideo({ viewport, scale })` in `playwright-recast/config`** - Playwright `use` options that record at viewport x scale device pixels, so zoomed text stays sharp. Sets the three options that each fail silently on their own. Chromium only.
+- **The renderer warns when zoomed text gets upscaled** - past 1.25x at the tightest zoom, naming the recording size that would be sharp.
 
 ### Bug fixes
 
