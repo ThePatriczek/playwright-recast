@@ -925,7 +925,7 @@ export class PipelineExecutor {
           }
 
           const report = JSON.parse(fs.readFileSync(reportJsonPath, 'utf-8')) as {
-            steps?: Array<{ hidden?: boolean; highlights?: Array<{ x: number; y: number; width: number; height: number; color?: string; opacity?: number; duration?: number; fadeOut?: number; swipeDuration?: number }> }>
+            steps?: Array<{ hidden?: boolean; highlights?: Array<{ x: number; y: number; width: number; height: number; color?: string; opacity?: number; duration?: number | 'narration'; fadeOut?: number; swipeDuration?: number }> }>
           }
 
           const subtitles = state.subtitled?.subtitles ?? []
@@ -938,7 +938,8 @@ export class PipelineExecutor {
             for (const hl of hls) {
               const videoTimeMs = subtitles[i]!.startMs
               const subtitleEndMs = subtitles[i]!.endMs
-              const duration = hl.duration ?? hlConfig.duration
+              const untilNarrationEnd = hl.duration === 'narration'
+              const duration = typeof hl.duration === 'number' ? hl.duration : hlConfig.duration
               const fadeOut = hl.fadeOut ?? hlConfig.fadeOut
               // Clamp end time to subtitle boundary — highlight must not overflow into next step
               const rawEndMs = videoTimeMs + duration + fadeOut
@@ -954,6 +955,7 @@ export class PipelineExecutor {
                 opacity: hl.opacity ?? hlConfig.opacity,
                 swipeDuration: hl.swipeDuration ?? hlConfig.swipeDuration,
                 fadeOut,
+                ...(untilNarrationEnd ? { untilNarrationEnd } : {}),
               })
             }
           }

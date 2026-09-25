@@ -82,7 +82,7 @@ export interface RenderableTrace extends ParsedTrace {
   subtitles?: SubtitleEntry[]
   voiceover?: {
     audioTrackPath: string
-    entries: Array<{ outputStartMs: number; outputEndMs: number }>
+    entries: Array<{ outputStartMs: number; outputEndMs: number; spokenEndMs?: number }>
     totalDurationMs: number
     freezes?: Array<{ atVideoMs: number; durationMs: number }>
   }
