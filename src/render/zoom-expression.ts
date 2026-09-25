@@ -40,10 +40,10 @@ type Segment =
  *
  * Zoompan coordinate system:
  * - `z` = zoom level (1.0 = no zoom, 1.5 = 1.5x)
- * - `x`, `y` = top-left corner of the visible region in the ZOOMED image
- * - Zoomed image size = iw*z × ih*z, visible region = s (output size)
- * - To center at (cx, cy) fraction: x = cx*iw*z - ow/2, y = cy*ih*z - oh/2
- *   (clamped to 0 .. iw*z - ow for x, 0 .. ih*z - oh for y)
+ * - `x`, `y` = top-left corner of the visible region in INPUT pixels
+ * - Visible region = iw/z × ih/z input pixels, scaled to s (output size)
+ * - To center at (cx, cy) fraction: x = cx*iw - iw/z/2, y = cy*ih - ih/z/2
+ *   (clamped to 0 .. iw - iw/z for x, 0 .. ih - ih/z for y)
  */
 export function buildZoomFilter(
   keyframes: ZoomKeyframe[],
@@ -74,12 +74,12 @@ export function buildZoomFilter(
   const cxExpr = buildTimeExpr(segments, 'cx', 0.5, easing, tVar, 1)
   const cyExpr = buildTimeExpr(segments, 'cy', 0.5, easing, tVar, 2)
 
-  // zoompan x/y: convert center fraction to top-left pixel in zoomed space
-  // x = max(0, min(cx * iw * zoom - ow/2, iw * zoom - ow))
-  // y = max(0, min(cy * ih * zoom - oh/2, ih * zoom - oh))
+  // zoompan x/y: convert center fraction to the crop's top-left input pixel
+  // x = max(0, min(cx * iw - iw/zoom/2, iw - iw/zoom))
+  // y = max(0, min(cy * ih - ih/zoom/2, ih - ih/zoom))
   // Note: zoompan expressions don't need \\, escaping (uses ':' separator, not ',')
-  const xExpr = `max(0,min((${cxExpr})*iw*zoom-ow/2,iw*zoom-ow))`
-  const yExpr = `max(0,min((${cyExpr})*ih*zoom-oh/2,ih*zoom-oh))`
+  const xExpr = `max(0,min((${cxExpr})*iw-iw/zoom/2,iw-iw/zoom))`
+  const yExpr = `max(0,min((${cyExpr})*ih-ih/zoom/2,ih-ih/zoom))`
 
   return `zoompan=z='${zExpr}':x='${xExpr}':y='${yExpr}':d=1:s=${targetRes.width}x${targetRes.height}:fps=${fps}`
 }

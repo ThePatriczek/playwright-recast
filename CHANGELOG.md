@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Bug fixes
+
+- **Zoom missed its target unless pinned to a frame edge** - the zoompan crop used zoomed instead of input coordinates, off by about the zoom factor. Most visible with a source larger than the output.
+
 ## 0.21.0 (2026-08-28)
 
 ### Features
