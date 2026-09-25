@@ -588,7 +588,8 @@ export class PipelineExecutor {
                 const data = JSON.parse(action.title.slice(ZOOM_TITLE_PREFIX.length)) as {
                   x: number; y: number; level: number
                 }
-                const tMs = toVideoMs(action.startTime as number)
+                // Cues start on whole ms; unrounded, a marker in the same ms as its narrate() misses it.
+                const tMs = Math.round(toVideoMs(action.startTime as number))
                 const sub = cueForZoomMarker(state.subtitled.subtitles, tMs)
                 if (sub) {
                   // Start at the zoom() marker when it falls inside the cue,
@@ -600,7 +601,7 @@ export class PipelineExecutor {
                     x: data.x,
                     y: data.y,
                     level: data.level,
-                    startMs: Math.round(Math.max(tMs, sub.startMs)),
+                    startMs: Math.max(tMs, sub.startMs),
                   }
                 }
               } catch {
