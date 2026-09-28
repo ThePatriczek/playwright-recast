@@ -207,6 +207,42 @@ describe('QwenTtsProvider synthesize() — audio cache', () => {
     expect(fs.readFileSync(countFile, 'utf8')).toBe('2')  // only 'hello' + 'world' sent to sidecar
   })
 
+  it('sends the batch size to the sidecar, 8 unless configured', async () => {
+    const workDir = path.join(TMP, 'work-batch')
+    fs.mkdirSync(workDir, { recursive: true })
+    const voiceSample = makeVoiceSample(workDir)
+    const seenFile = path.join(TMP, 'batch-seen.txt')
+    const stub = path.join(TMP, 'batch-stub.py')
+    fs.writeFileSync(stub, [
+      'import json, sys, struct, wave',
+      'req = json.loads(sys.stdin.read())',
+      'with open(' + JSON.stringify(seenFile) + ', "w") as f: f.write(str(req["clone"]["batchSize"]))',
+      'work = req["workDir"]',
+      'results = {"ok": True, "clone": []}',
+      'for i, _ in enumerate(req["clone"]["texts"]):',
+      '    p = f"{work}/clone-{i}.wav"',
+      '    with wave.open(p, "wb") as w:',
+      '        w.setnchannels(1); w.setsampwidth(2); w.setframerate(24000)',
+      '        w.writeframes(struct.pack("<" + "h" * 1000, *([0] * 1000)))',
+      '    results["clone"].append({"path": p})',
+      'print(json.dumps(results))',
+    ].join('\n'))
+    const make = (batchSize?: number) => QwenTtsProvider({
+      mode: 'clone', voiceSample, refText: 'Welcome', __pythonScriptPath__: stub,
+      ...(batchSize ? { batchSize } : {}),
+    })
+
+    await make().synthesize(['one'], { workDir })
+    expect(fs.readFileSync(seenFile, 'utf8')).toBe('8')
+    await make(3).synthesize(['two'], { workDir })
+    expect(fs.readFileSync(seenFile, 'utf8')).toBe('3')
+  })
+
+  it('rejects a batch size that is not a positive integer', () => {
+    const voiceSample = makeVoiceSample(TMP)
+    expect(() => QwenTtsProvider({ mode: 'clone', voiceSample, refText: 'Welcome', batchSize: 0 })).toThrow(/batchSize/)
+  })
+
   it('after generateVoiceover-style consumption of audio.path, the cache file still exists', async () => {
     const workDir = path.join(TMP, 'work-cache-survives')
     fs.mkdirSync(workDir, { recursive: true })

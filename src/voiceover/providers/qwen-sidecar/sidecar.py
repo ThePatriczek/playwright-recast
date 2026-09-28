@@ -54,17 +54,24 @@ try:
             dtype=torch_dtype,
             attn_implementation="flash_attention_2",
         )
-        wavs, sr = model.generate_voice_clone(
-            text=c["texts"],
-            language=language,
-            ref_audio=c["refAudio"],
-            ref_text=c["refText"],
-        )
+        # In batches: GPU memory grows with the texts per call, and one call
+        # for every new line of a long screencast ran out of it.
+        texts = c["texts"]
+        batch_size = c.get("batchSize", 8)
         clone_results = []
-        for i, wav in enumerate(wavs):
-            p = f"{work_dir}/clone-{i}.wav"
-            sf.write(p, wav, sr)
-            clone_results.append({"path": p})
+        for start in range(0, len(texts), batch_size):
+            wavs, sr = model.generate_voice_clone(
+                text=texts[start:start + batch_size],
+                language=language,
+                ref_audio=c["refAudio"],
+                ref_text=c["refText"],
+            )
+            for offset, wav in enumerate(wavs):
+                p = f"{work_dir}/clone-{start + offset}.wav"
+                sf.write(p, wav, sr)
+                clone_results.append({"path": p})
+            del wavs
+            torch.cuda.empty_cache()
         results["clone"] = clone_results
 
     print(json.dumps(results))

@@ -97,6 +97,7 @@ In design mode `refText` is the line the model will speak *into* the reference W
 | `pythonBin` | `string` | `'python3'` | Python interpreter to launch the sidecar |
 | `device` | `string` | `'cuda:0'` | Torch device |
 | `dtype` | `'bfloat16' \| 'float16' \| 'float32'` | `'bfloat16'` | Model precision |
+| `batchSize` | `number` | `8` | Texts synthesized per model call. GPU memory grows with it; lower it if the GPU runs out of memory |
 
 ### Clone mode
 

@@ -17,6 +17,9 @@ interface QwenTtsCommonConfig {
   pythonBin?: string
   device?: string
   dtype?: 'bfloat16' | 'float16' | 'float32'
+  /** Texts synthesized per model call (default 8). GPU memory grows with the
+   *  batch, so a screencast with many new lines ran out of memory in one call. */
+  batchSize?: number
   /** @internal — test-only override of the sidecar script path. */
   __pythonScriptPath__?: string
 }
@@ -42,6 +45,7 @@ const DEFAULT_LANGUAGE = 'English'
 const DEFAULT_PYTHON_BIN = 'python3'
 const DEFAULT_DEVICE = 'cuda:0'
 const DEFAULT_DTYPE = 'bfloat16' as const
+const DEFAULT_BATCH_SIZE = 8
 
 export class QwenSidecarError extends Error {
   readonly stage: 'init' | 'design' | 'clone'
@@ -69,6 +73,7 @@ interface SidecarRequest {
     refAudio: string
     refText: string
     texts: string[]
+    batchSize: number
   }
 }
 
@@ -174,6 +179,10 @@ export function QwenTtsProvider(config: QwenTtsProviderConfig): TtsProvider {
   const pythonBin = config.pythonBin ?? DEFAULT_PYTHON_BIN
   const device = config.device ?? DEFAULT_DEVICE
   const dtype = config.dtype ?? DEFAULT_DTYPE
+  const batchSize = config.batchSize ?? DEFAULT_BATCH_SIZE
+  if (!Number.isInteger(batchSize) || batchSize < 1) {
+    throw new Error(`QwenTtsProvider: batchSize must be a positive integer, got ${batchSize}`)
+  }
 
   // Compute the reference-audio fingerprint once per provider instance.
   // In clone mode it's the hash of the user-provided file.
@@ -283,6 +292,7 @@ export function QwenTtsProvider(config: QwenTtsProviderConfig): TtsProvider {
         refAudio,
         refText: config.refText,
         texts: plan.missIndices.map((i) => plan.targets[i]!.text),
+        batchSize,
       }
     }
     return req
