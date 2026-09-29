@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
@@ -205,6 +205,82 @@ describe('QwenTtsProvider synthesize() — audio cache', () => {
     expect(fs.readFileSync(out[0]!.path)).toEqual(fs.readFileSync(out[1]!.path))
     expect(out[2]!.path).not.toBe(out[0]!.path)
     expect(fs.readFileSync(countFile, 'utf8')).toBe('2')  // only 'hello' + 'world' sent to sidecar
+  })
+
+  it('sends the batch size to the sidecar, 8 unless configured', async () => {
+    const workDir = path.join(TMP, 'work-batch')
+    fs.mkdirSync(workDir, { recursive: true })
+    const voiceSample = makeVoiceSample(workDir)
+    const seenFile = path.join(TMP, 'batch-seen.txt')
+    const stub = path.join(TMP, 'batch-stub.py')
+    fs.writeFileSync(stub, [
+      'import json, sys, struct, wave',
+      'req = json.loads(sys.stdin.read())',
+      'with open(' + JSON.stringify(seenFile) + ', "w") as f: f.write(str(req["clone"]["batchSize"]))',
+      'work = req["workDir"]',
+      'results = {"ok": True, "clone": []}',
+      'for i, _ in enumerate(req["clone"]["texts"]):',
+      '    p = f"{work}/clone-{i}.wav"',
+      '    with wave.open(p, "wb") as w:',
+      '        w.setnchannels(1); w.setsampwidth(2); w.setframerate(24000)',
+      '        w.writeframes(struct.pack("<" + "h" * 1000, *([0] * 1000)))',
+      '    results["clone"].append({"path": p})',
+      'print(json.dumps(results))',
+    ].join('\n'))
+    const make = (batchSize?: number) => QwenTtsProvider({
+      mode: 'clone', voiceSample, refText: 'Welcome', __pythonScriptPath__: stub,
+      ...(batchSize ? { batchSize } : {}),
+    })
+
+    await make().synthesize(['one'], { workDir })
+    expect(fs.readFileSync(seenFile, 'utf8')).toBe('8')
+    await make(3).synthesize(['two'], { workDir })
+    expect(fs.readFileSync(seenFile, 'utf8')).toBe('3')
+  })
+
+  describe('the real sidecar, on stub qwen_tts, torch and soundfile modules', () => {
+    const MODULES = path.resolve(__dirname, '../../fixtures/qwen-modules')
+    const texts = ['t0', 't1', 't2', 't3', 't4', 't5', 't6']
+    const log = (name: string) => path.join(TMP, `${name}.log`)
+    const read = (file: string) => fs.readFileSync(file, 'utf8').trim().split('\n').map((l) => JSON.parse(l))
+    const run = (name: string, cacheDir: string, failBatch?: number) => {
+      fs.rmSync(log(name), { force: true })
+      vi.stubEnv('PYTHONPATH', MODULES)
+      vi.stubEnv('PYTHONDONTWRITEBYTECODE', '1')
+      vi.stubEnv('QWEN_STUB_LOG', log(name))
+      vi.stubEnv('QWEN_STUB_FAIL_BATCH', failBatch === undefined ? '' : String(failBatch))
+      const workDir = path.join(TMP, `work-${name}`)
+      fs.mkdirSync(workDir, { recursive: true })
+      const voiceSample = makeVoiceSample(workDir)
+      return QwenTtsProvider({ mode: 'clone', voiceSample, refText: 'Welcome', batchSize: 3, cacheDir, cacheAudio: true })
+        .synthesize(texts, { workDir })
+    }
+    afterAll(() => { vi.unstubAllEnvs() })
+
+    it('synthesizes in batches, writing each text to its own file and preparing the voice once', async () => {
+      const out = await run('batches', path.join(TMP, 'cache-batches'))
+      expect(out).toHaveLength(7)
+      const entries = read(log('batches'))
+      expect(entries.filter((e) => e.prompt)).toHaveLength(1)
+      expect(entries.filter((e) => e.batch).map((e) => e.batch)).toEqual([['t0', 't1', 't2'], ['t3', 't4', 't5'], ['t6']])
+      expect(entries.filter((e) => e.write).map((e) => e.write)).toEqual(texts.map((t, i) => [`clone-${i}.wav`, t]))
+    })
+
+    it('caches the batches finished before a failure, so a rerun makes only the rest', async () => {
+      const cacheDir = path.join(TMP, 'cache-partial')
+      const err = await run('partial-fail', cacheDir, 2).catch((e) => e)
+      expect(err.name).toBe('QwenSidecarError')
+      expect(err.partial.clone).toHaveLength(6)
+      // Cached only: no per-line copies are left in the work dir
+      expect(fs.readdirSync(path.join(TMP, 'work-partial-fail')).filter((f) => f.endsWith('.mp3'))).toEqual([])
+      await run('partial-rerun', cacheDir)
+      expect(read(log('partial-rerun')).filter((e) => e.batch).map((e) => e.batch)).toEqual([['t6']])
+    })
+  })
+
+  it('rejects a batch size that is not a positive integer', () => {
+    const voiceSample = makeVoiceSample(TMP)
+    expect(() => QwenTtsProvider({ mode: 'clone', voiceSample, refText: 'Welcome', batchSize: 0 })).toThrow(/batchSize/)
   })
 
   it('after generateVoiceover-style consumption of audio.path, the cache file still exists', async () => {

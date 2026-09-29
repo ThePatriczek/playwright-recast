@@ -17,6 +17,9 @@ interface QwenTtsCommonConfig {
   pythonBin?: string
   device?: string
   dtype?: 'bfloat16' | 'float16' | 'float32'
+  /** Texts synthesized per model call (default 8). GPU memory grows with the
+   *  batch, so a screencast with many new lines ran out of memory in one call. */
+  batchSize?: number
   /** @internal — test-only override of the sidecar script path. */
   __pythonScriptPath__?: string
 }
@@ -42,15 +45,24 @@ const DEFAULT_LANGUAGE = 'English'
 const DEFAULT_PYTHON_BIN = 'python3'
 const DEFAULT_DEVICE = 'cuda:0'
 const DEFAULT_DTYPE = 'bfloat16' as const
+const DEFAULT_BATCH_SIZE = 8
 
 export class QwenSidecarError extends Error {
   readonly stage: 'init' | 'design' | 'clone'
   readonly pythonTraceback?: string
-  constructor(stage: 'init' | 'design' | 'clone', message: string, traceback?: string) {
+  /** What the sidecar finished before failing, e.g. the batches before one ran out of memory */
+  readonly partial: { design?: { path: string }; clone?: Array<{ path: string }> }
+  constructor(
+    stage: 'init' | 'design' | 'clone',
+    message: string,
+    traceback?: string,
+    partial: { design?: { path: string }; clone?: Array<{ path: string }> } = {},
+  ) {
     super(`Qwen sidecar failed at stage '${stage}': ${message}`)
     this.name = 'QwenSidecarError'
     this.stage = stage
     this.pythonTraceback = traceback
+    this.partial = partial
   }
 }
 
@@ -69,6 +81,7 @@ interface SidecarRequest {
     refAudio: string
     refText: string
     texts: string[]
+    batchSize: number
   }
 }
 
@@ -83,6 +96,8 @@ interface SidecarResponseErr {
   stage: 'init' | 'design' | 'clone'
   error: string
   traceback?: string
+  design?: { path: string }
+  clone?: Array<{ path: string }>
 }
 
 type SidecarResponse = SidecarResponseOk | SidecarResponseErr
@@ -128,7 +143,7 @@ function runSidecar(
     return parsed
   }
   if (parsed && !parsed.ok) {
-    throw new QwenSidecarError(parsed.stage, parsed.error, parsed.traceback)
+    throw new QwenSidecarError(parsed.stage, parsed.error, parsed.traceback, { design: parsed.design, clone: parsed.clone })
   }
   const stderr = (r.stderr ?? '').trim()
   throw new Error(
@@ -174,6 +189,10 @@ export function QwenTtsProvider(config: QwenTtsProviderConfig): TtsProvider {
   const pythonBin = config.pythonBin ?? DEFAULT_PYTHON_BIN
   const device = config.device ?? DEFAULT_DEVICE
   const dtype = config.dtype ?? DEFAULT_DTYPE
+  const batchSize = config.batchSize ?? DEFAULT_BATCH_SIZE
+  if (!Number.isInteger(batchSize) || batchSize < 1) {
+    throw new Error(`QwenTtsProvider: batchSize must be a positive integer, got ${batchSize}`)
+  }
 
   // Compute the reference-audio fingerprint once per provider instance.
   // In clone mode it's the hash of the user-provided file.
@@ -283,6 +302,7 @@ export function QwenTtsProvider(config: QwenTtsProviderConfig): TtsProvider {
         refAudio,
         refText: config.refText,
         texts: plan.missIndices.map((i) => plan.targets[i]!.text),
+        batchSize,
       }
     }
     return req
@@ -357,11 +377,28 @@ export function QwenTtsProvider(config: QwenTtsProviderConfig): TtsProvider {
         const plan = planSynthesis(texts, tmpDir)
         const { refAudio, scheduledDesign } = resolveRefAudio(sidecarDir)
         if (scheduledDesign || plan.missIndices.length > 0) {
-          const resp = runSidecar(
-            pythonBin,
-            config.__pythonScriptPath__,
-            buildSidecarRequest(plan, sidecarDir, refAudio, scheduledDesign),
-          )
+          let resp: SidecarResponseOk
+          try {
+            resp = runSidecar(
+              pythonBin,
+              config.__pythonScriptPath__,
+              buildSidecarRequest(plan, sidecarDir, refAudio, scheduledDesign),
+            )
+          } catch (err) {
+            // Cache what finished before the failure, so a rerun only makes the rest.
+            // Best effort: a failure here must not hide the sidecar's error.
+            if (err instanceof QwenSidecarError) {
+              try {
+                if (err.partial.design) persistDesignWav(err.partial.design.path)
+                if (cacheAudio) {
+                  err.partial.clone?.forEach((wav, k) => {
+                    convertWavToMp3(wav.path, plan.targets[plan.missIndices[k]!]!.cachePath)
+                  })
+                }
+              } catch { /* keep the sidecar's error */ }
+            }
+            throw err
+          }
           if (resp.design) persistDesignWav(resp.design.path)
           persistCloneWavs(resp.clone ?? [], plan, tmpDir)
         }

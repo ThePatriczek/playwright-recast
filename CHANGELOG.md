@@ -14,6 +14,7 @@
 
 - **`highlight({ text })` inside an iframe was off by the iframe's offset** - the text box is now moved into page space.
 - **A highlight, click or cursor move right after `waitForNarration()` showed a whole narration early** - the hold moves up to the next frame, so an overlay set within those milliseconds counted as before it. Overlays now compare against where the hold was asked for.
+- **Qwen ran out of GPU memory on screencasts with many new lines** - every uncached line went into one model call, and GPU memory grows with the batch. The sidecar now synthesizes `batchSize` lines at a time (default 8) and frees memory in between; the model and the voice sample still load once. With `cacheAudio`, the lines finished before a failure are cached.
 - **A `zoom()` set just before its `narrate()` was dropped, or zoomed at the wrong line** - a zoom now belongs to the narration whose audio is playing, else the next one, and starts with it.
 - **Zoom missed its target unless pinned to a frame edge** - the zoompan crop used zoomed instead of input coordinates, off by about the zoom factor. Most visible with a source larger than the output.
 
