@@ -24,6 +24,8 @@ async function record(scale: number): Promise<string> {
   })
   const page = await context.newPage()
   await page.setContent('<body style="margin:0;background:#000"><div style="position:fixed;right:0;bottom:0;width:8px;height:8px;background:#f00"></div></body>')
+  // A frame painted with the content, or under load the screencast can close on the blank page
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
   await page.waitForTimeout(500)
   const video = page.video()!
   await context.close()
