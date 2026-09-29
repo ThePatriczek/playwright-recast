@@ -58,21 +58,22 @@ try:
         # for every new line of a long screencast ran out of it.
         texts = c["texts"]
         batch_size = c.get("batchSize", 8)
-        clone_results = []
+        # The reference audio once, not again for every batch.
+        prompt = model.create_voice_clone_prompt(ref_audio=c["refAudio"], ref_text=c["refText"])
+        # Filled per batch, so a failure still reports the finished ones.
+        results["clone"] = []
         for start in range(0, len(texts), batch_size):
             wavs, sr = model.generate_voice_clone(
                 text=texts[start:start + batch_size],
                 language=language,
-                ref_audio=c["refAudio"],
-                ref_text=c["refText"],
+                voice_clone_prompt=prompt,
             )
             for offset, wav in enumerate(wavs):
                 p = f"{work_dir}/clone-{start + offset}.wav"
                 sf.write(p, wav, sr)
-                clone_results.append({"path": p})
+                results["clone"].append({"path": p})
             del wavs
             torch.cuda.empty_cache()
-        results["clone"] = clone_results
 
     print(json.dumps(results))
 except Exception as e:  # noqa: BLE001 — top-level catch is the design
@@ -81,5 +82,7 @@ except Exception as e:  # noqa: BLE001 — top-level catch is the design
         "stage": stage,
         "error": str(e),
         "traceback": traceback.format_exc(),
+        # What finished before the failure, for the caller to cache
+        **{k: results[k] for k in ("design", "clone") if k in results},
     }))
     sys.exit(1)

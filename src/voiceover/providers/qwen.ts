@@ -50,11 +50,19 @@ const DEFAULT_BATCH_SIZE = 8
 export class QwenSidecarError extends Error {
   readonly stage: 'init' | 'design' | 'clone'
   readonly pythonTraceback?: string
-  constructor(stage: 'init' | 'design' | 'clone', message: string, traceback?: string) {
+  /** What the sidecar finished before failing, e.g. the batches before one ran out of memory */
+  readonly partial: { design?: { path: string }; clone?: Array<{ path: string }> }
+  constructor(
+    stage: 'init' | 'design' | 'clone',
+    message: string,
+    traceback?: string,
+    partial: { design?: { path: string }; clone?: Array<{ path: string }> } = {},
+  ) {
     super(`Qwen sidecar failed at stage '${stage}': ${message}`)
     this.name = 'QwenSidecarError'
     this.stage = stage
     this.pythonTraceback = traceback
+    this.partial = partial
   }
 }
 
@@ -88,6 +96,8 @@ interface SidecarResponseErr {
   stage: 'init' | 'design' | 'clone'
   error: string
   traceback?: string
+  design?: { path: string }
+  clone?: Array<{ path: string }>
 }
 
 type SidecarResponse = SidecarResponseOk | SidecarResponseErr
@@ -133,7 +143,7 @@ function runSidecar(
     return parsed
   }
   if (parsed && !parsed.ok) {
-    throw new QwenSidecarError(parsed.stage, parsed.error, parsed.traceback)
+    throw new QwenSidecarError(parsed.stage, parsed.error, parsed.traceback, { design: parsed.design, clone: parsed.clone })
   }
   const stderr = (r.stderr ?? '').trim()
   throw new Error(
@@ -367,11 +377,28 @@ export function QwenTtsProvider(config: QwenTtsProviderConfig): TtsProvider {
         const plan = planSynthesis(texts, tmpDir)
         const { refAudio, scheduledDesign } = resolveRefAudio(sidecarDir)
         if (scheduledDesign || plan.missIndices.length > 0) {
-          const resp = runSidecar(
-            pythonBin,
-            config.__pythonScriptPath__,
-            buildSidecarRequest(plan, sidecarDir, refAudio, scheduledDesign),
-          )
+          let resp: SidecarResponseOk
+          try {
+            resp = runSidecar(
+              pythonBin,
+              config.__pythonScriptPath__,
+              buildSidecarRequest(plan, sidecarDir, refAudio, scheduledDesign),
+            )
+          } catch (err) {
+            // Cache what finished before the failure, so a rerun only makes the rest.
+            // Best effort: a failure here must not hide the sidecar's error.
+            if (err instanceof QwenSidecarError) {
+              try {
+                if (err.partial.design) persistDesignWav(err.partial.design.path)
+                if (cacheAudio) {
+                  err.partial.clone?.forEach((wav, k) => {
+                    convertWavToMp3(wav.path, plan.targets[plan.missIndices[k]!]!.cachePath)
+                  })
+                }
+              } catch { /* keep the sidecar's error */ }
+            }
+            throw err
+          }
           if (resp.design) persistDesignWav(resp.design.path)
           persistCloneWavs(resp.clone ?? [], plan, tmpDir)
         }
