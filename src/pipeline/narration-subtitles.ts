@@ -57,6 +57,7 @@ export function buildNarrationSubtitles(
       startMs: Math.round(startMs),
       endMs: Math.round(endMs),
       text,
+      ...(next ? { endTraceMs: next.startTime } : {}),
     })
   }
 

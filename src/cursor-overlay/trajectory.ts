@@ -70,6 +70,7 @@ export function buildTrajectory(input: TrajectoryInput): CursorKeyframe[] {
       y: action.point!.y,
       videoTimeSec: Math.max(0, videoTimeMs / 1000),
       autoWaitSec: autoWaitMs / 1000,
+      traceMs: actionTime,
     }
   })
 

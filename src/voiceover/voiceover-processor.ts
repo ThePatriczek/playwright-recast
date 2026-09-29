@@ -124,7 +124,7 @@ export async function generateVoiceover(
 
     while (holdIndex < holds.length && holds[holdIndex]!.atVideoMs <= originalStartsMs[si]!) {
       const h = holds[holdIndex]!
-      const aligned = alignFreezeToFrame(h.atVideoMs, h.durationMs, outputFps)
+      const aligned = alignFreezeToFrame(h.atVideoMs, h.durationMs, outputFps, h.sourceMs)
       freezes.push(aligned)
       timeShift += aligned.durationMs
       holdIndex++
@@ -201,7 +201,8 @@ export async function generateVoiceover(
       if (nextOriginalStartMs !== undefined) {
         // Rounds up: a short hold leaves captions ahead of the voice.
         const aligned = alignNarrationHold(originalEndsMs[si]!, overflow, outputFps)
-        freezes.push(aligned)
+        const endTraceMs = trace.subtitles[si]!.endTraceMs
+        freezes.push(endTraceMs !== undefined ? { ...aligned, sourceTraceMs: endTraceMs } : aligned)
         timeShift += aligned.durationMs
       } else {
         timeShift += overflow
@@ -221,7 +222,7 @@ export async function generateVoiceover(
   // audio for; record them so the renderer still holds the video there.
   while (holdIndex < holds.length) {
     const h = holds[holdIndex]!
-    freezes.push(alignFreezeToFrame(h.atVideoMs, h.durationMs, outputFps))
+    freezes.push(alignFreezeToFrame(h.atVideoMs, h.durationMs, outputFps, h.sourceMs))
     holdIndex++
   }
 

@@ -1,4 +1,5 @@
 import type { HighlightEvent } from '../types/text-highlight.js'
+import { isAfterHold } from '../voiceover/frame-align.js'
 
 /**
  * End each highlight when the next one begins, so only one is ever on screen.
@@ -82,13 +83,13 @@ export function endHighlightsWithNarration(
  */
 export function shiftHighlightsForFreezes(
   events: ReadonlyArray<HighlightEvent>,
-  freezes: ReadonlyArray<{ atVideoMs: number; durationMs: number }>,
+  freezes: ReadonlyArray<{ atVideoMs: number; durationMs: number; sourceMs?: number; sourceTraceMs?: number }>,
 ): HighlightEvent[] {
   return events.map((event) => {
     const durationMs = event.endTimeMs - event.videoTimeMs
     let shift = 0
     for (const freeze of freezes) {
-      if (freeze.atVideoMs <= event.videoTimeMs) shift += freeze.durationMs
+      if (isAfterHold({ ms: event.videoTimeMs, traceMs: event.traceMs }, freeze)) shift += freeze.durationMs
     }
     const videoTimeMs = event.videoTimeMs + shift
     return { ...event, videoTimeMs, endTimeMs: videoTimeMs + durationMs }
