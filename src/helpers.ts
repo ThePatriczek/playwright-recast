@@ -18,6 +18,12 @@ export interface SetupRecastOptions {
   /** How long `click()` hovers its target before pressing, so the recording
    *  shows the app's hover state (default: 0, off). */
   hoverDwellMs?: number
+  /** How long `waitForNarration()` lets the page settle before the narration
+   *  hold starts (default: 0, off). The hold freezes the last recorded frame,
+   *  and the recording trails the page - by a few hundred ms at a high device
+   *  scale - so a hold right after a click or navigation froze the screen as
+   *  it was before. */
+  narrationSettleMs?: number
 }
 
 /** Per-call options for `typeText()`. */
@@ -53,6 +59,12 @@ const DEFAULT_HOVER_DWELL_MS = 0
 /** Cap on the hover attempt itself — the dwell that follows is separate. */
 const HOVER_TIMEOUT_MS = 1000
 let _hoverDwellMs = DEFAULT_HOVER_DWELL_MS
+const DEFAULT_NARRATION_SETTLE_MS = 0
+let _narrationSettleMs = DEFAULT_NARRATION_SETTLE_MS
+/** setTimeout's limit; a longer delay fires after about 1 ms. */
+const MAX_TIMEOUT_MS = 2 ** 31 - 1
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 /**
  * Title prefix written to a trace step by `narrate()`. The `subtitlesFromTrace`
@@ -115,17 +127,26 @@ function estimateNarrationMs(text: string, charsPerSecond: number): number {
  *   keystrokes in ms (default: 100). A per-call `delayMs` overrides this.
  * @param options.hoverDwellMs How long `click()` hovers the target before
  *   pressing it, in ms (default: 0, off), so the app paints its hover state.
+ * @param options.narrationSettleMs How long `waitForNarration()` waits before
+ *   its marker, in ms (default: 0, off), so a narration hold freezes the page
+ *   after the last click, not before it.
  */
 export function setupRecast(
   testInstance: RecastTest,
   options?: SetupRecastOptions,
 ): void {
+  // Validate before changing anything, so a throw leaves the old settings intact.
+  const settleMs = options?.narrationSettleMs ?? DEFAULT_NARRATION_SETTLE_MS
+  if (!Number.isFinite(settleMs) || settleMs < 0 || settleMs > MAX_TIMEOUT_MS) {
+    throw new RangeError(`setupRecast narrationSettleMs must be between 0 and ${MAX_TIMEOUT_MS}, got ${settleMs}`)
+  }
   _getTestInfo = () => testInstance.info()
   _step = testInstance.step.bind(testInstance)
   _narrateAutoWait = options?.narrateAutoWait
   _clickSettleMs = options?.clickSettleMs ?? DEFAULT_CLICK_SETTLE_MS
   _typingDelayMs = options?.typingDelayMs ?? DEFAULT_TYPING_DELAY_MS
   _hoverDwellMs = options?.hoverDwellMs ?? DEFAULT_HOVER_DWELL_MS
+  _narrationSettleMs = settleMs
 }
 
 /**
@@ -186,7 +207,7 @@ export async function narrate(
   const autoWait = opts?.autoWait ?? _narrateAutoWait
   const waitMs = resolveAutoWait(cleanText, autoWait)
   if (waitMs > 0) {
-    await new Promise((resolve) => setTimeout(resolve, waitMs))
+    await sleep(waitMs)
   }
 }
 
@@ -466,8 +487,10 @@ export async function typeText(
  * Mark a point in the trace where the rendered video should wait for the
  * previous `narrate()` call's audio to finish before continuing.
  *
- * Resolves immediately at test time — there is no real-time pause. The wait
- * is realised in the rendered video via the freeze mechanism in
+ * Resolves immediately at test time, unless `narrationSettleMs` is set: then
+ * it first waits that long, which adds as much live footage to the previous
+ * narration's window. The wait itself is realised in the rendered video via
+ * the freeze mechanism in
  * `voiceover-processor.ts`: the preceding narration's subtitle window ends
  * here, and if its TTS audio is longer than that window, the renderer
  * freezes the last frame for the overflow.
@@ -477,6 +500,7 @@ export async function typeText(
  * scenario so the last line is heard before the video ends.
  */
 export async function waitForNarration(): Promise<void> {
+  if (_narrationSettleMs > 0) await sleep(_narrationSettleMs)
   if (_step) {
     await _step(WAIT_FOR_NARRATION_TITLE_PREFIX, async () => {})
   }
@@ -514,7 +538,7 @@ export async function click(
   }
   await locator.waitFor({ state: 'visible' })
   if (_clickSettleMs > 0) {
-    await new Promise((resolve) => setTimeout(resolve, _clickSettleMs))
+    await sleep(_clickSettleMs)
   }
   if (_hoverDwellMs > 0) {
     // Best effort, and short: the target is visible and settled already, so a
@@ -522,7 +546,7 @@ export async function click(
     // dwelling on it would only add latency ahead of the real click, which
     // runs its own actionability checks.
     const hovered = await locator.hover({ timeout: HOVER_TIMEOUT_MS }).then(() => true, () => false)
-    if (hovered) await new Promise((resolve) => setTimeout(resolve, _hoverDwellMs))
+    if (hovered) await sleep(_hoverDwellMs)
   }
   // After the dwell: resolveClickMarkers() only pairs a marker with a click
   // inside a short window, and an unpaired marker renders a second click.
