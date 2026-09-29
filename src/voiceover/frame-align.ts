@@ -77,14 +77,25 @@ export function alignFreezeToFrame(
   atVideoMs: number,
   durationMs: number,
   fps: number,
+  /** Where the hold was asked for, when `atVideoMs` is already clamped (to 0) */
+  sourceMs = atVideoMs,
 ): { atVideoMs: number; durationMs: number; sourceMs: number } {
-  if (!(fps > 0)) return { atVideoMs, durationMs, sourceMs: atVideoMs }
+  if (!(fps > 0)) return { atVideoMs, durationMs, sourceMs }
   const per = msPerFrame(fps)
   const aligned = alignMsUpToFrame(atVideoMs, fps)
   const shift = aligned - atVideoMs
   const rawDuration = Math.max(0, durationMs - shift)
   const quantisedDuration = Math.round(rawDuration / per) * per + 0 // normalize -0 to 0
-  return { atVideoMs: aligned, durationMs: quantisedDuration, sourceMs: atVideoMs }
+  return { atVideoMs: aligned, durationMs: quantisedDuration, sourceMs }
+}
+
+/**
+ * A cursor-approach hold `at` ms, 2ms before its click so the ripple and
+ * cursor shift into it. Clamped to the video start, with the unclamped
+ * source kept, so a click at 0 still counts as after its hold.
+ */
+export function approachHold(at: number, durationMs: number): { atVideoMs: number; durationMs: number; sourceMs: number } {
+  return { atVideoMs: Math.max(0, at - 2), durationMs, sourceMs: at - 2 }
 }
 
 /**

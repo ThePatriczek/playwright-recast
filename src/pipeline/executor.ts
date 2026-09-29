@@ -51,6 +51,7 @@ import { applyIntroOutro } from '../render/intro-outro.js'
 import { resolveBackgroundMusicConfig, type ResolvedBackgroundMusicConfig } from '../background-music/defaults.js'
 import { generateMusicTrack } from '../background-music/music-processor.js'
 import { directVideo } from '../director/renderer.js'
+import { approachHold } from '../voiceover/frame-align.js'
 import { validateDirectorOptions } from '../director/planner.js'
 import type { DirectorOptions, DirectorProvider } from '../types/director.js'
 
@@ -823,6 +824,7 @@ export class PipelineExecutor {
             videoTimeSec: Math.max(0, (remapCursor(m.traceTimeMs) - cursorVideoStartOffset) / 1000),
             autoWaitSec: 0,
             approach: true,
+            traceMs: m.traceTimeMs,
           }))
 
           const allKeyframes: CursorKeyframe[] = [...keyframes, ...markerKeyframes].sort(
@@ -1049,7 +1051,7 @@ export class PipelineExecutor {
           // recording's first-frame output offset, minus blank lead-in, minus a
           // 2ms margin so the click ripple/cursor reliably shift into the hold)
           // — the same video timeline the clicks and cursor keyframes live in.
-          const approachHolds: Array<{ atVideoMs: number; durationMs: number }> = []
+          const approachHolds: Array<{ atVideoMs: number; durationMs: number; sourceMs: number }> = []
           if (state.cursorOverlayConfig) {
             const approachMs = state.cursorOverlayConfig.approachMs ?? 500
             const blankMs = state._blankLeadInMs ?? 0
@@ -1067,8 +1069,8 @@ export class PipelineExecutor {
                 : 0
             const markerActions = state.filtered?.actions ?? state.parsed!.actions
             for (const m of parseClickMarkersFromRecordingContext(markerActions, recStart)) {
-              const at = Math.round(remap(m.startTime) - holdVideoStartOutput) - blankMs - 2
-              approachHolds.push({ atVideoMs: Math.max(0, at), durationMs: Math.round(approachMs) })
+              const at = Math.round(remap(m.startTime) - holdVideoStartOutput) - blankMs
+              approachHolds.push(approachHold(at, Math.round(approachMs)))
             }
           }
 

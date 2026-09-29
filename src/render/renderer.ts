@@ -30,7 +30,7 @@ import { chunkSubtitles } from '../subtitles/subtitle-chunker.js'
 import { filterRenderableSubtitles } from '../subtitles/renderable.js'
 import { interpolateVideo } from '../interpolate/interpolator.js'
 import { isSpeedClockAuthority } from '../speed/clock-authority.js'
-import { alignFreezeToFrame, isAfterHold } from '../voiceover/frame-align.js'
+import { alignFreezeToFrame, approachHold, isAfterHold } from '../voiceover/frame-align.js'
 import { runFfmpeg } from '../utils/ffmpeg.js'
 
 /**
@@ -724,6 +724,26 @@ function mergeFreezes(
 }
 
 /**
+ * Move clicks, cursor keyframes and highlights behind the holds before them,
+ * each by its raw trace time where it has one (see isAfterHold()). Mutates
+ * `trace`.
+ */
+export function shiftOverlaysForHolds(
+  trace: Pick<RenderableTrace, 'clickEvents' | 'cursorKeyframes' | 'highlightEvents' | 'highlightsOnFreezeClock'>,
+  holds: Array<{ atVideoMs: number; durationMs: number; sourceMs?: number; sourceTraceMs?: number }>,
+): void {
+  for (const ce of trace.clickEvents ?? []) {
+    ce.videoTimeMs = shiftForFreezes(ce.videoTimeMs, holds, ce.traceMs)
+  }
+  for (const kf of trace.cursorKeyframes ?? []) {
+    kf.videoTimeSec = shiftForFreezes(kf.videoTimeSec * 1000, holds, kf.traceMs) / 1000
+  }
+  if (trace.highlightEvents && !trace.highlightsOnFreezeClock) {
+    trace.highlightEvents = shiftHighlightsForFreezes(trace.highlightEvents, holds)
+  }
+}
+
+/**
  * Shift a pre-freeze video time forward by the cumulative freeze duration
  * that comes before it.
  */
@@ -824,9 +844,8 @@ export function renderVideo(
     const approachFps = probeVideoFps(videoInput)
     for (const kf of trace.cursorKeyframes) {
       if (kf.approach) {
-        const at = Math.round(kf.videoTimeSec * 1000) - 2 // -2ms: ripple + cursor shift into the hold
-        // Unclamped source, so a click at 0 still counts as after its hold.
-        approachFreezes.push({ ...alignFreezeToFrame(Math.max(0, at), Math.round(approachMs), approachFps), sourceMs: at })
+        const hold = approachHold(Math.round(kf.videoTimeSec * 1000), Math.round(approachMs))
+        approachFreezes.push(alignFreezeToFrame(hold.atVideoMs, hold.durationMs, approachFps, hold.sourceMs))
       }
     }
   }
@@ -837,20 +856,7 @@ export function renderVideo(
   const allFreezes = mergeFreezes(holds)
   if (allFreezes.length > 0) {
     videoInput = applyVoiceoverFreezes(videoInput, allFreezes, tmpDir)
-    if (trace.clickEvents) {
-      for (const ce of trace.clickEvents) {
-        ce.videoTimeMs = shiftForFreezes(ce.videoTimeMs, holds, ce.traceMs)
-      }
-    }
-    if (trace.cursorKeyframes) {
-      for (const kf of trace.cursorKeyframes) {
-        kf.videoTimeSec =
-          shiftForFreezes(kf.videoTimeSec * 1000, holds) / 1000
-      }
-    }
-    if (trace.highlightEvents && !trace.highlightsOnFreezeClock) {
-      trace.highlightEvents = shiftHighlightsForFreezes(trace.highlightEvents, holds)
-    }
+    shiftOverlaysForHolds(trace, holds)
   }
 
   // Phase 3.4a: Extra length to hold the last frame for, when the audio

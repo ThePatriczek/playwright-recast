@@ -248,4 +248,16 @@ describe('generateVoiceover freeze emission (waitForNarration-narrowed windows)'
     expect(result.voiceover.freezes).toContainEqual({ atVideoMs: 8000, durationMs: 520, sourceMs: 8000 })
     expect(result.voiceover.entries[1]!.outputStartMs).toBe(5000)
   })
+
+  it('keeps the unclamped source of an approach hold at 0', async () => {
+    const short = makeSineBuffer(1)
+    const trace: SubtitledTrace = {
+      subtitles: [{ index: 1, startMs: 1000, endMs: 3000, text: 'a', ttsText: undefined }],
+    } as unknown as SubtitledTrace
+    const result = await generateVoiceover(trace, makeProvider([short]), path.join(TMP_ROOT, 'approach-at-0'), undefined, [
+      { atVideoMs: 0, durationMs: 500, sourceMs: -2 },
+    ], 25)
+    // A click at 0 is 2ms after its hold, so it still moves behind it.
+    expect(result.voiceover.freezes[0]).toMatchObject({ atVideoMs: 0, sourceMs: -2 })
+  })
 })

@@ -42,4 +42,6 @@ export interface CursorKeyframe {
   /** True when this keyframe came from an explicit click marker — the renderer
    *  holds the frame here so the cursor's full approach plays over it. */
   approach?: boolean
+  /** Raw trace time, to order the keyframe against holds like its click */
+  traceMs?: number
 }

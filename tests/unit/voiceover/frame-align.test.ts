@@ -155,6 +155,13 @@ describe('alignNarrationHold', () => {
 })
 
 describe('isAfterHold', () => {
+  it('moves a click and its cursor keyframe together, both by trace time', () => {
+    // waitForNarration() at 999.6 (hold source 1000 rounded), click 0.3ms later.
+    const hold = { atVideoMs: 1040, sourceMs: 1000, sourceTraceMs: 999.6 }
+    expect(isAfterHold({ ms: 1000, traceMs: 999.9 }, hold)).toBe(true) // click, rounded
+    expect(isAfterHold({ ms: 999.9, traceMs: 999.9 }, hold)).toBe(true) // keyframe, unrounded
+  })
+
   it('orders by raw trace time where both have one, as rounded video times tie', () => {
     // A wait at 1000.4 and a click at 1000.49 both round to 1000.
     expect(isAfterHold({ ms: 1000, traceMs: 1000.49 }, { atVideoMs: 1040, sourceMs: 1000, sourceTraceMs: 1000.4 })).toBe(true)

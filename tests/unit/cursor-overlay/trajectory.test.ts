@@ -55,8 +55,8 @@ describe('buildTrajectory', () => {
       videoStartOffsetMs: 0,
     })
     expect(result).toHaveLength(2)
-    expect(result[0]).toEqual({ x: 100, y: 200, videoTimeSec: 1, autoWaitSec: 0 })
-    expect(result[1]).toEqual({ x: 300, y: 400, videoTimeSec: 3, autoWaitSec: 0 })
+    expect(result[0]).toEqual({ x: 100, y: 200, videoTimeSec: 1, autoWaitSec: 0, traceMs: 1000 })
+    expect(result[1]).toEqual({ x: 300, y: 400, videoTimeSec: 3, autoWaitSec: 0, traceMs: 3000 })
   })
 
   it('uses endTime when present (cursor lands when the action completes, not when it starts)', () => {
@@ -70,7 +70,7 @@ describe('buildTrajectory', () => {
     })
     // 3s of auto-wait (4000 - 1000) is recorded so the cursor's pre-click
     // approach can be trimmed to avoid gliding over the loading screen.
-    expect(result[0]).toEqual({ x: 100, y: 200, videoTimeSec: 4, autoWaitSec: 3 })
+    expect(result[0]).toEqual({ x: 100, y: 200, videoTimeSec: 4, autoWaitSec: 3, traceMs: 4000 })
   })
 
   it('falls back to startTime when endTime is absent', () => {
