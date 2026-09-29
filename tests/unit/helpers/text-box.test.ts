@@ -24,6 +24,10 @@ const FRAME = `
   <input id="scrolled" style="width:200px;font:16px monospace;padding:0;border:0" value="${'a'.repeat(60)}TARGET">
   <input id="spaced" style="width:400px;font:16px monospace;letter-spacing:6px;padding:0;border:0" value="abcdefTARGET">
   <textarea id="boxed" style="box-sizing:content-box;width:200px;padding:0 40px;border:0;font:16px monospace;resize:none">${'word '.repeat(4)}TARGET</textarea>
+  <input id="underlined" style="width:300px;font:16px monospace;padding:0;border:0;border-left:12px solid;border-bottom:2px solid" value="abcTARGET">
+  <input id="right" style="width:300px;font:16px monospace;padding:0;border:0;text-align:right;text-transform:uppercase" value="abctarget">
+  <input id="tall" style="width:300px;height:40px;font:14px monospace;padding:0;border:0" value="abcTARGET">
+  <div id="empty" style="width:300px;height:20px"></div>
   <textarea id="nowrap" wrap="off" style="width:200px;height:24px;font:16px monospace;padding:0;border:0;resize:none">${'word '.repeat(12)}TARGET</textarea>`
 const PAGE = `<body style="margin:0"><iframe style="position:absolute;left:200px;top:100px;width:800px;height:300px;border:0" srcdoc="${FRAME.replace(/"/g, '&quot;')}"></iframe></body>`
 
@@ -105,7 +109,7 @@ describe.skipIf(!browser)('text boxes in zoom() and highlight()', () => {
 
   // Where the text really is, measured by selecting it in the control itself.
   const selected = (id: string) => frame().locator(id).evaluate((el: HTMLInputElement | HTMLTextAreaElement) => {
-    const start = el.value.indexOf('TARGET')
+    const start = el.value.toUpperCase().indexOf('TARGET')
     const probe = document.createElement('div')
     const style = getComputedStyle(el)
     for (const p of style) probe.style.setProperty(p, style.getPropertyValue(p))
@@ -120,12 +124,25 @@ describe.skipIf(!browser)('text boxes in zoom() and highlight()', () => {
     return { x: r.x + m.x - p.x - el.scrollLeft, y: r.y + m.y - p.y - el.scrollTop }
   })
 
-  it.each(['#spaced', '#boxed'])('measures %s with its own letter spacing and box sizing', async (id) => {
+  it.each(['#spaced', '#boxed', '#underlined', '#right'])('measures %s with its own spacing, box, border and alignment', async (id) => {
     const expected = await selected(id)
-    await highlight(frame().locator(id), { text: 'TARGET' })
+    await highlight(frame().locator(id), { text: id === '#right' ? 'target' : 'TARGET' })
     const box = payload(steps, HIGHLIGHT_TITLE_PREFIX)
     expect(box.x).toBeCloseTo(200 + expected.x, 0)
     expect(box.y).toBeCloseTo(100 + expected.y, 0)
+  })
+
+  it("centres a tall input's text vertically, as Chromium draws it", async () => {
+    await highlight(frame().locator('#tall'), { text: 'TARGET' })
+    const box = payload(steps, HIGHLIGHT_TITLE_PREFIX)
+    const input = (await frame().locator('#tall').boundingBox())!
+    expect(box.y + box.height / 2).toBeCloseTo(input.y + input.height / 2, 0)
+  })
+
+  it('zooms onto the element when it has no text', async () => {
+    await zoom(frame().locator('#empty'), 2, { text: true })
+    const el = (await frame().locator('#empty').boundingBox())!
+    expect(payload(steps, ZOOM_TITLE_PREFIX).x * VIEWPORT.width).toBeCloseTo(el.x + el.width / 2, 0)
   })
 
   it('measures a textarea with wrap="off" on one line, where it scrolled to', async () => {

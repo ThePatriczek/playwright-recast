@@ -210,7 +210,8 @@ type Box = { x: number; y: number; width: number; height: number }
 /**
  * Page-space box of `locator`, or of text inside it: a substring, or with
  * `true` the element's whole text content (a block element's box spans its
- * container; its text often does not).
+ * container; its text often does not). A substring is matched in the text
+ * content, so it may span children, block and hidden ones included.
  *
  * Text is measured in the element's own frame, then moved by the element's
  * offset between that frame and the page, so it lands right inside iframes.
@@ -226,6 +227,8 @@ async function measureBox(locator: Locator, text?: string | true): Promise<Box |
       const range = document.createRange()
       range.selectNodeContents(el)
       const rect = range.getBoundingClientRect()
+      // No rendered content (empty or whitespace only): an empty range measures 0,0.
+      if (rect.width === 0 && rect.height === 0) return { text: element, element }
       return { text: { x: rect.x, y: rect.y, width: rect.width, height: rect.height }, element }
     }
     // A form control's whole text is its value; an empty one has none to measure.
@@ -240,8 +243,16 @@ async function measureBox(locator: Locator, text?: string | true): Promise<Box |
 
         const style = window.getComputedStyle(el)
         const mirror = document.createElement('div')
-        // Copy relevant styles; getPropertyValue() takes CSS names only
-        for (const prop of ['font', 'letter-spacing', 'word-spacing', 'text-indent', 'padding', 'border', 'overflow-wrap', 'line-height'] as const) {
+        // Copy relevant styles by CSS name, as longhands: a computed shorthand is
+        // "" when its parts differ, e.g. an input with only a bottom border
+        const sides = ['top', 'right', 'bottom', 'left']
+        for (const prop of [
+          'font-style', 'font-weight', 'font-stretch', 'font-size', 'font-family', 'line-height',
+          'font-variant-ligatures', 'font-variant-caps', 'font-variant-numeric', 'font-variant-east-asian',
+          'font-feature-settings', 'font-kerning', 'letter-spacing', 'word-spacing', 'tab-size',
+          'text-indent', 'text-align', 'text-transform', 'overflow-wrap',
+          ...sides.flatMap((side) => [`padding-${side}`, `border-${side}-width`, `border-${side}-style`]),
+        ]) {
           mirror.style.setProperty(prop, style.getPropertyValue(prop))
         }
         mirror.style.position = 'absolute'
@@ -252,6 +263,12 @@ async function measureBox(locator: Locator, text?: string | true): Promise<Box |
         // An input, or a textarea with wrap="off", stays on one line and scrolls
         const oneLine = el instanceof HTMLInputElement || el.wrap === 'off'
         mirror.style.whiteSpace = oneLine ? 'pre' : 'pre-wrap'
+        if (el instanceof HTMLInputElement) {
+          // Chromium centres an input's line in its content box; a line that tall
+          // does too, and the mark's rect keeps the font's height.
+          const content = el.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom)
+          mirror.style.lineHeight = `${content}px`
+        }
 
         const before = document.createTextNode(value.slice(0, idx))
         const mark = document.createElement('span')
