@@ -8,7 +8,7 @@ playwright-recast is a fluent pipeline library that turns Playwright trace files
 
 ### Neo4j
 
-[Snowflake Cortex Neo4j Agent Integration](https://www.youtube.com/watch?v=A20UqfxuKBA) demonstrates a real agent workflow spanning Snowflake Cortex and Neo4j as a polished product video built with playwright-recast.
+[Snowflake Cortex Neo4j Agent Integration](https://www.youtube.com/watch?v=QWc3SBc5sUE) demonstrates a real agent workflow spanning Snowflake Cortex and Neo4j as a polished product video built with playwright-recast.
 
 A huge thank you to [@Andy2003](https://github.com/Andy2003) for the outstanding, long-term contributions that have helped shape playwright-recast.
 
@@ -402,6 +402,7 @@ Each stage transforms the pipeline state and passes it to the next. The full pro
 | **Subtitles** | `.subtitles()` / `.subtitlesFromSrt()` / `.subtitlesFromTrace()` | Generate or import subtitle text |
 | **Text Processing** | `.textProcessing(config)` | Sanitize subtitle text for TTS synthesis |
 | **Auto Zoom** | `.autoZoom(config)` | Zoom into user actions with easing transitions |
+| **Visual Direction** | `.direct(provider, options)` | AI-directed camera, emphasis and pacing from observed video |
 | **Cursor Overlay** | `.cursorOverlay(config)` | Animated cursor at click positions |
 | **Click Effect** | `.clickEffect(config)` | Ripple animation and sound at click positions |
 | **Text Highlight** | `.textHighlight(config)` | Animated marker overlay on text elements |
@@ -1045,6 +1046,100 @@ The renderer applies zoom by cropping the video to `(width/level x height/level)
 - Use `centerBias` to prevent zoom targets near edges from cropping important content. A value of `0.3` blends 30% toward the center.
 - Cursor overlay and click effects are applied before zoom cropping, so overlay coordinates stay accurate during zoomed segments.
 - For fill actions that lack cursor coordinates (programmatic fills), auto-zoom falls back to viewport center.
+
+---
+
+## Visual Direction (Jev)
+
+
+The `.direct()` stage hands camera, emphasis and tempo to a director. It analyzes a neutral render of the recording, then picks each move from a bounded set of candidates. Use it when the important result appears somewhere other than the clicked control, or when framing and pacing should follow what actually becomes visible.
+
+## Basic usage
+
+```typescript
+import { Recast, JevDirector } from 'playwright-recast'
+
+await Recast.from('./test-results/recording')
+  .parse()
+  .direct(JevDirector(), {
+    goal: 'Show report generation, the error if it fails, and the final revenue after retrying.',
+  })
+  .render({ resolution: '720p', fps: 60, embedSubtitles: true })
+  .toFile('report-demo.mp4')
+```
+
+No `zoom()`, `highlight()`, scene selectors or hand-authored camera path are needed.
+
+## Requirements
+
+- **API key** - set `TYPESAFE_API_KEY` in the process environment, or pass `JevDirector({ apiKey })`. The library does not load `.env` on its own.
+- **FFmpeg** and **Tesseract** with English language data for the default `VideoObserver()` (`brew install tesseract` on macOS, or your system package).
+
+OCR runs locally. Jev receives only structured text, coordinates, changes and recent decisions - never images or video. The observed page text is sent to TypeSafe and stored in the director report.
+
+## `JevDirector(config?)`
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `apiKey` | `string` | `TYPESAFE_API_KEY` | TypeSafe API key |
+| `model` | `string` | `'jev-latest'` | Model name |
+| `timeoutMs` | `number` | `30000` | Per-request timeout |
+
+One request is sent per decision window, with separate camera and tempo questions. HTTP errors, timeouts and malformed choices fail the render - there is no silent fallback or automatic retry.
+
+## Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `goal` | `string` | - | What the video should show. Required |
+| `observer` | `VisualObserver` | `VideoObserver()` | Produces timestamped observations from the video |
+| `sampleIntervalMs` | `number` | `500` | Observation sampling interval |
+| `decisionIntervalMs` | `number` | `2000` | Length of one decision window |
+| `maxFrames` | `number` | `900` | Frame budget; exceeding it fails the render |
+| `maxDecisions` | `number` | `120` | Decision budget; exceeding it fails the render |
+| `maxZoom` | `number` | `1.45` | Tightest zoom, between 1 and 1.7 |
+| `minimumHoldMs` | `number` | `2200` | Minimum time between camera moves |
+| `minConfidence` | `number` | `0.55` | Below this, the director stays |
+| `minAdvantage` | `number` | `0.25` | Required probability margin over staying |
+| `timing` | `'adaptive' \| 'preserve'` | `'adaptive'` | Whether the director may retime the video |
+| `reportPath` | `string` | `<output>.director.json` | Where to write the director report |
+| `onDecision` | `(decision) => void` | - | Called for each applied decision |
+
+## Actions
+
+The director chooses among `focus`, `fit`, `follow`, `reveal`, `overview`, `spotlight`, `pulse` and `stay`. Targets come from the current observation:
+
+- `follow` is offered only for measured moving text regions; a lost target stops tracking.
+- `reveal` requires a changed region.
+- `fit` frames nearby regions together.
+- `spotlight` and `pulse` are rendered into the video.
+
+Crops stay inside the picture. Uncertain choices fall back to `stay`, and movement and emphasis have separate cooldowns. Confidence thresholds are composition heuristics, not calibrated accuracy guarantees.
+
+## Adaptive timing
+
+With `timing: 'adaptive'` the director can play normally, compress unchanged intervals 3x, slow to 0.75x for reading, or hold a result for one second. Audio is retimed with the video, holds get silence, and embedded and sidecar subtitles are remapped. A pipeline with `voiceover()` always preserves timing, so speech and narration freezes stay intact.
+
+## Combining with other stages
+
+- `direct()` requires `parse()` and may appear once per pipeline.
+- It owns the camera: do not combine it with `autoZoom()` or `enrichZoomFromReport()`. Recorded zoom annotations are ignored.
+- Cursor, click and highlight stages still render. Subtitles are burned in after camera processing.
+- Direction runs before intro/outro and background music.
+
+## Director report
+
+Every directed render writes `<output-name>.director.json` with the observations, requests, model distributions, applied decisions, source/output timing, camera path and remapped subtitles. Credentials are never included. The report is written before the final encode, so a failed render can still be inspected.
+
+## Custom observers
+
+Implement `VisualObserver` to plug in another OCR or vision system. It receives a local video path, dimensions, duration and sampling budget, and returns `VisualObservation[]` starting at zero. Region coordinates must be within 0-1, times must increase, and region IDs must be unique per frame.
+
+`VideoObserver({ ocr: false })` works without Tesseract but only reports changed pixel regions, without text.
+
+## Example
+
+`npm run poc:director` records a report failure and a successful retry with ordinary Playwright actions, directs it through this API and writes an HTML comparison under `test-results/jev/`.
 
 ---
 
@@ -2101,6 +2196,23 @@ Apply zoom coordinates from external data (e.g., demo report with per-step zoom)
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `steps` | `Array<{ zoom?: { x: number; y: number; level: number } \| null }>` | Zoom data per step |
+
+---
+
+### `.direct(provider, options)`
+
+Let a director choose camera moves, emphasis and pacing from what appears in the recording. See [Visual Direction](https://thepatriczek.github.io/playwright-recast/docs/pipeline/direct).
+
+```typescript
+.direct(JevDirector(), { goal: 'Show the report and the final revenue.' })
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `provider` | `DirectorProvider` | The director, e.g. `JevDirector()` |
+| `options` | `DirectorOptions` | `goal` (required), observer, sampling and decision budgets, `maxZoom`, `timing`, `reportPath`, `onDecision` |
+
+Requires `parse()`, may appear once, and cannot be combined with `autoZoom()` or `enrichZoomFromReport()`.
 
 ---
 

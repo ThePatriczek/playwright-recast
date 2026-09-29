@@ -1,23 +1,40 @@
 # Changelog
 
-## Unreleased
+## 0.22.0 (2026-09-29)
 
 ### Features
 
-- **`render({ zoom: { panStabilizationThreshold } })`** - keeps the camera still between nearby zoom targets at the same level, per axis. Off by default.
-- **`highlight(locator, { duration: 'narration' })`** - the mark ends when its narration has been spoken: the one playing when it appears, else the next one. Falls back to the default duration without a voiceover.
-- **`recastVideo({ viewport, scale })` in `playwright-recast/config`** - Playwright `use` options that record at viewport x scale device pixels, so zoomed text stays sharp. Sets the three options that each fail silently on their own. Chromium only.
-- **The renderer warns when zoomed text gets upscaled** - past 1.25x at the tightest zoom, naming the recording size that would be sharp.
-- **`zoom(locator, level, { text, align })`** - zooms onto text inside the element (a substring, or `true` for all of it) instead of its box. `align: 'start'` keeps the start of a target wider than the frame in view.
-- **`setupRecast({ narrationSettleMs })`** - `waitForNarration()` lets the page settle before the narration hold, so the frozen frame shows the page after the last click or navigation, not before it. Off by default.
+- **`.direct(JevDirector(), { goal })` - visual direction with Jev** ([#34](https://github.com/ThePatriczek/playwright-recast/pull/34)) - a director watches a neutral render of the recording (sampled pixel changes plus local OCR through the new `VideoObserver()`) and chooses camera moves (`focus`, `fit`, `follow`, `reveal`, `overview`), emphasis (`spotlight`, `pulse`) and pacing from bounded candidates. No `zoom()` or `highlight()` calls needed. Adaptive timing compresses unchanged intervals and holds results, retiming audio and subtitles with the video; a pipeline with `voiceover()` always keeps its timing. Every render writes a `<output>.director.json` report. Needs `TYPESAFE_API_KEY`, and Tesseract for OCR. New entry points: `playwright-recast/providers/jev`, `playwright-recast/observers/video`. Thanks to [@Empatixx](https://github.com/Empatixx).
+- **`zoom(locator, level, { text, align })`** ([#43](https://github.com/ThePatriczek/playwright-recast/pull/43)) - zooms onto text inside the element (a substring, or `true` for all of it) instead of its box. `align: 'start'` keeps the start of a target wider than the frame in view.
+- **`render({ zoom: { panStabilizationThreshold } })`** ([#41](https://github.com/ThePatriczek/playwright-recast/pull/41)) - keeps the camera still between nearby zoom targets at the same level, per axis. Off by default.
+- **`highlight(locator, { duration: 'narration' })`** ([#39](https://github.com/ThePatriczek/playwright-recast/pull/39)) - the mark ends when its narration has been spoken: the one playing when it appears, else the next one. Falls back to the default duration without a voiceover.
+- **`recastVideo({ viewport, scale })` in `playwright-recast/config`** ([#40](https://github.com/ThePatriczek/playwright-recast/pull/40)) - Playwright `use` options that record at viewport x scale device pixels, so zoomed text stays sharp. Sets the three options that each fail silently on their own. Chromium only.
+- **The renderer warns when zoomed text gets upscaled** ([#40](https://github.com/ThePatriczek/playwright-recast/pull/40)) - past 1.25x at the tightest zoom, naming the recording size that would be sharp.
+- **`setupRecast({ narrationSettleMs })`** ([#47](https://github.com/ThePatriczek/playwright-recast/pull/47)) - `waitForNarration()` lets the page settle before the narration hold, so the frozen frame shows the page after the last click or navigation, not before it. Off by default.
 
 ### Bug fixes
 
-- **`highlight({ text })` inside an iframe was off by the iframe's offset** - the text box is now moved into page space.
-- **A highlight, click or cursor move right after `waitForNarration()` showed a whole narration early** - the hold moves up to the next frame, so an overlay set within those milliseconds counted as before it. Overlays now compare against where the hold was asked for.
-- **Qwen ran out of GPU memory on screencasts with many new lines** - every uncached line went into one model call, and GPU memory grows with the batch. The sidecar now synthesizes `batchSize` lines at a time (default 8) and frees memory in between; the model and the voice sample still load once. With `cacheAudio`, the lines finished before a failure are cached.
-- **A `zoom()` set just before its `narrate()` was dropped, or zoomed at the wrong line** - a zoom now belongs to the narration whose audio is playing, else the next one, and starts with it.
-- **Zoom missed its target unless pinned to a frame edge** - the zoompan crop used zoomed instead of input coordinates, off by about the zoom factor. Most visible with a source larger than the output.
+- **Zoom missed its target unless pinned to a frame edge** ([#37](https://github.com/ThePatriczek/playwright-recast/pull/37)) - the zoompan crop used zoomed instead of input coordinates, off by about the zoom factor. Most visible with a source larger than the output.
+- **A `zoom()` set just before its `narrate()` was dropped, or zoomed at the wrong line** ([#42](https://github.com/ThePatriczek/playwright-recast/pull/42)) - a zoom now belongs to the narration whose audio is playing, else the next one, and starts with it.
+- **`highlight({ text })` inside an iframe was off by the iframe's offset** ([#43](https://github.com/ThePatriczek/playwright-recast/pull/43)) - the text box is now moved into page space.
+- **A highlight, click or cursor move right after `waitForNarration()` showed a whole narration early** ([#44](https://github.com/ThePatriczek/playwright-recast/pull/44)) - the hold moves up to the next frame, so an overlay set within those milliseconds counted as before it. Overlays now compare against where the hold was asked for.
+- **Qwen ran out of GPU memory on screencasts with many new lines** ([#46](https://github.com/ThePatriczek/playwright-recast/pull/46)) - every uncached line went into one model call, and GPU memory grows with the batch. The sidecar now synthesizes `batchSize` lines at a time (default 8) and frees memory in between; the model and the voice sample still load once. With `cacheAudio`, the lines finished before a failure are cached.
+
+### Docs
+
+- **SHOWCASE:** the [Snowflake Cortex Neo4j Agent Integration](https://www.youtube.com/watch?v=QWc3SBc5sUE) video was re-cut with the new zoom and highlighting, and the README, website and LLM indexes now point to it.
+- New website page [Visual Direction (Jev)](https://thepatriczek.github.io/playwright-recast/docs/pipeline/direct), plus `.direct()` in the pipeline overview, API reference and LLM indexes.
+- Fixed the coordinate note in `buildZoomFilter()` ([#38](https://github.com/ThePatriczek/playwright-recast/pull/38)).
+
+### Internal
+
+- Integration tests wait for a painted frame before closing the recording ([#45](https://github.com/ThePatriczek/playwright-recast/pull/45)).
+- Test suite: **861 passed | 13 skipped** across 102 test files.
+
+### Acknowledgements
+
+- Thanks to [@Andy2003](https://github.com/Andy2003) for eleven more pull requests in this release - the zoom, highlight and narration timing work behind the re-cut showcase video.
+- Thanks to [@Empatixx](https://github.com/Empatixx) for Jev visual direction.
 
 ## 0.21.0 (2026-08-28)
 

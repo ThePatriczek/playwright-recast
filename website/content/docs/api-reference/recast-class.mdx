@@ -185,6 +185,23 @@ Apply zoom coordinates from external data (e.g., demo report with per-step zoom)
 
 ---
 
+### `.direct(provider, options)`
+
+Let a director choose camera moves, emphasis and pacing from what appears in the recording. See [Visual Direction](/docs/pipeline/direct).
+
+```typescript
+.direct(JevDirector(), { goal: 'Show the report and the final revenue.' })
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `provider` | `DirectorProvider` | The director, e.g. `JevDirector()` |
+| `options` | `DirectorOptions` | `goal` (required), observer, sampling and decision budgets, `maxZoom`, `timing`, `reportPath`, `onDecision` |
+
+Requires `parse()`, may appear once, and cannot be combined with `autoZoom()` or `enrichZoomFromReport()`.
+
+---
+
 ### `.cursorOverlay(config?)`
 
 Render an animated cursor that moves between action positions.

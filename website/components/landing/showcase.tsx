@@ -3,8 +3,8 @@
 import { BlurFade } from '@/components/magicui/blur-fade'
 import { ExternalLink, Heart } from 'lucide-react'
 
-const VIDEO_URL = 'https://www.youtube.com/watch?v=A20UqfxuKBA'
-const EMBED_URL = 'https://www.youtube-nocookie.com/embed/A20UqfxuKBA'
+const VIDEO_URL = 'https://www.youtube.com/watch?v=QWc3SBc5sUE'
+const EMBED_URL = 'https://www.youtube-nocookie.com/embed/QWc3SBc5sUE'
 
 export function Showcase() {
   return (

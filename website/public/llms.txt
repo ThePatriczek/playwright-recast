@@ -19,6 +19,7 @@ playwright-recast is a fluent pipeline library that turns Playwright trace files
 - [Text Processing](https://thepatriczek.github.io/playwright-recast/docs/pipeline/text-processing): Sanitize subtitle text before TTS
 - [Voiceover](https://thepatriczek.github.io/playwright-recast/docs/pipeline/voiceover): TTS audio generation from subtitles
 - [Auto Zoom](https://thepatriczek.github.io/playwright-recast/docs/pipeline/auto-zoom): Animated zoom to user actions with easing
+- [Visual Direction (Jev)](https://thepatriczek.github.io/playwright-recast/docs/pipeline/direct): AI-directed camera, emphasis and pacing from observed video
 - [Cursor Overlay](https://thepatriczek.github.io/playwright-recast/docs/pipeline/cursor-overlay): Animated cursor at click positions
 - [Click Effect](https://thepatriczek.github.io/playwright-recast/docs/pipeline/click-effect): Ripple animation and sound at clicks
 - [Text Highlight](https://thepatriczek.github.io/playwright-recast/docs/pipeline/text-highlight): Animated marker overlay on text

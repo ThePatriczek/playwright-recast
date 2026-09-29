@@ -1,0 +1,93 @@
+---
+title: Visual Direction (Jev)
+description: Let the Jev director choose camera moves, emphasis and pacing from what actually appears in the recording.
+---
+
+The `.direct()` stage hands camera, emphasis and tempo to a director. It analyzes a neutral render of the recording, then picks each move from a bounded set of candidates. Use it when the important result appears somewhere other than the clicked control, or when framing and pacing should follow what actually becomes visible.
+
+## Basic usage
+
+```typescript
+import { Recast, JevDirector } from 'playwright-recast'
+
+await Recast.from('./test-results/recording')
+  .parse()
+  .direct(JevDirector(), {
+    goal: 'Show report generation, the error if it fails, and the final revenue after retrying.',
+  })
+  .render({ resolution: '720p', fps: 60, embedSubtitles: true })
+  .toFile('report-demo.mp4')
+```
+
+No `zoom()`, `highlight()`, scene selectors or hand-authored camera path are needed.
+
+## Requirements
+
+- **API key** - set `TYPESAFE_API_KEY` in the process environment, or pass `JevDirector({ apiKey })`. The library does not load `.env` on its own.
+- **FFmpeg** and **Tesseract** with English language data for the default `VideoObserver()` (`brew install tesseract` on macOS, or your system package).
+
+OCR runs locally. Jev receives only structured text, coordinates, changes and recent decisions - never images or video. The observed page text is sent to TypeSafe and stored in the director report.
+
+## `JevDirector(config?)`
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `apiKey` | `string` | `TYPESAFE_API_KEY` | TypeSafe API key |
+| `model` | `string` | `'jev-latest'` | Model name |
+| `timeoutMs` | `number` | `30000` | Per-request timeout |
+
+One request is sent per decision window, with separate camera and tempo questions. HTTP errors, timeouts and malformed choices fail the render - there is no silent fallback or automatic retry.
+
+## Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `goal` | `string` | - | What the video should show. Required |
+| `observer` | `VisualObserver` | `VideoObserver()` | Produces timestamped observations from the video |
+| `sampleIntervalMs` | `number` | `500` | Observation sampling interval |
+| `decisionIntervalMs` | `number` | `2000` | Length of one decision window |
+| `maxFrames` | `number` | `900` | Frame budget; exceeding it fails the render |
+| `maxDecisions` | `number` | `120` | Decision budget; exceeding it fails the render |
+| `maxZoom` | `number` | `1.45` | Tightest zoom, between 1 and 1.7 |
+| `minimumHoldMs` | `number` | `2200` | Minimum time between camera moves |
+| `minConfidence` | `number` | `0.55` | Below this, the director stays |
+| `minAdvantage` | `number` | `0.25` | Required probability margin over staying |
+| `timing` | `'adaptive' \| 'preserve'` | `'adaptive'` | Whether the director may retime the video |
+| `reportPath` | `string` | `<output>.director.json` | Where to write the director report |
+| `onDecision` | `(decision) => void` | - | Called for each applied decision |
+
+## Actions
+
+The director chooses among `focus`, `fit`, `follow`, `reveal`, `overview`, `spotlight`, `pulse` and `stay`. Targets come from the current observation:
+
+- `follow` is offered only for measured moving text regions; a lost target stops tracking.
+- `reveal` requires a changed region.
+- `fit` frames nearby regions together.
+- `spotlight` and `pulse` are rendered into the video.
+
+Crops stay inside the picture. Uncertain choices fall back to `stay`, and movement and emphasis have separate cooldowns. Confidence thresholds are composition heuristics, not calibrated accuracy guarantees.
+
+## Adaptive timing
+
+With `timing: 'adaptive'` the director can play normally, compress unchanged intervals 3x, slow to 0.75x for reading, or hold a result for one second. Audio is retimed with the video, holds get silence, and embedded and sidecar subtitles are remapped. A pipeline with `voiceover()` always preserves timing, so speech and narration freezes stay intact.
+
+## Combining with other stages
+
+- `direct()` requires `parse()` and may appear once per pipeline.
+- It owns the camera: do not combine it with `autoZoom()` or `enrichZoomFromReport()`. Recorded zoom annotations are ignored.
+- Cursor, click and highlight stages still render. Subtitles are burned in after camera processing.
+- Direction runs before intro/outro and background music.
+
+## Director report
+
+Every directed render writes `<output-name>.director.json` with the observations, requests, model distributions, applied decisions, source/output timing, camera path and remapped subtitles. Credentials are never included. The report is written before the final encode, so a failed render can still be inspected.
+
+## Custom observers
+
+Implement `VisualObserver` to plug in another OCR or vision system. It receives a local video path, dimensions, duration and sampling budget, and returns `VisualObservation[]` starting at zero. Region coordinates must be within 0-1, times must increase, and region IDs must be unique per frame.
+
+`VideoObserver({ ocr: false })` works without Tesseract but only reports changed pixel regions, without text.
+
+## Example
+
+`npm run poc:director` records a report failure and a successful retry with ordinary Playwright actions, directs it through this API and writes an HTML comparison under `test-results/jev/`.

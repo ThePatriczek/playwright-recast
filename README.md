@@ -22,9 +22,9 @@ https://github.com/user-attachments/assets/418d996d-2e18-4ae8-9ccc-3e5161dc7af8
 
 ### Neo4j
 
-[![Snowflake Cortex Neo4j Agent Integration](https://img.youtube.com/vi/A20UqfxuKBA/maxresdefault.jpg)](https://www.youtube.com/watch?v=A20UqfxuKBA)
+[![Snowflake Cortex Neo4j Agent Integration](https://img.youtube.com/vi/QWc3SBc5sUE/maxresdefault.jpg)](https://www.youtube.com/watch?v=QWc3SBc5sUE)
 
-**[Snowflake Cortex Neo4j Agent Integration](https://www.youtube.com/watch?v=A20UqfxuKBA)** — see a real agent workflow spanning Snowflake Cortex and Neo4j presented as a polished product video.
+**[Snowflake Cortex Neo4j Agent Integration](https://www.youtube.com/watch?v=QWc3SBc5sUE)** — see a real agent workflow spanning Snowflake Cortex and Neo4j presented as a polished product video.
 
 > **A huge thank you to [@Andy2003](https://github.com/Andy2003)** for the outstanding, long-term contributions that have helped shape playwright-recast.
 
@@ -65,6 +65,7 @@ await Recast
 - **Click highlighting** — Animated ripple effect at click positions with optional click sound. Configurable color, opacity, radius, duration.
 - **Cursor overlay** — Animated cursor travels between click positions with configurable duration, easing, and post-arrival visibility. Bundled arrow cursor or custom image.
 - **Animated zoom with easing** — Auto-zoom uses customizable easing functions (ease-in-out, ease-out, cubic-bezier, or custom JS functions) with smooth zoom-to-zoom panning.
+- **Visual direction with Jev** — `.direct(JevDirector(), { goal })` watches the rendered recording (pixel changes + local OCR) and picks camera moves, emphasis and pacing from bounded candidates. No manual `zoom()` or `highlight()` calls needed.
 - **Frame interpolation** — Smooth out choppy browser recordings with ffmpeg minterpolate. Blend, duplicate, or motion-compensated modes with multi-pass support.
 - **Step helpers** — `narrate()`, `highlight()`, `zoom()`, `pace()`, `typeText()`, `click()`, `markClick()`, `waitForNarration()` — importable helpers for Playwright step definitions. `typeText()` replaces instant fills with visible, naturally varied keystrokes; `click()` can dwell on the target to record the app's hover state; marker helpers write directly into the trace zip so the pipeline picks them up automatically via `subtitlesFromTrace()`.
 - **Polished click markers** — `click()` / `markClick()` mark a click in the trace; the renderer prefers these over auto-detected clicks and plays a deliberate, held cursor approach over the painted target (configurable via `cursorOverlay({ approachMs })`) — no more "the mouse moves before there's anything to click on."
@@ -598,6 +599,14 @@ When('the user opens the sidebar', async ({ page }) => {
 ```
 
 The helper captures the element's bounding box as a Playwright annotation. Use `enrichZoomFromReport()` to apply these coordinates during video generation.
+
+A zoom belongs to the narration whose audio is playing when it is set, else the next one, and starts with it. To zoom onto text inside an element instead of its whole box, pass `text` (a substring, or `true` for all of it); `align: 'start'` keeps the start of a line wider than the frame in view:
+
+```typescript
+await zoom(page.locator('.summary'), 1.6, { text: 'Total revenue', align: 'start' })
+```
+
+`render({ zoom: { panStabilizationThreshold } })` keeps the camera still between nearby targets at the same zoom level. For sharp zoomed text, record at a higher device scale with `recastVideo({ viewport, scale })` from `playwright-recast/config`; the renderer warns when the tightest zoom upscales the source by more than 1.25x.
 
 ### Zoom coordinates
 
