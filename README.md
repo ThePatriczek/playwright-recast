@@ -178,7 +178,7 @@ import { setupRecast, narrate, highlight, zoom, pace, typeText, click, waitForNa
 
 setupRecast(test)
 // Optional global defaults:
-// setupRecast(test, { narrateAutoWait: true, clickSettleMs: 200, hoverDwellMs: 400, typingDelayMs: 100 })
+// setupRecast(test, { narrateAutoWait: true, clickSettleMs: 200, hoverDwellMs: 400, typingDelayMs: 100, narrationSettleMs: 300 })
 export { narrate, highlight, zoom, pace, typeText, click, waitForNarration }
 
 // steps/my-steps.ts

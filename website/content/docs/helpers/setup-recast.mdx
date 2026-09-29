@@ -34,6 +34,7 @@ setupRecast(test)
 | `narrateAutoWait` | `boolean \| number \| object` | off | Default [`autoWait`](/docs/helpers/narrate#autowait--visual-time-without-tts) applied to every `narrate()` call that omits its own. |
 | `clickSettleMs` | `number` | `150` | Real-time settle delay the [`click()`](/docs/helpers/click) helper waits before marking, so the recorder captures a painted frame of the target. Pass `0` to disable. |
 | `hoverDwellMs` | `number` | `0` | Time `click()` rests on the target after a successful hover, so the recording captures the app's own hover state. Pass `0` to disable. |
+| `narrationSettleMs` | `number` | `0` | Time `waitForNarration()` lets the page settle before the narration hold, so the frozen frame shows the page after the last click, not before it. Waits on every call. See [waitForNarration](/docs/helpers/wait-for-narration#frozen-on-a-stale-frame). |
 | `typingDelayMs` | `number` | `100` | Average delay between [`typeText()`](/docs/helpers/type-text) keystrokes. A per-call `delayMs` overrides it. |
 
 ### narrateAutoWait — a global autoWait default

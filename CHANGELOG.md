@@ -9,6 +9,7 @@
 - **`recastVideo({ viewport, scale })` in `playwright-recast/config`** - Playwright `use` options that record at viewport x scale device pixels, so zoomed text stays sharp. Sets the three options that each fail silently on their own. Chromium only.
 - **The renderer warns when zoomed text gets upscaled** - past 1.25x at the tightest zoom, naming the recording size that would be sharp.
 - **`zoom(locator, level, { text, align })`** - zooms onto text inside the element (a substring, or `true` for all of it) instead of its box. `align: 'start'` keeps the start of a target wider than the frame in view.
+- **`setupRecast({ narrationSettleMs })`** - `waitForNarration()` lets the page settle before the narration hold, so the frozen frame shows the page after the last click or navigation, not before it. Off by default.
 
 ### Bug fixes
 

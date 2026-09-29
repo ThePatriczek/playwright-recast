@@ -3698,6 +3698,7 @@ setupRecast(test)
 | `narrateAutoWait` | `boolean \| number \| object` | off | Default narration auto-wait behavior. |
 | `clickSettleMs` | `number` | `150` | Real-time settle delay used by `click()`. Pass `0` to disable. |
 | `hoverDwellMs` | `number` | `0` | Time `click()` rests on the target after hovering so the recording captures the app's hover state. |
+| `narrationSettleMs` | `number` | `0` | Time `waitForNarration()` lets the page settle before the narration hold, so the frozen frame shows the page after the last click, not before it. Waits on every call. |
 | `typingDelayMs` | `number` | `100` | Average delay between `typeText()` keystrokes. A per-call `delayMs` overrides it. |
 
 ### hoverDwellMs — capture the hover state

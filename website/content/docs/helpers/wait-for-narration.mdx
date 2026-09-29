@@ -7,7 +7,7 @@ description: Mark a point where the rendered video should hold until the previou
 
 `waitForNarration()` marks a point in the trace where the rendered video should **wait for the previous [`narrate()`](/docs/helpers/narrate) call's audio to finish** before continuing.
 
-It resolves immediately at test time — there is **no real-time pause** and no `setTimeout`. The wait is realised only in the rendered video: the preceding narration's subtitle window ends here, and if its TTS audio is longer than that window, the renderer holds the last visible frame for the overflow (the same audio-overflow freeze that [`narrate()`](/docs/helpers/narrate#voiceover-driven-freezes) already uses).
+It resolves immediately at test time: there is **no real-time pause** and no `setTimeout`, unless [`narrationSettleMs`](#frozen-on-a-stale-frame) is set. The wait is realised only in the rendered video: the preceding narration's subtitle window ends here, and if its TTS audio is longer than that window, the renderer holds the last visible frame for the overflow (the same audio-overflow freeze that [`narrate()`](/docs/helpers/narrate#voiceover-driven-freezes) already uses).
 
 Use it when narration would otherwise bleed across a deliberate beat:
 
@@ -60,6 +60,10 @@ The marker only adds time when time is actually needed:
 
 - **With [`.voiceover()`](/docs/pipeline/voiceover):** if the narration's audio overruns its (now narrowed) window, the renderer freezes the last frame for the overflow. The cursor and click ripples keep animating naturally through the freeze — the beat looks deliberate, not like a hang. If the audio fits, the marker is a no-op for that line.
 - **Without voiceover:** there is no audio to wait on, so the marker simply bounds the subtitle window. Pad visual time with [`pace()`](/docs/helpers/pace) or [`narrate(text, { autoWait })`](/docs/helpers/narrate#autowait--visual-time-without-tts) instead.
+
+## Frozen on a stale frame
+
+When a narration runs longer than its window, the video holds the last frame recorded before `waitForNarration()`. The recording trails the page - by a few hundred milliseconds at a high device scale - so a hold right after a click or a navigation can freeze the screen as it was before it: the old tab, a spinner, a "running" state. `setupRecast({ narrationSettleMs: 500 })` makes every `waitForNarration()` wait that long before the hold starts. It does so on every call, since whether a hold follows is only known at render time, and adds that much live footage to the previous narration's window.
 
 ## Example in a BDD step
 

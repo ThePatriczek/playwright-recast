@@ -52,6 +52,33 @@ describe('waitForNarration()', () => {
     expect(env.info.annotations).toEqual([])
   })
 
+  it('lets the page settle before the marker when narrationSettleMs is set', async () => {
+    let markedAt = 0
+    const timedTest = {
+      ...env.fakeTest,
+      step: async <T,>(title: string, body: () => T | Promise<T>): Promise<T> => {
+        markedAt = Date.now()
+        return env.fakeTest.step(title, body)
+      },
+    }
+    setupRecast(timedTest, { narrationSettleMs: 120 })
+    const t0 = Date.now()
+    await waitForNarration()
+
+    // The marker comes after the settle, not before it.
+    expect(markedAt - t0).toBeGreaterThanOrEqual(110)
+    expect(env.steps).toHaveLength(1)
+  })
+
+  it.each([-1, Number.NaN, Number.POSITIVE_INFINITY, 2 ** 31])('rejects narrationSettleMs %s, keeping the old settings', async (ms) => {
+    const other = makeFakeTest()
+    expect(() => setupRecast(other.fakeTest, { narrationSettleMs: ms })).toThrow(RangeError)
+    await waitForNarration()
+    // Still the test from beforeEach, not the one passed to the failed call
+    expect(env.steps).toHaveLength(1)
+    expect(other.steps).toHaveLength(0)
+  })
+
   it('resolves promptly — no real-time wait', async () => {
     const t0 = Date.now()
     await waitForNarration()
