@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Bug fixes
+
+- **Long screencasts with many zooms failed to render** ([#48](https://github.com/ThePatriczek/playwright-recast/pull/48)) - the zoom expression nested one `if()` per zoom segment, and per sample with `cubicBezier` or `fn` easing, past ffmpeg's limit of about 100 levels ("Missing ')' or too many args", no video). It now nests as a binary search: 15 levels for 400 keyframes, 21 with sampled easing. Output is unchanged.
+
 ## 0.22.0 (2026-09-29)
 
 ### Features

@@ -1,5 +1,6 @@
 import type { CursorKeyframe } from '../types/cursor-overlay.js'
 import type { ResolvedCursorOverlayConfig } from './defaults.js'
+import { searchBranches, type Branch } from '../utils/expression-search.js'
 
 interface Resolution {
   width: number
@@ -127,39 +128,17 @@ function buildTrajectoryAxis(
       `${target})`
 
     branches.push({
-      from: moveStart,
+      before: `lt(t\\,${moveStart.toFixed(4)})`,
       expr:
         `if(between(t\\,${moveStart.toFixed(4)}\\,${(point.t + visibleAfter).toFixed(4)})\\,${segment}\\,0)`,
     })
   }
 
-  return buildBranchSearch(branches, 0, branches.length - 1)
-}
-
-/** One keyframe's position expression, keyed by the time its movement starts. */
-interface Branch {
-  from: number
-  expr: string
-}
-
-/**
- * Bisect on movement start times instead of chaining one `if()` per keyframe:
- * ffmpeg's expression parser allows ~100 nesting levels (libavutil/eval.c), so
- * a chain stopped parsing past ~96 keyframes. Nesting is now log2(keyframes).
- *
- * Equivalent to the chain because movement starts and window ends both grow in
- * keyframe order: the last branch that has started is the one the chain
- * matched first, and past its window every earlier window has closed too.
- */
-function buildBranchSearch(branches: Branch[], lo: number, hi: number): string {
-  if (lo === hi) return branches[lo]!.expr
-
-  // Right half keeps `mid`, so coincident start times resolve to the later
-  // keyframe — the one the chain gave priority to.
-  const mid = Math.ceil((lo + hi) / 2)
-  const left = buildBranchSearch(branches, lo, mid - 1)
-  const right = buildBranchSearch(branches, mid, hi)
-  return `if(lt(t\\,${branches[mid]!.from.toFixed(4)})\\,${left}\\,${right})`
+  // Equivalent to a chain of one if() per keyframe because movement starts
+  // and window ends both grow in keyframe order: the last branch that has
+  // started is the one the chain matched first, and past its window every
+  // earlier window has closed too.
+  return searchBranches(branches, '\\,')
 }
 
 /**
