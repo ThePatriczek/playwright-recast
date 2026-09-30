@@ -135,7 +135,7 @@ export function Hero() {
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
               <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500" />
             </span>
-            <span className="truncate">v0.22.0 — AI visual direction and sharper, narration-aware zoom</span>
+            <span className="truncate">v0.22.1 — AI visual direction and sharper, narration-aware zoom</span>
           </div>
         </BlurFade>
 
