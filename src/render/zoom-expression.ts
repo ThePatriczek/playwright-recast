@@ -1,6 +1,7 @@
 import type { ZoomKeyframe } from '../types/render.js'
 import type { EasingSpec } from '../types/easing.js'
 import { resolveEasing, type ResolvedEasing } from './easing.js'
+import { searchBranches } from '../utils/expression-search.js'
 
 interface Resolution {
   width: number
@@ -30,6 +31,15 @@ interface InternalKeyframe {
 type Segment =
   | { type: 'hold'; startSec: number; endSec: number; level: number; cx: number; cy: number }
   | { type: 'transition'; startSec: number; endSec: number; fromLevel: number; toLevel: number; fromCx: number; toCx: number; fromCy: number; toCy: number }
+
+/** A stretch of the timeline one segment owns; an open end excludes its boundary. */
+interface Piece {
+  seg: Segment
+  start: number
+  end: number
+  startOpen: boolean
+  endOpen: boolean
+}
 
 /**
  * Build the zoompan filter string for animated zoom.
@@ -63,6 +73,7 @@ export function buildZoomFilter(
 
   const segments = buildSegments(internal, T, config.containInCue)
   if (segments.length === 0) return scaleOnly
+  const pieces = disjointPieces(segments)
 
   // Time variable: in/fps (frame number / fps = seconds)
   const tVar = `in/${fps}`
@@ -70,9 +81,9 @@ export function buildZoomFilter(
   // Build expressions for z (zoom level), cx (center x 0..1), cy (center y 0..1)
   // Each uses a different st()/ld() register to avoid conflicts — zoompan evaluates
   // z, x, y sequentially for each frame and they share the register namespace.
-  const zExpr = buildTimeExpr(segments, 'level', 1.0, easing, tVar, 0)
-  const cxExpr = buildTimeExpr(segments, 'cx', 0.5, easing, tVar, 1)
-  const cyExpr = buildTimeExpr(segments, 'cy', 0.5, easing, tVar, 2)
+  const zExpr = buildTimeExpr(pieces, 'level', 1.0, easing, tVar, 0)
+  const cxExpr = buildTimeExpr(pieces, 'cx', 0.5, easing, tVar, 1)
+  const cyExpr = buildTimeExpr(pieces, 'cy', 0.5, easing, tVar, 2)
 
   // zoompan x/y: convert center fraction to the crop's top-left input pixel
   // x = max(0, min(cx * iw - iw/zoom/2, iw - iw/zoom))
@@ -236,46 +247,111 @@ export function buildSegments(
 }
 
 /**
+ * Split the segments into disjoint pieces, each time going to the first
+ * segment that covers it: overlapping keyframes overlap their segments, and a
+ * chain of one if() per segment let the first one win. Transitions keep their
+ * own timing, so a clipped one is still eased over its full span. Times are
+ * rounded as the expression prints them, so boundaries compare as in ffmpeg.
+ */
+function disjointPieces(segments: Segment[]): Piece[] {
+  const round = (sec: number) => Number(sec.toFixed(4))
+  const spans = segments
+    .map((seg, index) => ({ seg, index, start: round(seg.startSec), end: round(seg.endSec) }))
+    .sort((a, b) => a.start - b.start)
+  const bounds = [...new Set(spans.flatMap((sp) => [sp.start, sp.end]))].sort((a, b) => a - b)
+
+  // Walk the boundaries and the open intervals between them in time order.
+  const units = bounds.flatMap((b, k) => {
+    const point = { lo: b, hi: b, open: false }
+    const next = bounds[k + 1]
+    return next === undefined ? [point] : [point, { lo: b, hi: next, open: true }]
+  })
+  // Started spans, first-emitted on top. A span that ends before a unit
+  // ends covers no later unit either, so it can leave once it surfaces.
+  const active = new MinHeap<(typeof spans)[number]>((a, b) => a.index - b.index)
+  const pieces: Piece[] = []
+  let current: Piece | undefined
+  let next = 0
+  for (const { lo, hi, open } of units) {
+    while (next < spans.length && spans[next]!.start <= lo) active.push(spans[next++]!)
+    while (active.peek() && active.peek()!.end < hi) active.pop()
+    const owner = active.peek()?.seg
+    if (current && owner === current.seg) {
+      current.end = hi
+      current.endOpen = open
+      continue
+    }
+    current = owner && { seg: owner, start: lo, end: hi, startOpen: open, endOpen: open }
+    if (current) pieces.push(current)
+  }
+  return pieces
+}
+
+class MinHeap<T> {
+  private items: T[] = []
+  constructor(private readonly less: (a: T, b: T) => number) {}
+
+  peek(): T | undefined {
+    return this.items[0]
+  }
+
+  push(item: T): void {
+    const items = this.items
+    items.push(item)
+    for (let i = items.length - 1; i > 0;) {
+      const parent = (i - 1) >> 1
+      if (this.less(items[i]!, items[parent]!) >= 0) break
+      ;[items[i], items[parent]] = [items[parent]!, items[i]!]
+      i = parent
+    }
+  }
+
+  pop(): void {
+    const items = this.items
+    const last = items.pop()
+    if (last === undefined || items.length === 0) return
+    items[0] = last
+    for (let i = 0; ;) {
+      let min = i
+      for (const child of [2 * i + 1, 2 * i + 2]) {
+        if (child < items.length && this.less(items[child]!, items[min]!) < 0) min = child
+      }
+      if (min === i) break
+      ;[items[i], items[min]] = [items[min]!, items[i]!]
+      i = min
+    }
+  }
+}
+
+/**
  * Build a time-based expression for a property using the given time variable.
  * zoompan expressions use plain commas (no escaping needed).
  */
 function buildTimeExpr(
-  segments: Segment[],
+  pieces: Piece[],
   prop: 'level' | 'cx' | 'cy',
   defaultVal: number,
   easing: ResolvedEasing,
   tVar: string,
   register: number,
 ): string {
-  if (segments.length === 0) return String(defaultVal)
-
-  const parts: string[] = []
-
-  for (const seg of segments) {
-    const s = seg.startSec.toFixed(4)
-    const e = seg.endSec.toFixed(4)
-
-    if (seg.type === 'hold') {
-      const val = seg[prop]
-      parts.push(`if(between(${tVar},${s},${e}),${val},`)
-    } else {
-      const fromVal = prop === 'level' ? seg.fromLevel : prop === 'cx' ? seg.fromCx : seg.fromCy
-      const toVal = prop === 'level' ? seg.toLevel : prop === 'cx' ? seg.toCx : seg.toCy
-
-      if (Math.abs(fromVal - toVal) < 0.001) {
-        parts.push(`if(between(${tVar},${s},${e}),${fromVal},`)
-      } else {
-        const dur = (seg.endSec - seg.startSec).toFixed(4)
-        const transExpr = buildTransitionExpr(fromVal, toVal, s, dur, easing, tVar, register)
-        parts.push(`if(between(${tVar},${s},${e}),${transExpr},`)
-      }
-    }
+  const valueOf = (seg: Segment): string => {
+    if (seg.type === 'hold') return String(seg[prop])
+    const fromVal = prop === 'level' ? seg.fromLevel : prop === 'cx' ? seg.fromCx : seg.fromCy
+    const toVal = prop === 'level' ? seg.toLevel : prop === 'cx' ? seg.toCx : seg.toCy
+    if (Math.abs(fromVal - toVal) < 0.001) return String(fromVal)
+    const dur = (seg.endSec - seg.startSec).toFixed(4)
+    return buildTransitionExpr(fromVal, toVal, seg.startSec.toFixed(4), dur, easing, tVar, register)
   }
 
-  parts.push(String(defaultVal))
-  parts.push(')'.repeat(segments.length))
-
-  return parts.join('')
+  // Times before the first piece, and in gaps past a piece's end, give defaultVal.
+  return searchBranches([
+    { before: '', expr: String(defaultVal) },
+    ...pieces.map((p) => ({
+      before: `${p.startOpen ? 'lte' : 'lt'}(${tVar},${p.start.toFixed(4)})`,
+      expr: `if(${p.endOpen ? 'lt' : 'lte'}(${tVar},${p.end.toFixed(4)}),${valueOf(p.seg)},${defaultVal})`,
+    })),
+  ])
 }
 
 /**
@@ -327,22 +403,22 @@ function buildSampledTransitionExpr(
     })
   }
 
-  const subParts: string[] = []
-  for (let i = 0; i < points.length - 1; i++) {
-    const p0 = points[i]!
-    const p1 = points[i + 1]!
-    const ts = p0.t.toFixed(4)
-    const te = p1.t.toFixed(4)
-    const segDur = (p1.t - p0.t).toFixed(4)
-    const v0 = p0.val.toFixed(4)
-    const segDelta = (p1.val - p0.val).toFixed(4)
-    subParts.push(`if(between(${tVar},${ts},${te}),${v0}+(${segDelta})*(${tVar}-${ts})/${segDur},`)
-  }
-
-  subParts.push(points[points.length - 1]!.val.toFixed(4))
-  subParts.push(')'.repeat(points.length - 1))
-
-  return subParts.join('')
+  const first = points[0]!, last = points[points.length - 1]!
+  // Clamped to the end values outside the sampled span, as the chain was.
+  return searchBranches([
+    { before: '', expr: first.val.toFixed(4) },
+    ...points.slice(0, -1).map((p0, i) => {
+      const p1 = points[i + 1]!
+      const ts = p0.t.toFixed(4)
+      const segDur = (p1.t - p0.t).toFixed(4)
+      const segDelta = (p1.val - p0.val).toFixed(4)
+      return {
+        before: `lt(${tVar},${ts})`,
+        expr: `${p0.val.toFixed(4)}+(${segDelta})*(${tVar}-${ts})/${segDur}`,
+      }
+    }),
+    { before: `lt(${tVar},${last.t.toFixed(4)})`, expr: last.val.toFixed(4) },
+  ])
 }
 
 /**
