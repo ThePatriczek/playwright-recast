@@ -299,6 +299,8 @@ export function registerRenderVideo(server: McpServer, config: RecastMcpConfig):
         }
 
         const segments = speedSegments(hiddenTimeRanges, time.videoEndMs)
+        // The renderer would fall back to the uncut video
+        if (!segments.some((s) => s.speed === 1)) throw new Error('Every step is hidden: nothing to render')
 
         pipeline = pipeline
           .speedUp({ segments })
