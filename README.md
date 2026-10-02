@@ -722,8 +722,11 @@ The speed processor classifies every moment of the trace:
   minSegmentDuration: 500,  // Avoid jarring speed changes
   maxSpeed: 8.0,            // Safety cap
   exactBoundaries: false,   // sample at exact narration/hidden boundaries too
+  keepResizedFrames: false, // keep frames a screenshot re-rendered at another size
 })
 ```
+
+Frames Chromium renders briefly at another size than the viewport (during a clip, element or `toHaveScreenshot()` screenshot) are cut like hidden steps: the video shows them over gray padding. Read from the trace's frames, so a `setViewportSize()` change is kept. Chromium only; `keepResizedFrames: true` keeps them.
 
 `exactBoundaries` adds every narration-boundary and hidden-range timestamp to the fixed 100 ms sampling grid, so a narration scene shorter than one sample interval keeps its own segment instead of being swallowed by the surrounding grid cell. Off by default, because turning it on shifts segment boundaries for existing pipelines.
 

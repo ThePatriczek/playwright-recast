@@ -40,6 +40,7 @@ The speed processor analyzes the trace and classifies each segment:
 | `duringNavigation` | `number` | `2.0` | Speed multiplier for page navigations |
 | `minSegmentDuration` | `number` | `500` | Minimum segment length in ms (avoids jarring speed changes) |
 | `maxSpeed` | `number` | `8.0` | Safety cap on speed multiplier |
+| `keepResizedFrames` | `boolean` | `false` | Keep frames Chromium rendered briefly at another size than the viewport, as for a clip, element or `toHaveScreenshot()` screenshot. Cut by default: the video shows them over gray padding. A `setViewportSize()` change is kept. Chromium only. |
 
 ### Full example
 

@@ -10,6 +10,7 @@ import type {
 } from '../types/trace.js'
 import { toMonotonic } from '../types/trace.js'
 import { ZipReader } from './zip-reader.js'
+import { resizedFrameSpansFromJpegs } from './resized-frames.js'
 import {
   parseJsonl,
   type ContextOptionsEvent,
@@ -104,6 +105,11 @@ export async function parseTrace(tracePath: string): Promise<ParsedTrace> {
     }))
     .sort((a, b) => (a.timestamp as number) - (b.timestamp as number))
 
+  // Only in Chromium are the trace's frames the frames the video records
+  const resizedFrames = ctxOpts?.browserName === 'chromium'
+    ? resizedFrameSpansFromJpegs(frames, (sha1) => (zip.has(`resources/${sha1}`) ? zip.readBinary(`resources/${sha1}`) : undefined), actions)
+    : []
+
   // Extract network resources
   const resources: TraceResource[] = networkEvents
     .filter((e): e is ResourceSnapshotEvent => e.type === 'resource-snapshot')
@@ -184,6 +190,7 @@ export async function parseTrace(tracePath: string): Promise<ParsedTrace> {
     resources,
     events,
     cursorPositions,
+    resizedFrames,
     frameReader,
   }
 }

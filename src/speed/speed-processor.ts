@@ -6,7 +6,7 @@ import { computeOutputTimes, buildTimeRemap } from './time-remap.js'
 import { buildSamplePoints } from './sample-points.js'
 import { isNarrationBoundaryTitle } from '../pipeline/narration-subtitles.js'
 
-const DEFAULTS: Required<Omit<SpeedConfig, 'rules' | 'recordingPageId' | 'postFastForwardSettleMs' | 'segments' | 'exactBoundaries'>> = {
+const DEFAULTS: Required<Omit<SpeedConfig, 'rules' | 'recordingPageId' | 'postFastForwardSettleMs' | 'segments' | 'exactBoundaries' | 'keepResizedFrames'>> = {
   duringIdle: 4.0,
   duringUserAction: 1.0,
   duringNetworkWait: 2.0,
@@ -84,7 +84,7 @@ export function processSpeed(
   config: SpeedConfig,
 ): SpeedMappedTrace {
   const c = { ...DEFAULTS, ...config }
-  const { actions, resources, hiddenRanges } = trace
+  const { actions, resources } = trace
   const rules = config.rules ?? []
 
   // Determine time boundaries from visible content
@@ -143,6 +143,11 @@ export function processSpeed(
       ? trace.frames[trace.frames.length - 1]!.pageId
       : undefined)
 
+  const resizedCuts = config.keepResizedFrames
+    ? []
+    : (trace.resizedFrames ?? []).filter((r) => !recordingPageId || r.pageId === recordingPageId)
+  const hiddenRanges = [...trace.hiddenRanges, ...resizedCuts]
+
   // Pre-compute user action timeline for rule context
   const userTimeline = buildUserActionTimeline(actions, recordingPageId)
 
@@ -165,6 +170,7 @@ export function processSpeed(
     sampleInterval,
     exactBoundaries: config.exactBoundaries ?? false,
     boundaryTimes,
+    cutTimes: resizedCuts.flatMap((r) => [r.start as number, r.end as number]),
   })
 
   for (let pi = 0; pi < samplePoints.length - 1; pi++) {
