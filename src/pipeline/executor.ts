@@ -1,8 +1,9 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
+import * as os from 'node:os'
 import { execFileSync } from 'node:child_process'
 import type { StageDescriptor } from './stages.js'
-import type { ParsedTrace, FilteredTrace, TraceAction } from '../types/trace.js'
+import type { ParsedTrace, FilteredTrace, ScreencastFrame, TraceAction, TracePage } from '../types/trace.js'
 import { toMonotonic } from '../types/trace.js'
 import type { SpeedConfig, SpeedMappedTrace } from '../types/speed.js'
 import type { SubtitledTrace } from '../types/subtitle.js'
@@ -20,12 +21,14 @@ import {
 } from './click-markers.js'
 import type { VoiceoveredTrace } from '../types/voiceover.js'
 import { parseTrace } from '../parse/trace-parser.js'
+import { recordingFrame } from '../parse/recording-frame.js'
+import { jpegSize } from '../parse/jpeg.js'
 import { filterSteps } from '../filter/step-filter.js'
 import { processSpeed } from '../speed/speed-processor.js'
 import { generateSubtitles } from '../subtitles/subtitle-generator.js'
 import { parseSrt } from '../subtitles/srt-parser.js'
 import { generateVoiceover } from '../voiceover/voiceover-processor.js'
-import { renderVideo, detectBlankLeadIn, probeVideoFps, type RenderableTrace } from '../render/renderer.js'
+import { renderVideo, detectBlankLeadIn, probeVideoFps, probeResolution, getVideoDuration, type RenderableTrace } from '../render/renderer.js'
 import {
   resolveBlankLeadInMs,
   shiftSubtitlesForBlankLead,
@@ -54,10 +57,30 @@ import { directVideo } from '../director/renderer.js'
 import { approachHold } from '../voiceover/frame-align.js'
 import { validateDirectorOptions } from '../director/planner.js'
 import type { DirectorOptions, DirectorProvider } from '../types/director.js'
+import { URL_TITLE_PREFIX } from '../helpers.js'
+import type { UrlBarConfig, UrlBarEvent } from '../types/url-bar.js'
+import { buildUrlBarCues, type UrlMarker } from '../url-bar/url-bar-events.js'
+import { assertCanDrawText } from '../url-bar/pill.js'
+import { findPageVideos, findSourceVideo, testVideoPages } from '../pages/page-videos.js'
+import {
+  activePageAt,
+  buildPageTimeline,
+  computePageLayouts,
+  mapMarkerTitle,
+  mapPoint,
+  markerPageId,
+  primaryPageId,
+  type PageSegment,
+} from '../pages/page-timeline.js'
+import { compositePageVideos } from '../render/page-compositor.js'
 
 /** @internal */
 export type PipelineState = {
   parsed?: ParsedTrace
+  /** Content rect of a padded single-page video; the renderer crops to it. */
+  contentCrop?: { width: number; height: number }
+  /** The page videos a composite was cut from, for the report (the composite is a temp file). */
+  pageVideos?: string[]
   filtered?: FilteredTrace
   speedMapped?: SpeedMappedTrace
   speedConfig?: SpeedConfig
@@ -79,6 +102,32 @@ export type PipelineState = {
   outroConfig?: OutroConfig
   backgroundMusicConfig?: ResolvedBackgroundMusicConfig
   director?: { provider: DirectorProvider; options: DirectorOptions }
+  /** Which page is on screen when, once several pages were composited. */
+  pageTimeline?: PageSegment[]
+  urlBarConfig?: UrlBarConfig
+  urlBarEvents?: UrlBarEvent[]
+}
+
+/** Array.prototype.findLast, which the build's target lib lacks. */
+function findLast<T>(items: ReadonlyArray<T>, match: (item: T) => boolean): T | undefined {
+  for (let i = items.length - 1; i >= 0; i--) if (match(items[i]!)) return items[i]
+  return undefined
+}
+
+/** `actions` without those of the pages `drop` matches, by their pageId or a marker's. */
+function withoutPages(actions: TraceAction[], drop: (pageId: string | undefined) => boolean): TraceAction[] {
+  return actions.filter((a) =>
+    !drop(a.pageId) && !(typeof a.title === 'string' && drop(markerPageId(a.title, a.startTime as number, []))))
+}
+
+/**
+ * The plain video for the first page: its own when known, else the found one
+ * unless it is known to be another page's (the screencast stands in then).
+ */
+function firstPageVideo(found: string | undefined, videos: ReadonlyMap<string, string>, first: string | undefined): string | undefined {
+  const own = first ? videos.get(first) : undefined
+  if (own) return own
+  return found && [...videos.values()].some((v) => path.resolve(v) === path.resolve(found)) ? undefined : found
 }
 
 /**
@@ -91,12 +140,29 @@ export class PipelineExecutor {
     private readonly stages: readonly StageDescriptor[],
   ) {}
 
+  /** The composited page video's own temp dir, removed when the run ends, also on failure. */
+  private pagesTmpDir?: string
+
   async execute(outputPath: string): Promise<void> {
+    try {
+      await this.render(outputPath)
+    } finally {
+      if (this.pagesTmpDir) fs.rmSync(this.pagesTmpDir, { recursive: true, force: true })
+    }
+  }
+
+  private async render(outputPath: string): Promise<void> {
     const directors = this.stages.filter(stage => stage.type === 'direct')
     if (directors.length > 1) throw new Error('Only one direct() stage is supported')
     if (directors.length && this.stages.some(stage => stage.type === 'autoZoom' || stage.type === 'enrichZoomFromReport')) throw new Error('direct() owns the camera; remove autoZoom() and enrichZoomFromReport()')
+    // The director crops the rendered video, so a URL bar drawn into it would be zoomed with it.
+    if (directors.length && this.stages.some(stage => stage.type === 'urlBar')) throw new Error('urlBar() is not supported with direct() yet; remove one of them')
     for (const director of directors) validateDirectorOptions(director.options)
     assertFfmpegAvailable()
+    // Before TTS and encoding, which a missing font would waste.
+    // The last urlBar() is the one runStages() applies
+    const urlBarStage = findLast(this.stages, (st) => st.type === 'urlBar')
+    if (urlBarStage?.type === 'urlBar') assertCanDrawText(urlBarStage.config.fontFile)
     const state = await this.runStages()
     const outputDir = path.dirname(outputPath)
     const tmpDir = path.join(outputDir, '.recast-tmp')
@@ -114,6 +180,11 @@ export class PipelineExecutor {
       throw new Error('Pipeline has no data to render. Did you call .parse()?')
     }
 
+    if (state.urlBarConfig) {
+      state.urlBarEvents = this.buildUrlBarEvents(state, state.urlBarConfig)
+      console.log(`  urlBar: ${state.urlBarEvents.length} appearance(s) (${state.urlBarConfig.show ?? 'host-change'})`)
+    }
+
     // Compensate click events, cursor keyframes, and highlight events for
     // blank lead-in. The renderer trims blank frames from the start of the
     // video (Phase 1), and voiceover/subtitle timing is already adjusted for
@@ -124,7 +195,7 @@ export class PipelineExecutor {
     if (
       state.sourceVideoPath &&
       !state.director &&
-      (state.clickEvents || state.cursorKeyframes || state.highlightEvents)
+      (state.clickEvents || state.cursorKeyframes || state.highlightEvents || state.urlBarEvents)
     ) {
       const blankTmpDir = path.join(outputDir, '.recast-blank-probe')
       const offsetMs = resolveBlankLeadInMs(
@@ -151,6 +222,10 @@ export class PipelineExecutor {
             kf.videoTimeSec = Math.max(0, kf.videoTimeSec - offsetMs / 1000)
           }
         }
+        for (const ev of state.urlBarEvents ?? []) {
+          ev.videoTimeMs = Math.max(0, Math.round(ev.videoTimeMs - offsetMs))
+          if (ev.endTimeMs !== undefined) ev.endTimeMs = Math.max(0, Math.round(ev.endTimeMs - offsetMs))
+        }
       }
     }
 
@@ -158,6 +233,7 @@ export class PipelineExecutor {
     const traceWithVideo: RenderableTrace = {
       ...renderableTrace,
       sourceVideoPath: state.sourceVideoPath,
+      ...(state.contentCrop ? { contentCrop: state.contentCrop } : {}),
       preserveLeadIn: Boolean(state.director),
       subtitles: state.director ? state.subtitled?.subtitles.map(({ zoom, ...subtitle }) => subtitle) : state.subtitled?.subtitles,
       voiceover: state.voiceovered?.voiceover,
@@ -171,6 +247,8 @@ export class PipelineExecutor {
       highlightEvents: state.highlightEvents,
       highlightConfig: state.highlightConfig,
       highlightsOnFreezeClock: state.highlightsOnFreezeClock,
+      urlBarEvents: state.urlBarEvents,
+      urlBarConfig: state.urlBarConfig,
     }
 
     // Render final video
@@ -268,7 +346,8 @@ export class PipelineExecutor {
       const reportPath = path.join(outputDir, 'recast-report.json')
       const report = {
         scenario: 'playwright-recast output',
-        sourceVideo: state.sourceVideoPath,
+        sourceVideo: state.pageVideos?.[0] ?? state.sourceVideoPath,
+        ...(state.pageVideos ? { pageVideos: state.pageVideos } : {}),
         actionsCount: state.parsed.actions.length,
         framesCount: state.parsed.frames.length,
         resourcesCount: state.parsed.resources.length,
@@ -311,6 +390,15 @@ export class PipelineExecutor {
         case 'parse': {
           const tracePath = this.findTraceZip()
           state.parsed = await parseTrace(tracePath)
+          const videoPages = testVideoPages(state.parsed.actions)
+          const pagesVideo = await this.compositePages(state, path.dirname(tracePath), videoPages)
+          if (pagesVideo) state.sourceVideoPath = pagesVideo
+          else {
+            const { parsed, first, leftOut } = this.firstPageOnly(state.parsed, videoPages)
+            state.parsed = parsed
+            state.sourceVideoPath = firstPageVideo(state.sourceVideoPath, findPageVideos(path.dirname(tracePath), videoPages), first)
+            if (leftOut) this.warnAboutLeftOutPages(videoPages)
+          }
           // Default filter (no-op) for downstream stages
           state.filtered = {
             ...state.parsed,
@@ -406,17 +494,13 @@ export class PipelineExecutor {
           // Use the first screencast frame from the RECORDING page (identified by the
           // last frame's pageId) as the trace-time baseline — matches the renderer.
           if (state.speedMapped && state.speedMapped.speedSegments.length > 0 && state.parsed) {
-            const frames = state.parsed.frames
-            const recPageId = frames.length > 0
-              ? frames[frames.length - 1]!.pageId : undefined
+            const { pageId: recPageId, firstFrameMs: recFirstFrameMs } = recordingFrame(state.parsed.frames)
 
             // SRT time 0 = step 1 start = first ACTION on the recording page.
             // Video time 0 = first FRAME from the recording page (after blank trim).
             // These differ by ~1s (action starts before frame renders).
             // Use the action time for subtitle mapping so content matches exactly.
-            const recFrames = recPageId
-              ? frames.filter((f) => f.pageId === recPageId) : frames
-            const firstRecFrameMs = recFrames[0]?.timestamp as number ??
+            const firstRecFrameMs = recFirstFrameMs ??
               (state.speedMapped.speedSegments[0]!.originalStart as number)
             // No action with the page's id (pageId is optional): both clocks start at the frame
             const firstRecActionMs = (state.parsed.actions.find((a) => a.pageId === recPageId)?.startTime as number | undefined) ??
@@ -493,12 +577,7 @@ export class PipelineExecutor {
           // freezes and click ripples derived from them drift behind the video.
           let subVideoStartOutput = 0
           if (state.speedMapped && state.speedMapped.speedSegments.length > 0 && state.parsed) {
-            const subFrames = state.parsed.frames
-            const subRecPageId = subFrames.length > 0
-              ? subFrames[subFrames.length - 1]!.pageId : undefined
-            const subRecFrames = subRecPageId
-              ? subFrames.filter((f) => f.pageId === subRecPageId) : subFrames
-            const subFirstRecFrameMs = subRecFrames[0]?.timestamp as number ??
+            const subFirstRecFrameMs = recordingFrame(state.parsed.frames).firstFrameMs ??
               (state.parsed.metadata.startTime as number)
             subVideoStartOutput = state.speedMapped.timeRemap(toMonotonic(subFirstRecFrameMs))
           }
@@ -662,11 +741,7 @@ export class PipelineExecutor {
           const ALL_METHODS = new Set([...INPUT_METHODS, ...CLICK_METHODS])
 
           // Only include actions from the recording context
-          const recPageIdZoom = state.parsed.frames.length > 0
-            ? state.parsed.frames[state.parsed.frames.length - 1]!.pageId : undefined
-          const recFramesZoom = recPageIdZoom
-            ? state.parsed.frames.filter(f => f.pageId === recPageIdZoom) : state.parsed.frames
-          const recStartZoom = recFramesZoom[0]?.timestamp as number ?? firstFrameTime
+          const recStartZoom = recordingFrame(state.parsed.frames).firstFrameMs ?? firstFrameTime
 
           const allActions = state.parsed.actions
             .filter((a) => (a.startTime as number) >= recStartZoom)
@@ -779,22 +854,14 @@ export class PipelineExecutor {
           let cursorVideoStartOffset = cursorFirstFrameTime
 
           if (state.speedMapped && state.speedMapped.speedSegments.length > 0) {
-            const recPageId = state.parsed.frames.length > 0
-              ? state.parsed.frames[state.parsed.frames.length - 1]!.pageId : undefined
-            const recFrames = recPageId
-              ? state.parsed.frames.filter(f => f.pageId === recPageId) : state.parsed.frames
-            const firstRecFrameMs = recFrames[0]?.timestamp as number ?? cursorFirstFrameTime
+            const firstRecFrameMs = recordingFrame(state.parsed.frames).firstFrameMs ?? cursorFirstFrameTime
             const videoStartOutput = state.speedMapped.timeRemap(toMonotonic(firstRecFrameMs))
             cursorTimeRemap = (t: number) => state.speedMapped!.timeRemap(toMonotonic(t))
             cursorVideoStartOffset = videoStartOutput
           }
 
           // Only include actions from the recording context
-          const recPageIdCursor = state.parsed.frames.length > 0
-            ? state.parsed.frames[state.parsed.frames.length - 1]!.pageId : undefined
-          const recFramesCursor = recPageIdCursor
-            ? state.parsed.frames.filter(f => f.pageId === recPageIdCursor) : state.parsed.frames
-          const recStartCursor = recFramesCursor[0]?.timestamp as number ?? 0
+          const recStartCursor = recordingFrame(state.parsed.frames).firstFrameMs ?? 0
           // Use filtered actions so cursor positions from hidden steps are dropped.
           const cursorSourceActions = state.filtered?.actions ?? state.parsed.actions
           const cursorActionsAll = cursorSourceActions.filter(a => (a.startTime as number) >= recStartCursor)
@@ -854,11 +921,8 @@ export class PipelineExecutor {
 
           // Determine recording context's first frame time
           // (last frame's pageId = recording context, since setup context is created first)
-          const recPageIdClick = state.parsed.frames.length > 0
-            ? state.parsed.frames[state.parsed.frames.length - 1]!.pageId : undefined
-          const recFramesClick = recPageIdClick
-            ? state.parsed.frames.filter(f => f.pageId === recPageIdClick) : state.parsed.frames
-          const recStartClick = recFramesClick[0]?.timestamp as number ?? 0
+          const recFirstFrameClick = recordingFrame(state.parsed.frames).firstFrameMs
+          const recStartClick = recFirstFrameClick ?? 0
 
           // Use filtered actions so clicks inside hideSteps() ranges are dropped —
           // otherwise they get remapped onto video time 0 (or end) and pile up.
@@ -899,7 +963,7 @@ export class PipelineExecutor {
 
           let clickVideoStartOutput = 0
           if (state.speedMapped && state.speedMapped.speedSegments.length > 0) {
-            const firstRecFrameMs = recFramesClick[0]?.timestamp as number ?? firstFrameTime
+            const firstRecFrameMs = recFirstFrameClick ?? firstFrameTime
             clickVideoStartOutput = state.speedMapped.timeRemap(toMonotonic(firstRecFrameMs))
           }
           const remapClickTime = (traceTimeMs: number): number => {
@@ -993,6 +1057,16 @@ export class PipelineExecutor {
           break
         }
 
+        case 'pages':
+          // Read by the parse stage, which composites the pages
+          break
+
+        case 'urlBar': {
+          if (!state.parsed) throw new Error('urlBar() requires parse() first')
+          state.urlBarConfig = stage.config
+          break
+        }
+
         case 'intro': {
           if (!fs.existsSync(stage.config.path)) {
             throw new Error(`Intro video not found: ${stage.config.path}`)
@@ -1063,11 +1137,7 @@ export class PipelineExecutor {
             const approachMs = state.cursorOverlayConfig.approachMs ?? 500
             const blankMs = state._blankLeadInMs ?? 0
             const remap = (t: number): number => state.subtitled!.timeRemap(toMonotonic(t))
-            const recPageId = state.parsed!.frames.length > 0
-              ? state.parsed!.frames[state.parsed!.frames.length - 1]!.pageId : undefined
-            const recFrames = recPageId
-              ? state.parsed!.frames.filter((f) => f.pageId === recPageId) : state.parsed!.frames
-            const recStart = recFrames[0]?.timestamp as number ?? 0
+            const recStart = recordingFrame(state.parsed!.frames).firstFrameMs ?? 0
             // Output time of the recording's first frame — same offset the click
             // and cursor stages subtract. Only meaningful once speed segments exist.
             const holdVideoStartOutput =
@@ -1145,28 +1215,251 @@ export class PipelineExecutor {
   }
 
   private findSourceVideo(): string | undefined {
-    const dir = this.source.endsWith('.zip')
-      ? path.dirname(this.source)
-      : this.source
+    return findSourceVideo(this.source.endsWith('.zip') ? path.dirname(this.source) : this.source)
+  }
 
-    if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return undefined
+  /** Pages of `primary`'s browser context (one trace file per context). */
+  private sameContextAs(pageInfo: ReadonlyMap<string, TracePage>, primary: string): (id: string) => boolean {
+    const context = pageInfo.get(primary)?.contextId
+    return (id) => id === primary || (context !== undefined && pageInfo.get(id)?.contextId === context)
+  }
 
-    // Search for .webm files
-    const searchDir = (d: string): string | undefined => {
-      for (const file of fs.readdirSync(d)) {
-        if (file.endsWith('.webm')) return path.join(d, file)
+  /**
+   * A page's CSS viewport and the size its content was recorded at in its
+   * video. A frame's width/height are CSS pixels; in Chromium its JPEG is the
+   * recorded content (other browsers: no recorded size, no crop). The largest
+   * JPEG counts, so a late viewport change cannot shrink the video, and one
+   * reference frame's ratio gives the viewport, so both axes scale alike.
+   */
+  private async pageSize(parsed: ParsedTrace, pageId: string): Promise<{ viewport: { width: number; height: number }; recorded?: { width: number; height: number } } | undefined> {
+    const frames = parsed.frames.filter((f) => f.pageId === pageId)
+    if (frames.length === 0) return undefined
+    const cssMax = { width: Math.max(...frames.map((f) => f.width)), height: Math.max(...frames.map((f) => f.height)) }
+    if (parsed.metadata.browserName !== 'chromium') return { viewport: cssMax }
+    // One readable JPEG per CSS size, trying the next frame of that size when one is not
+    const bySize = new Map<string, ScreencastFrame[]>()
+    for (const f of frames) {
+      const key = `${f.width}x${f.height}`
+      const group = bySize.get(key)
+      if (group) group.push(f)
+      else bySize.set(key, [f])
+    }
+    const samples: Array<{ css: { width: number; height: number }; jpeg: { width: number; height: number } }> = []
+    for (const group of bySize.values()) {
+      for (const frame of [...group].reverse()) {
+        let jpeg: { width: number; height: number } | undefined
+        try { jpeg = jpegSize(await parsed.frameReader.readFrame(frame.sha1)) } catch { /* no image in the trace */ }
+        if (jpeg) { samples.push({ css: { width: frame.width, height: frame.height }, jpeg }); break }
       }
-      // Check subdirectories
-      for (const entry of fs.readdirSync(d, { withFileTypes: true })) {
-        if (entry.isDirectory() && !entry.name.startsWith('.')) {
-          const found = searchDir(path.join(d, entry.name))
-          if (found) return found
-        }
-      }
-      return undefined
+    }
+    if (samples.length === 0) return { viewport: cssMax }
+    const recorded = { width: Math.max(...samples.map((x) => x.jpeg.width)), height: Math.max(...samples.map((x) => x.jpeg.height)) }
+    const ref = samples.reduce((a, b) => (b.jpeg.width * b.jpeg.height > a.jpeg.width * a.jpeg.height ? b : a))
+    const cssPerPx = ref.css.width / ref.jpeg.width
+    return { viewport: { width: recorded.width * cssPerPx, height: recorded.height * cssPerPx }, recorded }
+  }
+
+  /**
+   * Cuts the `page@<pageId>.webm` videos of the primary page's context into
+   * one video and moves the other pages' points, markers, frames and actions
+   * onto the primary page, so later stages see one page. Undefined when there
+   * is no video for the primary page: the plain video stands.
+   */
+  private async compositePages(state: PipelineState, traceDir: string, videoPages: ReadonlyArray<string | null> | undefined): Promise<string | undefined> {
+    const parsed = state.parsed!
+    const videos = findPageVideos(traceDir, videoPages)
+    const primary = primaryPageId(parsed.frames, parsed.pages)
+    if (!primary || !videos.has(primary)) return undefined
+
+    // Only the primary page's context: another context's video has its own size and story.
+    const pageInfo = new Map((parsed.pages ?? []).map((p) => [p.pageId, p]))
+    const sameContext = this.sameContextAs(pageInfo, primary)
+    const candidates = new Set([...videos.keys()].filter(sameContext))
+
+    const firstFrameMs = new Map<string, number>()
+    for (const f of parsed.frames) {
+      if (candidates.has(f.pageId) && !firstFrameMs.has(f.pageId)) firstFrameMs.set(f.pageId, f.timestamp as number)
+    }
+    // Only pages that can come on screen end the video: the primary and pages with actions.
+    const showable = new Set([primary, ...parsed.actions.filter((a) => a.pageId && candidates.has(a.pageId) && a.method !== 'close').map((a) => a.pageId!)])
+    const durations = new Map([...showable].filter((id) => firstFrameMs.has(id)).map((id) => [id, getVideoDuration(videos.get(id)!) * 1000]))
+    const endMs = Math.max(...[...durations].map(([id, d]) => firstFrameMs.get(id)! + d))
+    const timeline = buildPageTimeline({
+      primaryId: primary,
+      pages: parsed.pages ?? [],
+      actions: parsed.actions,
+      firstFrameMs,
+      candidates,
+      endMs,
+    })
+    const onScreen = new Set(timeline.map((s) => s.pageId))
+    const startMs = timeline[0]!.startMs
+    // Pages of this context that are not in the video must not time it.
+    const visibleFrames = parsed.frames.filter((f) => !sameContext(f.pageId) || (onScreen.has(f.pageId) && (f.timestamp as number) >= startMs))
+    // A frame at t=0: stages time the video from the first frame, which may come later.
+    const lead = findLast(parsed.frames, (f) => f.pageId === timeline[0]!.pageId && (f.timestamp as number) <= startMs)
+    if (lead && (lead.timestamp as number) < startMs) {
+      visibleFrames.push({ ...lead, timestamp: toMonotonic(startMs) })
+      visibleFrames.sort((a, b) => (a.timestamp as number) - (b.timestamp as number))
     }
 
-    return searchDir(dir)
+    // Every page here has frames, so pageSize() returns a size
+    const composited = [...new Set([primary, ...onScreen])]
+    const pageSizes = new Map<string, { viewport: { width: number; height: number }; recorded?: { width: number; height: number } }>()
+    for (const id of composited) pageSizes.set(id, (await this.pageSize(parsed, id))!)
+    const primarySize = pageSizes.get(primary)!
+    const metadata = { ...parsed.metadata, viewport: primarySize.viewport }
+    if (onScreen.size === 1 && onScreen.has(primary) && startMs === firstFrameMs.get(primary)) {
+      state.parsed = { ...parsed, metadata, frames: visibleFrames }
+      // A page@ video: Playwright's own, padded around the content
+      if (primarySize.recorded) state.contentCrop = primarySize.recorded
+      return videos.get(primary)!
+    }
+    // Without a recorded size (not Chromium), a page is taken to fill its video.
+    // A JPEG never exceeds its video: Playwright's recorder pads and crops to the size.
+    const sizes = new Map([...pageSizes].map(([id, s]) => [id, { viewport: s.viewport, recorded: s.recorded ?? probeResolution(videos.get(id)!) }]))
+
+    const pagesStage = findLast(this.stages, (st) => st.type === 'pages')
+    const pagesConfig = pagesStage?.type === 'pages' ? pagesStage.config : {}
+    const layouts = computePageLayouts(primary, sizes, pagesConfig)
+    // A per-run dir, removed after the render; other stages still write their temp files next to the video
+    this.pagesTmpDir ??= fs.mkdtempSync(path.join(os.tmpdir(), 'recast-pages-'))
+    const outputPath = path.join(this.pagesTmpDir, 'pages.mp4')
+    compositePageVideos({
+      primaryId: primary,
+      // The primary page too when its own stretch was dropped: popups sit over it
+      pages: composited.map((id) => ({ pageId: id, video: videos.get(id)!, startMs: firstFrameMs.get(id)!, layout: layouts.get(id)! })),
+      timeline,
+      startMs,
+      durationMs: endMs - startMs,
+      // The primary page's content without padding, so CSS maps to it like a full video
+      size: layouts.get(primary)!.crop,
+      fps: probeVideoFps(videos.get(primary)!),
+      outputPath,
+      backdrop: pagesConfig.backdrop,
+    })
+
+    const moved = new Set([...onScreen].filter((id) => id !== primary))
+    // A page of this context that never comes on screen must not draw over the video
+    const offScreen = (id: string | undefined) => id !== undefined && id !== primary && sameContext(id) && !onScreen.has(id)
+    const actions = withoutPages(parsed.actions, offScreen).map((a) => {
+      const layout = a.pageId && moved.has(a.pageId) ? layouts.get(a.pageId) : undefined
+      let mapped = layout && a.point ? { ...a, point: { ...mapPoint(layout, a.point), timestamp: a.point.timestamp } } : a
+      if (typeof a.title === 'string') {
+        const markerPage = markerPageId(a.title, a.startTime as number, timeline)
+        const markerLayout = markerPage && moved.has(markerPage) ? layouts.get(markerPage) : undefined
+        if (markerLayout) {
+          const title = mapMarkerTitle(a.title, markerLayout, primarySize.viewport)
+          if (title !== a.title) mapped = { ...mapped, title }
+        }
+      }
+      // One page from here on: speedUp() counts user actions on the recording page only.
+      return a.pageId && moved.has(a.pageId) ? { ...mapped, pageId: primary } : mapped
+    })
+    state.parsed = {
+      ...parsed,
+      metadata,
+      actions,
+      cursorPositions: actions.filter((a) => a.point).map((a) => a.point!),
+      // The earliest of these is the video's t=0, which every stage times from.
+      frames: visibleFrames.map((f) => (moved.has(f.pageId) ? { ...f, pageId: primary } : f)),
+    }
+    state.pageTimeline = timeline
+    state.pageVideos = composited.map((id) => videos.get(id)!)
+    console.log(`  Pages: ${onScreen.size} composited, ${timeline.length - 1} switch(es)`)
+    return outputPath
+  }
+
+  /**
+   * The plain video is video.webm: the first page of the recording context
+   * (the fixture's first, else the one with the context's first frame).
+   * Other pages of that context are not in it: their frames must not time it,
+   * their actions, points and markers must not show over it.
+   */
+  private firstPageOnly(parsed: ParsedTrace, videoPages: ReadonlyArray<string | null> | undefined): { parsed: ParsedTrace; first?: string; leftOut: boolean } {
+    const recording = recordingFrame(parsed.frames).pageId
+    if (!recording) return { parsed, leftOut: false }
+    const sameContext = this.sameContextAs(new Map((parsed.pages ?? []).map((p) => [p.pageId, p])), recording)
+    // By first frame: pages created before tracing come last in parsed.pages
+    const first = videoPages?.[0] ?? parsed.frames.find((f) => sameContext(f.pageId))?.pageId ?? recording
+    const other = (id: string | undefined) => id !== undefined && id !== first && sameContext(id)
+    const kept = withoutPages(parsed.actions, other)
+    const leftOut = parsed.actions.some((a) => other(a.pageId) && a.method !== 'close')
+    const actions = kept.length < parsed.actions.length
+      ? { actions: kept, cursorPositions: kept.filter((a) => a.point).map((a) => a.point!) }
+      : {}
+    return { parsed: { ...parsed, ...actions, frames: parsed.frames.filter((f) => !other(f.pageId)) }, first, leftOut }
+  }
+
+  /** Warns that other pages of the video's context had actions: they are left out. */
+  private warnAboutLeftOutPages(videoPages: ReadonlyArray<string | null> | undefined): void {
+    const cause = videoPages
+      ? 'recastPageVideos listed the pages, but no video of the main page is next to trace.zip: Playwright keeps none with video \'retain-on-failure\' for a passing test, or \'on-first-retry\' before a retry; or the page had no id (warned when the test ran).'
+      : 'Add the recastPageVideos fixture (playwright-recast/helpers) to composite them (see the pages() docs).'
+    console.warn(`  Pages: other pages of this test had actions, but only one video is used. ${cause}`)
+  }
+
+  /** Trace time of the recording's first frame: the video's t=0. */
+  private recordingStartMs(parsed: ParsedTrace): number {
+    return recordingFrame(parsed.frames).firstFrameMs ?? (parsed.metadata.startTime as number)
+  }
+
+  /** Trace time to output video time, as the click and cursor stages map it. */
+  private traceToVideoMs(state: PipelineState): (traceMs: number) => number {
+    const startMs = this.recordingStartMs(state.parsed!)
+    const speed = state.speedMapped
+    if (speed && speed.speedSegments.length > 0) {
+      const v0 = speed.timeRemap(toMonotonic(startMs))
+      return (t) => speed.timeRemap(toMonotonic(t)) - v0
+    }
+    return (t) => t - startMs
+  }
+
+  private buildUrlBarEvents(state: PipelineState, config: UrlBarConfig): UrlBarEvent[] {
+    const parsed = state.parsed!
+    const recPageId = recordingFrame(parsed.frames).pageId
+    const timeline = state.pageTimeline
+    const activePage = (t: number): string | undefined =>
+      (timeline ? activePageAt(timeline, t) : undefined) ?? recPageId
+    const startMs = this.recordingStartMs(parsed)
+    const endMs = Math.max(startMs, parsed.metadata.endTime as number)
+
+    const markers: UrlMarker[] = []
+    for (const a of state.filtered?.actions ?? parsed.actions) {
+      if (typeof a.title !== 'string' || !a.title.startsWith(URL_TITLE_PREFIX)) continue
+      try {
+        const data = JSON.parse(a.title.slice(URL_TITLE_PREFIX.length)) as { url?: unknown; durationMs?: unknown }
+        markers.push({
+          startMs: a.startTime as number,
+          ...(typeof data.url === 'string' ? { url: data.url } : {}),
+          ...(typeof data.durationMs === 'number' ? { durationMs: data.durationMs } : {}),
+        })
+      } catch {
+        // skip malformed markers
+      }
+    }
+
+    const cues = buildUrlBarCues({
+      config,
+      pageUrls: parsed.pageUrls ?? [],
+      activePage,
+      pageSwitches: (timeline ?? []).map((s) => s.startMs),
+      markers,
+      hiddenRanges: (state.filtered?.hiddenRanges ?? []).map((r) => ({ start: r.start as number, end: r.end as number })),
+      startMs,
+      endMs,
+    })
+    const toVideo = this.traceToVideoMs(state)
+    const durationMs = config.durationMs ?? 3000
+    return cues.map((cue) => {
+      const videoTimeMs = Math.max(0, Math.round(toVideo(cue.startMs)))
+      const markerDuration = markers.find((m) => m.startMs === cue.startMs)?.durationMs
+      return cue.endMs !== undefined
+        ? { text: cue.text, videoTimeMs, endTimeMs: Math.round(toVideo(cue.endMs)), traceMs: cue.startMs, endTraceMs: cue.endMs }
+        : config.show === 'always'
+          ? { text: cue.text, videoTimeMs, traceMs: cue.startMs }
+          : { text: cue.text, videoTimeMs, endTimeMs: videoTimeMs + (markerDuration ?? durationMs), traceMs: cue.startMs }
+    })
   }
 
   /**

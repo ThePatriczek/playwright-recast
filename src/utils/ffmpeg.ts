@@ -157,3 +157,12 @@ function describeFfmpegFailure(error: unknown): string {
 
   return `${header}:\n${kept.join('\n')}`
 }
+
+/**
+ * A file path as a filter option inside a -filter_complex graph, which
+ * ffmpeg unescapes twice: once for the graph, once for the option. Quoting
+ * once breaks on a path with an apostrophe.
+ */
+export function filterGraphPath(p: string): string {
+  return p.replace(/[\\':]/g, '\\$&').replace(/[\\'\[\],;]/g, '\\$&')
+}

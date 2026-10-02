@@ -1,0 +1,48 @@
+---
+title: URL Bar
+description: Show the URL of the page on screen as a pill on the video.
+---
+
+A recording shows no browser chrome. `.urlBar()` shows the URL of the page on screen, protocol included, as a pill at the bottom of the frame.
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .urlBar({ redact: [/acme-\d+/g] })
+  .render()
+  .toFile('demo.mp4')
+```
+
+URLs come from the trace's DOM snapshots (`trace: 'on'`), which include hash routes like `#/workspaces/42` and leave out iframes. A trace without snapshots falls back to `goto()` targets, resolved against the context's `baseURL`. `about:` pages and credentials in a URL (`user:pass@`) are never shown.
+
+## When it shows
+
+| `show` | |
+|---|---|
+| `'host-change'` (default) | When the page on screen moves to another host, for `durationMs`. The host at the first visible frame is the starting point and shows no bar. Hosts seen only inside [hidden steps](/docs/pipeline/hide-steps) do not count. |
+| `'always'` | The whole video, following every URL change |
+| `'marked'` | At each [`showUrl()`](/docs/helpers/show-url) call, for `durationMs` |
+
+Across [pages](/docs/pipeline/pages), the URL follows the page on screen: a popup on another host shows its own URL.
+
+## Options
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `show` | `'host-change' \| 'always' \| 'marked'` | `'host-change'` | When the bar shows |
+| `durationMs` | `number` | `3000` | How long it stays, in output ms (`host-change`, `marked`) |
+| `stripQuery` | `boolean` | `true` | Drop the query string, also inside a hash route, and a fragment that is not a route (`#/...`, `#!/...`), such as OAuth's `#access_token=...` |
+| `redact` | `Array<string \| RegExp>` | `[]` | Parts to mask. Strings match literally; give a RegExp the `g` flag to mask every match. |
+| `redactWith` | `string` | `'***'` | Replacement for redacted parts |
+| `position` | `'bottom' \| 'top'` | `'bottom'` | Edge of the frame |
+| `fontSize` | `number` | `28` | Text size at 1080p, scaled with the output |
+| `fontFile` | `string` | fontconfig default | Font file for the text |
+| `color` | `string` | `'#FFFFFF'` | Text color |
+| `background` | `string` | `'#1F2328'` | Pill color |
+| `backgroundOpacity` | `number` | `0.8` | Pill opacity |
+
+- Drawn on the output frame after zoom, so zooming leaves it alone. Burned-in subtitles draw on top; with subtitles at the bottom, use `position: 'top'`.
+- Page-level blur does not reach the bar: mask account names, IDs and tokens with `redact`.
+- Needs ffmpeg's `drawtext` (libfreetype) and a font (fontconfig or `fontFile`); the render stops with an error otherwise.
+- Not with [`direct()`](/docs/pipeline/direct) yet: it crops the rendered video and would zoom the bar.

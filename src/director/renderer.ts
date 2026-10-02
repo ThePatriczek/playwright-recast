@@ -5,7 +5,7 @@ import { z } from 'zod'
 import type { DirectorDecision, DirectorOptions, DirectorProvider, DirectorReport, VisualObservation } from '../types/director.js'
 import type { RenderConfig } from '../types/render.js'
 import type { SubtitleEntry } from '../types/subtitle.js'
-import { runFfmpeg } from '../utils/ffmpeg.js'
+import { filterGraphPath, runFfmpeg } from '../utils/ffmpeg.js'
 import { parseSrt } from '../subtitles/srt-parser.js'
 import { writeSrt } from '../subtitles/srt-writer.js'
 import { writeAss } from '../subtitles/ass-writer.js'
@@ -95,8 +95,7 @@ export async function directVideo(source: string, output: string, provider: Dire
   if (render.burnSubtitles && subtitles.length) {
     const assPath = path.join(workDir, 'directed.ass')
     fs.writeFileSync(assPath, writeAss(subtitles, render.subtitleStyle, { width: video.width, height: video.height }))
-    const escaped = assPath.replace(/'/g, "'\\''").replace(/:/g, '\\:')
-    filters.push(`[camera]ass='${escaped}'[captioned]`)
+    filters.push(`[camera]ass=${filterGraphPath(assPath)}[captioned]`)
     videoOutput = 'captioned'
   }
   const format = render.format ?? 'mp4'

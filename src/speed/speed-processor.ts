@@ -5,6 +5,7 @@ import { classifyTimepoint, USER_ACTION_METHODS } from './classifiers.js'
 import { computeOutputTimes, buildTimeRemap } from './time-remap.js'
 import { buildSamplePoints } from './sample-points.js'
 import { isNarrationBoundaryTitle } from '../pipeline/narration-subtitles.js'
+import { recordingFrame } from '../parse/recording-frame.js'
 
 const DEFAULTS: Required<Omit<SpeedConfig, 'rules' | 'recordingPageId' | 'postFastForwardSettleMs' | 'segments' | 'exactBoundaries' | 'keepResizedFrames'>> = {
   duringIdle: 4.0,
@@ -119,7 +120,7 @@ export function processSpeed(
 
   // The page the renderer takes the video from: the one with the LAST frame
   // (the recording context runs longest; frames[0] may be a hidden setup context)
-  const videoPageId = trace.frames[trace.frames.length - 1]?.pageId
+  const { pageId: videoPageId, firstFrameMs } = recordingFrame(trace.frames)
   const recordingPageId = config.recordingPageId ?? videoPageId
 
   const resizedCuts = config.keepResizedFrames
@@ -129,13 +130,8 @@ export function processSpeed(
   // Explicit segments mode: caller provides pre-built segments (e.g., voiceover-driven).
   // Convert from SRT-time-based segments to trace-monotonic SpeedSegments.
   if (config.segments && config.segments.length > 0) {
-    // Determine the recording page's first frame as the SRT time baseline
-    const recFrames = videoPageId
-      ? trace.frames.filter((f) => f.pageId === videoPageId) : trace.frames
     // Baseline = first recording frame (not first action — actions may start later)
-    const baseline = recFrames.length > 0
-      ? (recFrames[0]!.timestamp as number)
-      : visibleStart
+    const baseline = firstFrameMs ?? visibleStart
 
     const speedSegments: SpeedSegment[] = config.segments.flatMap((seg) =>
       withoutRanges(seg.startMs + baseline, seg.endMs + baseline, resizedCuts).map(([start, end]) => ({

@@ -66,8 +66,10 @@ await Recast
 - **Cursor overlay** — Animated cursor travels between click positions with configurable duration, easing, and post-arrival visibility. Bundled arrow cursor or custom image.
 - **Animated zoom with easing** — Auto-zoom uses customizable easing functions (ease-in-out, ease-out, cubic-bezier, or custom JS functions) with smooth zoom-to-zoom panning.
 - **Visual direction with Jev** — `.direct(JevDirector(), { goal })` watches the rendered recording (pixel changes + local OCR) and picks camera moves, emphasis and pacing from bounded candidates. No manual `zoom()` or `highlight()` calls needed.
+- **Multi-page recordings** - Popups (`window.open`, OAuth consent) and new tabs are cut into one video from Playwright's per-page videos: popups over the darkened page behind, tabs as a hard switch, configurable with `.pages()`. Clicks, cursor, zoom and highlights follow the page.
+- **URL bar** - `.urlBar()` shows the URL of the page on screen as a pill: on host changes, always, or at `showUrl()` markers, with query stripping and redaction.
 - **Frame interpolation** — Smooth out choppy browser recordings with ffmpeg minterpolate. Blend, duplicate, or motion-compensated modes with multi-pass support.
-- **Step helpers** — `narrate()`, `highlight()`, `zoom()`, `pace()`, `typeText()`, `click()`, `markClick()`, `waitForNarration()` — importable helpers for Playwright step definitions. `typeText()` replaces instant fills with visible, naturally varied keystrokes; `click()` can dwell on the target to record the app's hover state; marker helpers write directly into the trace zip so the pipeline picks them up automatically via `subtitlesFromTrace()`.
+- **Step helpers** — `narrate()`, `highlight()`, `zoom()`, `pace()`, `typeText()`, `click()`, `markClick()`, `waitForNarration()`, `showUrl()` — importable helpers for Playwright step definitions. `typeText()` replaces instant fills with visible, naturally varied keystrokes; `click()` can dwell on the target to record the app's hover state; marker helpers write directly into the trace zip so the pipeline picks them up automatically via `subtitlesFromTrace()`.
 - **Polished click markers** — `click()` / `markClick()` mark a click in the trace; the renderer prefers these over auto-detected clicks and plays a deliberate, held cursor approach over the painted target (configurable via `cursorOverlay({ approachMs })`) — no more "the mouse moves before there's anything to click on."
 - **Voiceover-driven freezes** — When a TTS narration is longer than its visual window, the renderer holds the current frame until the audio finishes; overlays freeze with it, click sounds shift to match. `waitForNarration()` marks an explicit beat to hold on until a line is fully spoken — so with TTS you can skip `autoWait` entirely and run the test at full speed while the rendered video stays in sync.
 - **Soft (embedded) subtitle track** — `render({ embedSubtitles: true })` muxes a toggleable subtitle track into the container (`mov_text` for mp4, `webvtt` for webm).
@@ -231,6 +233,7 @@ Every stage is optional and composable:
 | Stage | Description |
 |-------|-------------|
 | `.parse()` | Parse Playwright trace.zip into structured data (actions, frames, network, cursor) |
+| `.pages(config)` | How popups and new tabs show: over the darkened page or alone, hard switch or shrunk on top |
 | `.injectActions(actions)` | Inject synthetic actions into a parsed trace (e.g., DOM-tracked actions from `page.pause()` recordings) |
 | `.hideSteps(predicate)` | Remove steps from the output (e.g., login, setup) |
 | `.speedUp(config)` | Adjust video speed based on activity (idle, action, network) |
@@ -244,6 +247,7 @@ Every stage is optional and composable:
 | `.cursorOverlay(config)` | Animated cursor at click positions (appears, moves, disappears) |
 | `.clickEffect(config)` | Add visual ripple + optional click sound at click positions |
 | `.textHighlight(config)` | Animated marker overlay on text (swipe-in reveal, auto-positioned from report) |
+| `.urlBar(config)` | Show the URL of the page on screen (host changes, always, or `showUrl()` markers), with redaction |
 | `.backgroundMusic({ path, volume?, ... })` | Add background music with auto-ducking, loop, fade-out |
 | `.intro({ path, fadeDuration? })` | Prepend intro video with crossfade transition |
 | `.outro({ path, fadeDuration? })` | Append outro video with crossfade transition |
@@ -663,6 +667,32 @@ npx playwright-recast -i ./traces --click-effect-config config.json
 
 ---
 
+## Multi-Page Recordings
+
+Popups and new tabs are cut into one video from per-page videos: in Playwright Test with the `recastPageVideos` fixture from `playwright-recast/helpers` (`base.extend(recastPageVideos)`, `video: 'on'`), else with the context option `recordVideo` (`page@<pageId>.webm`, Playwright 1.59+). The page of the most recent action is on screen; a closing page hands back to its opener; pages without actions get no screen time.
+
+```typescript
+await Recast
+  .from('./test-results/consent-flow')
+  .parse()
+  .pages({ popup: 'overlay', tab: 'replace' })   // the defaults; optional
+  .urlBar({ show: 'host-change', redact: [/acme-\d+/g] })
+  .render()
+  .toFile('demo.mp4')
+```
+
+| `.pages()` option | Default | |
+|---|---|---|
+| `popup` | `'overlay'` | Page smaller than the frame: centered over the darkened full-frame page that was on screen before it, and an overlaid tab on it (`overlay`) or on a plain background (`replace`) |
+| `tab` | `'replace'` | Page that fills the frame: hard switch (`replace`) or shrunk to `tabScale` (0.85) over the darkened page (`overlay`) |
+| `backdrop` | `{ dim: 0.6, color: '#000000' }` | Darkening behind overlays; background behind a replacing popup |
+
+Clicks, cursor, `autoZoom()` and the `highlight()` / `zoom()` / `click()` markers on other pages are moved to where the page sits in the frame.
+
+`.urlBar()` shows the URL of the page on screen as a pill: `show: 'host-change'` (default), `'always'`, or `'marked'` at `showUrl(page)` calls. `stripQuery` (default `true`) and `redact` keep tokens and account names off screen. Needs ffmpeg's `drawtext`; not with `direct()` yet. See the [Multi-Page](https://thepatriczek.github.io/playwright-recast/docs/pipeline/pages) and [URL Bar](https://thepatriczek.github.io/playwright-recast/docs/pipeline/url-bar) docs.
+
+---
+
 ## Frame Interpolation
 
 Generate smooth intermediate frames from choppy browser recordings using ffmpeg's `minterpolate` filter.
@@ -958,6 +988,8 @@ TTS provider is auto-detected from available API keys when `RECAST_TTS_PROVIDER`
 ## Contributing
 
 Contributions welcome! Please check the [issues](https://github.com/ThePatriczek/playwright-recast/issues) for open tasks.
+
+Needs Node.js 20.19+ or 22.12+ (the library itself runs on 18+).
 
 ```bash
 git clone https://github.com/ThePatriczek/playwright-recast.git

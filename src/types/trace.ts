@@ -7,6 +7,7 @@ export function toMonotonic(ms: number): MonotonicMs {
 
 /** A screencast frame captured in the trace */
 export interface ScreencastFrame {
+  /** The image's key for FrameReader: its resource sha1, or its zip path (Playwright 1.63+) */
   sha1: string
   timestamp: MonotonicMs
   pageId: string
@@ -75,6 +76,25 @@ export interface TraceEvent {
   text?: string
 }
 
+/** A page's lifetime, from the trace's BrowserContext page events */
+export interface TracePage {
+  pageId: string
+  /** Page that opened it (window.open, target=_blank) */
+  openerPageId?: string
+  closedAt?: MonotonicMs
+  /** Trace file of the page's browser context; one per context */
+  contextId?: string
+  /** Viewport of the page's context (context option), CSS pixels */
+  viewport?: { width: number; height: number }
+}
+
+/** A page's main-frame URL from a DOM snapshot */
+export interface PageUrl {
+  pageId: string
+  url: string
+  timestamp: MonotonicMs
+}
+
 /** Abstraction for reading frame JPEG data from the trace zip */
 export interface FrameReader {
   readFrame(sha1: string): Promise<Buffer>
@@ -101,6 +121,10 @@ export interface ParsedTrace {
   cursorPositions: CursorPosition[]
   /** Spans a page was rendered at another size (see resizedFrameSpans()); Chromium only */
   resizedFrames?: Array<{ pageId: string; start: MonotonicMs; end: MonotonicMs }>
+  /** Page lifetimes; absent in traces parsed by older versions or built by hand */
+  pages?: TracePage[]
+  /** Main-frame URL changes per page, from snapshots (or goto calls without them) */
+  pageUrls?: PageUrl[]
   frameReader: FrameReader
 }
 

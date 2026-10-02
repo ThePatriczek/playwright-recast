@@ -28,7 +28,11 @@ Both `ffmpeg` and `ffprobe` must be available on your system `PATH`. The library
 |---|---|
 | **OpenAI API key** | `.voiceover()` with `OpenAIProvider` |
 | **ElevenLabs API key** | `.voiceover()` with `ElevenLabsProvider` |
-| **Playwright** | Generating trace files (not needed if you already have `trace.zip`) |
+| **Playwright** 1.40+ | Generating trace files (not needed if you already have `trace.zip`); 1.59+ for multi-page recordings with `recordVideo` |
+
+## Development
+
+Working on playwright-recast itself (`npm test`) needs Node.js 20.19+ or 22.12+ (Vitest 4).
 
 ## Performance considerations
 
