@@ -57,6 +57,7 @@ interface ParsedTrace {
     startTime: MonotonicMs
     endTime: MonotonicMs
     wallTime: number
+    wallMonotonicTime?: number  // monotonic time at wallTime
     playwrightVersion?: string
   }
   frames: ScreencastFrame[]
