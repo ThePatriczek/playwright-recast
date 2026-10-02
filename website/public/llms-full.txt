@@ -521,12 +521,12 @@ A test that opens a popup (an OAuth consent window from `window.open`) or a new 
 
 ## Recording
 
-Recast needs to know which video belongs to which of the trace's pages. Keep `trace: 'on'`: the trace holds the page lifecycle that aligns the videos.
+Recast needs to know which video belongs to which of the trace's pages. Keep `trace: 'on'`, with snapshots: the trace holds the page lifecycle that aligns the videos, and from Playwright 1.63 on only the snapshots tell which page an action ran on.
 
 | Setup | How |
 |---|---|
 | Playwright Test | Add the `recastPageVideos` fixture and record with `video: 'on'` (or `recastVideo()` for sharp zooms). It writes one step to the trace listing the page of each `video.webm` / `video-N.webm` (in the trace's folder); the step shows in the report under "After Hooks". |
-| Library | Context option `recordVideo`: Playwright writes `page@<pageId>.webm` itself, also for a popup that closes itself. `page@` files are found in the trace's folder and its subfolders. |
+| Library | Context option `recordVideo`: Playwright 1.59+ writes `page@<pageId>.webm` itself, also for a popup that closes itself (older versions name videos by a hash no page maps to). `page@` files are found in the trace's folder and its subfolders. |
 | Neither | Only `video.webm` (the first page) is used; Recast warns when other pages had actions. |
 
 ```typescript

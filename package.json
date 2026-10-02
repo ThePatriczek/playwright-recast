@@ -129,7 +129,7 @@
   "devDependencies": {
     "@aws-sdk/client-polly": "^3.1030.0",
     "@elevenlabs/elevenlabs-js": "^2.40.0",
-    "@playwright/test": "^1.58.0",
+    "@playwright/test": "^1.63.0",
     "@types/node": "^22.0.0",
     "openai": "^6.32.0",
     "typescript": "^5.9.0",

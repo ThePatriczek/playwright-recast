@@ -93,4 +93,9 @@ describe('buildUrlBarCues', () => {
       { text: 'https://app.***.example/x', startMs: 2600 },
     ])
   })
+
+  it('marked: never shows an about: page, also when the marker names it', () => {
+    const cues = buildUrlBarCues({ ...base, config: { show: 'marked' }, markers: [{ startMs: 500, url: 'about:blank' }] })
+    expect(cues).toEqual([])
+  })
 })

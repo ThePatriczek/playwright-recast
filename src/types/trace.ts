@@ -7,6 +7,7 @@ export function toMonotonic(ms: number): MonotonicMs {
 
 /** A screencast frame captured in the trace */
 export interface ScreencastFrame {
+  /** The image's key for FrameReader: its resource sha1, or its zip path (Playwright 1.63+) */
   sha1: string
   timestamp: MonotonicMs
   pageId: string

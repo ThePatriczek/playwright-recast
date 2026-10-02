@@ -56,7 +56,10 @@ export interface InputEvent {
 export interface ScreencastFrameEvent {
   type: 'screencast-frame'
   pageId: string
-  sha1: string
+  /** Before Playwright 1.63: the image is resources/<sha1> */
+  sha1?: string
+  /** Playwright 1.63+: the image's path in the zip */
+  file?: string
   width: number
   height: number
   timestamp: number
@@ -92,6 +95,7 @@ export interface PageLifecycleEvent {
 export interface FrameSnapshotEvent {
   type: 'frame-snapshot'
   snapshot: {
+    callId?: string
     pageId: string
     frameUrl: string
     isMainFrame?: boolean

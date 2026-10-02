@@ -115,6 +115,16 @@ function findLast<T>(items: ReadonlyArray<T>, match: (item: T) => boolean): T | 
 }
 
 /**
+ * The plain video for the first page: its own when known, else the found one
+ * unless it is known to be another page's (the screencast stands in then).
+ */
+function firstPageVideo(found: string | undefined, videos: ReadonlyMap<string, string>, first: string | undefined): string | undefined {
+  const own = first ? videos.get(first) : undefined
+  if (own) return own
+  return found && [...videos.values()].some((v) => path.resolve(v) === path.resolve(found)) ? undefined : found
+}
+
+/**
  * Executes a pipeline by walking through stages sequentially.
  * Each stage transforms the state into the next type in the chain.
  */
@@ -378,8 +388,10 @@ export class PipelineExecutor {
           const pagesVideo = await this.compositePages(state, path.dirname(tracePath), videoPages)
           if (pagesVideo) state.sourceVideoPath = pagesVideo
           else {
-            state.parsed = this.firstPageFramesOnly(state.parsed, videoPages)
-            this.warnAboutLeftOutPages(state.parsed, videoPages)
+            const { parsed, first, leftOut } = this.firstPageOnly(state.parsed, videoPages)
+            state.parsed = parsed
+            state.sourceVideoPath = firstPageVideo(state.sourceVideoPath, findPageVideos(path.dirname(tracePath), videoPages), first)
+            if (leftOut) this.warnAboutLeftOutPages(videoPages)
           }
           // Default filter (no-op) for downstream stages
           state.filtered = {
@@ -1353,24 +1365,27 @@ export class PipelineExecutor {
   /**
    * The plain video is video.webm: the first page of the recording context
    * (the fixture's first, else the one with the context's first frame).
-   * Other pages of that context must not time it.
+   * Other pages of that context are not in it: their frames must not time it,
+   * their actions, points and markers must not show over it.
    */
-  private firstPageFramesOnly(parsed: ParsedTrace, videoPages: ReadonlyArray<string | null> | undefined): ParsedTrace {
+  private firstPageOnly(parsed: ParsedTrace, videoPages: ReadonlyArray<string | null> | undefined): { parsed: ParsedTrace; first?: string; leftOut: boolean } {
     const recording = recordingFrame(parsed.frames).pageId
-    if (!recording) return parsed
+    if (!recording) return { parsed, leftOut: false }
     const sameContext = this.sameContextAs(new Map((parsed.pages ?? []).map((p) => [p.pageId, p])), recording)
     // By first frame: pages created before tracing come last in parsed.pages
     const first = videoPages?.[0] ?? parsed.frames.find((f) => sameContext(f.pageId))?.pageId ?? recording
-    return { ...parsed, frames: parsed.frames.filter((f) => f.pageId === first || !sameContext(f.pageId)) }
+    const other = (id: string | undefined) => id !== undefined && id !== first && sameContext(id)
+    const kept = parsed.actions.filter((a) =>
+      !other(a.pageId) && !(typeof a.title === 'string' && other(markerPageId(a.title, a.startTime as number, []))))
+    const leftOut = parsed.actions.some((a) => other(a.pageId) && a.method !== 'close')
+    const actions = kept.length < parsed.actions.length
+      ? { actions: kept, cursorPositions: kept.filter((a) => a.point).map((a) => a.point!) }
+      : {}
+    return { parsed: { ...parsed, ...actions, frames: parsed.frames.filter((f) => !other(f.pageId)) }, first, leftOut }
   }
 
-  /** Warns when other pages of the video's context had actions: they are left out. */
-  private warnAboutLeftOutPages(parsed: ParsedTrace, videoPages: ReadonlyArray<string | null> | undefined): void {
-    const pageInfo = new Map((parsed.pages ?? []).map((p) => [p.pageId, p]))
-    const recording = recordingFrame(parsed.frames).pageId
-    if (!recording) return
-    const sameContext = this.sameContextAs(pageInfo, recording)
-    if (!parsed.actions.some((a) => a.pageId && a.pageId !== recording && a.method !== 'close' && sameContext(a.pageId))) return
+  /** Warns that other pages of the video's context had actions: they are left out. */
+  private warnAboutLeftOutPages(videoPages: ReadonlyArray<string | null> | undefined): void {
     const cause = videoPages
       ? 'recastPageVideos listed the pages, but no video of the main page is next to trace.zip: Playwright keeps none with video \'retain-on-failure\' for a passing test, or \'on-first-retry\' before a retry; or the page had no id (warned when the test ran).'
       : 'Add the recastPageVideos fixture (playwright-recast/helpers) to composite them (see the pages() docs).'

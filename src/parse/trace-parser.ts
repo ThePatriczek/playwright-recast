@@ -26,6 +26,9 @@ import {
   type FrameSnapshotEvent,
 } from './jsonl-parser.js'
 
+/** A frame's image in the zip: a path (Playwright 1.63+) or a resource sha1. */
+const frameEntry = (key: string): string => (key.includes('/') ? key : `resources/${key}`)
+
 /**
  * Parse a Playwright trace zip into structured data.
  */
@@ -53,6 +56,8 @@ export async function parseTrace(tracePath: string): Promise<ParsedTrace> {
   const actionStarts = new Map<string, BeforeActionEvent>()
   const actionEnds = new Map<string, AfterActionEvent>()
   const inputPoints = new Map<string, { x: number; y: number }>()
+  // Playwright 1.63 dropped `pageId` from 'before': an action's snapshots still carry it
+  const snapshotPages = new Map<string, string>()
 
   for (const event of traceEvents) {
     switch (event.type) {
@@ -69,6 +74,11 @@ export async function parseTrace(tracePath: string): Promise<ParsedTrace> {
       case 'input': {
         const e = event as InputEvent
         if (e.point) inputPoints.set(e.callId, e.point)
+        break
+      }
+      case 'frame-snapshot': {
+        const { callId, pageId } = (event as FrameSnapshotEvent).snapshot ?? {}
+        if (callId && pageId && !snapshotPages.has(callId)) snapshotPages.set(callId, pageId)
         break
       }
     }
@@ -89,7 +99,7 @@ export async function parseTrace(tracePath: string): Promise<ParsedTrace> {
       startTime: toMonotonic(start.startTime),
       endTime: toMonotonic(end?.endTime ?? start.startTime),
       parentId: start.parentId,
-      pageId: start.pageId,
+      pageId: start.pageId ?? snapshotPages.get(callId),
       error: end?.error,
       point: point
         ? { x: point.x, y: point.y, timestamp: toMonotonic(start.startTime) }
@@ -102,7 +112,7 @@ export async function parseTrace(tracePath: string): Promise<ParsedTrace> {
   const frames: ScreencastFrame[] = traceEvents
     .filter((e): e is ScreencastFrameEvent => e.type === 'screencast-frame')
     .map((e) => ({
-      sha1: e.sha1,
+      sha1: e.sha1 ?? e.file ?? '',
       timestamp: toMonotonic(e.timestamp),
       pageId: e.pageId,
       width: e.width,
@@ -112,7 +122,7 @@ export async function parseTrace(tracePath: string): Promise<ParsedTrace> {
 
   // Only in Chromium are the trace's frames the frames the video records
   const resizedFrames = ctxOpts?.browserName === 'chromium'
-    ? resizedFrameSpansFromJpegs(frames, (sha1) => zip.view(`resources/${sha1}`), actions)
+    ? resizedFrameSpansFromJpegs(frames, (sha1) => zip.view(frameEntry(sha1)), actions)
     : []
 
   // Extract network resources
@@ -181,8 +191,7 @@ export async function parseTrace(tracePath: string): Promise<ParsedTrace> {
   // Create frame reader
   const frameReader: FrameReader = {
     readFrame(sha1: string): Promise<Buffer> {
-      const name = `resources/${sha1}`
-      return Promise.resolve(zip.readBinary(name))
+      return Promise.resolve(zip.readBinary(frameEntry(sha1)))
     },
     dispose() {
       zip.dispose()

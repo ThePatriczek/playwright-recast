@@ -22,8 +22,9 @@ const pageEvent = (pageId: string, time: number, openerPageId?: string) =>
   ({ type: 'event', time, class: 'BrowserContext', method: 'page', params: { pageId, ...(openerPageId ? { openerPageId } : {}) } })
 
 /** A screencast frame's JPEG at `size` (WxH), as the trace stores it. */
+// rgb24: ffmpeg 6 makes `color` yuv420p, which rounds an odd width down
 const jpeg = (size: string): Uint8Array =>
-  execFileSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', `color=c=gray:s=${size}`, '-frames:v', '1', '-c:v', 'mjpeg', '-f', 'image2', 'pipe:'])
+  execFileSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', `color=c=gray:s=${size},format=rgb24`, '-frames:v', '1', '-c:v', 'mjpeg', '-f', 'image2', 'pipe:'])
 
 function recording(name: string, events: object[], videos: Record<string, number>, frameImages: Record<string, string> = {}, videoSize: { width: number; height: number } | null = { width: 64, height: 36 }): string {
   const out = path.join(dir, name)
@@ -186,6 +187,34 @@ describe('parse(): review round 3', () => {
     try {
       await parsed(recording('no-main-id', [...tabTrace, ...pagesStep([null, TAB])], { 'video.webm': 3, 'video-1.webm': 2 }))
       expect(String(warn.mock.calls[0]![0])).toContain('retain-on-failure')
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it("never plays another page's video as the main page's", async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      // No video.webm: video-1.webm is the tab's, the only .webm left
+      const state = await parsed(recording('only-tab-video', [...tabTrace, ...pagesStep([MAIN, TAB])], { 'video-1.webm': 2 }, { [`${MAIN}-100`]: '64x36' }))
+      expect(path.basename(state.sourceVideoPath ?? '')).not.toBe('video-1.webm')
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it("drops the other pages' actions and markers with their frames", async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const trace = [
+        ...tabTrace,
+        ...click('c0', MAIN, 1800),
+        { type: 'before', callId: 'm1', title: `recast-highlight ${JSON.stringify({ pageId: TAB })}`, class: 'Test', method: 'test.step', params: {}, startTime: 1600 },
+        { type: 'after', callId: 'm1', endTime: 1601 },
+      ]
+      const state = await parsed(recording('plain-tab-actions', trace, { 'video.webm': 3 }))
+      expect(state.parsed.actions.map((a) => a.callId)).toEqual(['c0'])
+      expect(warn).toHaveBeenCalledTimes(1)
     } finally {
       warn.mockRestore()
     }

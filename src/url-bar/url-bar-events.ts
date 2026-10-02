@@ -106,7 +106,7 @@ export function buildUrlBarCues(opts: {
       .filter((m) => m.startMs >= startMs && m.startMs <= endMs)
       .flatMap((m) => {
         const url = m.url ?? urlOn(m.startMs)
-        return url ? [{ text: format(url), startMs: m.startMs }] : []
+        return url && isShowable(url) ? [{ text: format(url), startMs: m.startMs }] : []
       })
   }
 

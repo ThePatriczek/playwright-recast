@@ -87,3 +87,31 @@ describe('parseTrace: pages and URLs', () => {
     trace.frameReader.dispose()
   })
 })
+
+describe('parseTrace: Playwright 1.63 traces', () => {
+  it("takes an action's page from its snapshots, 'before' having none", async () => {
+    const trace = await parseTrace(writeTrace('pw163-actions.zip', [
+      { type: 'context-options', browserName: 'chromium', options: { viewport: { width: 640, height: 360 } } },
+      { type: 'before', callId: 'call@1', startTime: 100, class: 'Frame', method: 'click', params: {} },
+      { type: 'frame-snapshot', snapshot: { callId: 'call@1', pageId: POPUP, frameUrl: 'http://x.test/', isMainFrame: true, timestamp: 101 } },
+      { type: 'after', callId: 'call@1', endTime: 120 },
+      { type: 'before', callId: 'call@2', startTime: 200, class: 'Frame', method: 'click', params: {}, pageId: MAIN },
+      { type: 'frame-snapshot', snapshot: { callId: 'call@2', pageId: POPUP, frameUrl: 'http://x.test/', isMainFrame: true, timestamp: 201 } },
+      { type: 'after', callId: 'call@2', endTime: 220 },
+    ]))
+    expect(trace.actions.map((a) => a.pageId)).toEqual([POPUP, MAIN])
+    trace.frameReader.dispose()
+  })
+
+  it("reads a screencast frame's image from its file", async () => {
+    const file = path.join(dir, 'pw163-frames.zip')
+    const image = strToU8('jpeg bytes')
+    fs.writeFileSync(file, zipSync({
+      'trace.trace': strToU8(JSON.stringify({ type: 'screencast-frame', pageId: MAIN, file: `screencast/${MAIN}-1.jpeg`, width: 640, height: 360, timestamp: 100 })),
+      [`screencast/${MAIN}-1.jpeg`]: image,
+    }))
+    const trace = await parseTrace(file)
+    expect([...await trace.frameReader.readFrame(trace.frames[0]!.sha1)]).toEqual([...image])
+    trace.frameReader.dispose()
+  })
+})

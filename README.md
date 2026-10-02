@@ -669,7 +669,7 @@ npx playwright-recast -i ./traces --click-effect-config config.json
 
 ## Multi-Page Recordings
 
-Popups and new tabs are cut into one video from per-page videos: in Playwright Test with the `recastPageVideos` fixture from `playwright-recast/helpers` (`base.extend(recastPageVideos)`, `video: 'on'`), else with the context option `recordVideo` (`page@<pageId>.webm`). The page of the most recent action is on screen; a closing page hands back to its opener; pages without actions get no screen time.
+Popups and new tabs are cut into one video from per-page videos: in Playwright Test with the `recastPageVideos` fixture from `playwright-recast/helpers` (`base.extend(recastPageVideos)`, `video: 'on'`), else with the context option `recordVideo` (`page@<pageId>.webm`, Playwright 1.59+). The page of the most recent action is on screen; a closing page hands back to its opener; pages without actions get no screen time.
 
 ```typescript
 await Recast
