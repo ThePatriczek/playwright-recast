@@ -51,14 +51,29 @@ describe('generateVoiceover() and provider files', () => {
     for (const e of voiceover.entries) expect(e.spokenEndMs! - e.outputStartMs).toBeCloseTo(500, -1)
   })
 
-  it('removes the provider files in tmpDir once, and keeps the others', async () => {
+  it('removes the files the provider wrote to its workDir, also when it fails', async () => {
     const tmpDir = path.join(root, 'cleanup')
-    fs.mkdirSync(tmpDir, { recursive: true })
-    const inside = path.join(tmpDir, 'tts-shared.mp3')
-    execFileSync('ffmpeg', ['-y', '-v', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=24000:duration=0.3', '-c:a', 'libmp3lame', inside])
-    await generateVoiceover(cues(3), sameFile(inside), tmpDir, undefined, [], 25)
-    expect(fs.existsSync(inside)).toBe(false)
-    expect(fs.existsSync(path.join(tmpDir, 'voiceover.wav'))).toBe(true)
+    const written = (dir: string) => {
+      fs.mkdirSync(dir, { recursive: true })
+      const file = path.join(dir, 'voiceover.wav')
+      execFileSync('ffmpeg', ['-y', '-v', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=24000:duration=0.3', file])
+      return file
+    }
+    const writing: TtsProvider = { ...sameFile(''), async synthesize(texts, options) { return sameFile(written(options!.workDir!)).synthesize(texts) } }
+    const { voiceover } = await generateVoiceover(cues(3), writing, tmpDir, undefined, [], 25)
+    expect(wavSampleCount(voiceover.audioTrackPath)).toBeGreaterThan(0)
+    expect(fs.readdirSync(tmpDir)).toEqual(['voiceover.wav'])
+
+    const failing: TtsProvider = { ...sameFile(''), async synthesize(_texts, options) { written(options!.workDir!); throw new Error('quota') } }
+    await expect(generateVoiceover(cues(3), failing, tmpDir, undefined, [], 25)).rejects.toThrow('quota')
+    expect(fs.readdirSync(tmpDir)).toEqual(['voiceover.wav'])
+  })
+
+  it('pads a cue to its window end, also by a few ms', async () => {
+    const short = path.join(fixtures, 'short.wav')
+    execFileSync('ffmpeg', ['-y', '-v', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=24000:duration=1.47', short])
+    const { voiceover } = await generateVoiceover(cues(1), sameFile(short), path.join(root, 'pad'), undefined, [], 25)
+    expect(voiceover.totalDurationMs).toBe(2000)
   })
 
   it('keys segment files by position, so repeated SRT indexes do not collide', async () => {
@@ -91,12 +106,11 @@ describe('generateVoiceover() failures', () => {
     execFileSync('ffmpeg', ['-y', '-v', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=24000:duration=0.3', '-c:a', 'libmp3lame', file])
     return file
   }
-  const segFiles = (dir: string) => fs.readdirSync(dir).filter((f) => f.startsWith('recast-seg-'))
 
   it('leaves no segment files behind after a run', async () => {
     const tmpDir = path.join(root, 'no-segs')
     await generateVoiceover(cues(3), sameFile(tone('segs.mp3')), tmpDir, undefined, [], 25)
-    expect(segFiles(tmpDir)).toEqual([])
+    expect(fs.readdirSync(tmpDir)).toEqual(['voiceover.wav'])
   })
 
   it('rethrows a failure while writing the track and leaves no track or segment files', async () => {
@@ -112,7 +126,6 @@ describe('generateVoiceover() failures', () => {
     } finally {
       spy.mockRestore()
     }
-    expect(fs.existsSync(path.join(tmpDir, 'voiceover.wav'))).toBe(false)
-    expect(segFiles(tmpDir)).toEqual([])
+    expect(fs.readdirSync(tmpDir)).toEqual([])
   })
 })

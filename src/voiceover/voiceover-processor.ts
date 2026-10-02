@@ -39,21 +39,6 @@ async function mapWithLimit<T, R>(items: readonly T[], limit: number, fn: (item:
   return results
 }
 
-/**
- * Delete the provider's files inside `tmpDir`, once each: tmpDir is reused
- * across runs. Files elsewhere (a fixture, a cache) belong to the provider.
- */
-function removeProviderFiles(paths: readonly string[], tmpDir: string): void {
-  const root = fs.realpathSync(tmpDir)
-  for (const p of new Set(paths)) {
-    let real: string
-    try { real = fs.realpathSync(p) } catch { continue }
-    const rel = path.relative(root, real)
-    // A locked file must not fail a finished voiceover
-    if (rel && !rel.startsWith('..') && !path.isAbsolute(rel)) try { fs.rmSync(real, { force: true }) } catch { /* left behind */ }
-  }
-}
-
 /** Resolve normalize option to a concrete config or `null` (disabled). */
 function resolveNormalize(
   opt: VoiceoverOptions['normalize'] | undefined,
@@ -92,10 +77,14 @@ export async function generateVoiceover(
   }
 
   const texts = trace.subtitles.map((s) => s.ttsText ?? s.text)
-  const audios = await provider.synthesize(texts, { workDir: tmpDir })
-
-  const segPathFor = (si: number): string => path.join(tmpDir, `recast-seg-${si}.wav`)
+  // Private: tmpDir is reused across runs, and a provider's file names must
+  // not collide with the track's. Files outside it (a cache) are the provider's.
+  const workDir = fs.mkdtempSync(path.join(tmpDir, 'recast-vo-'))
+  const ttsDir = path.join(workDir, 'tts')
+  fs.mkdirSync(ttsDir)
+  const segPathFor = (si: number): string => path.join(workDir, `seg-${si}.wav`)
   try {
+    const audios = await provider.synthesize(texts, { workDir: ttsDir })
     if (audios.length !== texts.length) {
       throw new Error(
         `Provider "${provider.name}" returned ${audios.length} segments for ${texts.length} texts`,
@@ -181,7 +170,7 @@ export async function generateVoiceover(
         // the builder clamps it and the loop shifts start/end by the same amount.
         if (audioDuration <= windowDuration) {
           const pad = windowDuration - audioDuration
-          if (pad > 50) track.silence(toSamples(pad))
+          track.silence(toSamples(pad))
         } else {
           const overflow = audioDuration - windowDuration
           subtitle.endMs = subtitle.startMs + audioDuration
@@ -240,9 +229,7 @@ export async function generateVoiceover(
       },
     }
   } finally {
-    removeProviderFiles(audios.map((a) => a.path), tmpDir)
-    for (let si = 0; si < audios.length; si++) {
-      try { fs.rmSync(segPathFor(si), { force: true }) } catch { /* left behind */ }
-    }
+    // A locked file must not fail a finished voiceover
+    try { fs.rmSync(workDir, { recursive: true, force: true }) } catch { /* left behind */ }
   }
 }

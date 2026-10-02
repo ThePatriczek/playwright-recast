@@ -121,6 +121,7 @@ export class WavWriter {
       fs.writeSync(this.fd, wavHeader(0, sampleRate, channels))
     } catch (error) {
       fs.closeSync(this.fd)
+      try { fs.rmSync(filePath, { force: true }) } catch { /* best effort */ }
       throw error
     }
   }

@@ -148,7 +148,7 @@ describe('generateVoiceover provider length guard', () => {
     const trace = makeTrace(3)
     const tmp = path.join(TMP_ROOT, 'length-guard')
     await expect(generateVoiceover(trace, shortProvider, tmp, undefined, undefined, 25)).rejects.toThrow('returned')
-    expect(fs.readdirSync(tmp).filter((f) => f.startsWith('fake-'))).toEqual([])
+    expect(fs.readdirSync(tmp)).toEqual([])
   })
 })
 
