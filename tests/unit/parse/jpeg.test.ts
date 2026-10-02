@@ -4,7 +4,7 @@ import { jpegSize } from '../../../src/parse/jpeg'
 
 describe('jpegSize', () => {
   it('reads the size from the start-of-frame header', () => {
-    const data = execFileSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'color=c=gray:s=797x448', '-frames:v', '1', '-c:v', 'mjpeg', '-f', 'image2', 'pipe:'])
+    const data = execFileSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'color=c=gray:s=797x448', '-frames:v', '1', '-c:v', 'mjpeg', '-pix_fmt', 'yuvj444p', '-f', 'image2', 'pipe:'])
     expect(jpegSize(data)).toEqual({ width: 797, height: 448 })
   })
 

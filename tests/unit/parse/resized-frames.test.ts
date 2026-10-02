@@ -4,13 +4,13 @@ import { toMonotonic } from '../../../src/types/trace'
 
 const PAGE = 'page@aa'
 type F = [t: number, css: string, px: string]
-const spans = (list: F[], resizes: number[] = []) => {
+const spans = (list: F[], resizes: number[] = [], resizePageId: string | undefined = PAGE) => {
   const frames = list.map(([t, css]) => {
     const [width, height] = css.split('x').map(Number)
     return { pageId: PAGE, timestamp: toMonotonic(t), width: width!, height: height! }
   })
   const pixels = list.map(([, , px]) => { const [width, height] = px.split('x').map(Number); return { width: width!, height: height! } })
-  const actions = resizes.map((t) => ({ method: 'setViewportSize', pageId: PAGE, startTime: toMonotonic(t) }))
+  const actions = resizes.map((t) => ({ method: 'setViewportSize', pageId: resizePageId, startTime: toMonotonic(t) }))
   return resizedFrameSpans(frames, (i) => pixels[i], actions).map((s) => [s.start as number, s.end as number])
 }
 
@@ -31,6 +31,12 @@ describe('resizedFrameSpans', () => {
     expect(spans([
       [1000, '1920x1080', '4608x2592'], [2000, '800x600', '1920x1440'], [3000, '1920x1080', '4608x2592'],
     ], [1958, 2963])).toEqual([])
+  })
+
+  it('counts a setViewportSize() without a page id', () => {
+    expect(spans([
+      [1000, '1920x1080', '4608x2592'], [2000, '800x600', '1920x1440'], [3000, '1920x1080', '4608x2592'],
+    ], [1958, 2963], undefined)).toEqual([])
   })
 
   it('keeps a change that persists, as when a page resizes its own window', () => {

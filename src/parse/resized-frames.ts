@@ -8,8 +8,9 @@ type Frame = Pick<ScreencastFrame, 'pageId' | 'timestamp' | 'width' | 'height'>
  * Spans to cut where a page was briefly rendered at another size than its
  * viewport, which Chromium does for a clip, element or toHaveScreenshot()
  * screenshot: the video shows it over gray padding. A size change counts when
- * it is unexplained (no setViewportSize() since the last frame) and brief (the
- * page returns to its size); the span runs to that frame.
+ * it is unexplained (no setViewportSize() on the page, or without a page id,
+ * since the last frame) and brief (the page returns to its size); the span
+ * runs to that frame.
  */
 export function resizedFrameSpans(
   frames: ReadonlyArray<Frame>,
@@ -18,7 +19,7 @@ export function resizedFrameSpans(
 ): Array<{ pageId: string; start: MonotonicMs; end: MonotonicMs }> {
   const resizes = actions.filter((a) => a.method === 'setViewportSize')
   const resizedBetween = (pageId: string, after: number, upTo: number): boolean =>
-    resizes.some((a) => a.pageId === pageId && (a.startTime as number) > after && (a.startTime as number) <= upTo)
+    resizes.some((a) => (a.pageId === undefined || a.pageId === pageId) && (a.startTime as number) > after && (a.startTime as number) <= upTo)
 
   const spans: Array<{ pageId: string; start: MonotonicMs; end: MonotonicMs }> = []
   const pages = new Map<string, { size: string; last: number; start?: MonotonicMs }>()
