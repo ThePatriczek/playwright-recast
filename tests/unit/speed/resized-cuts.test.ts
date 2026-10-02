@@ -26,6 +26,12 @@ describe('processSpeed: resized frames', () => {
     expect(processSpeed(trace([[1503, 1857]]), { duringIdle: 2, keepResizedFrames: true }).outputDuration).toBeCloseTo(2000, 0)
   })
 
+  it('cuts them out of explicit segments', () => {
+    const t = processSpeed(trace([[1503, 1857]]), { segments: [{ startMs: 0, endMs: 4000, speed: 2 }] })
+    expect(outputOf(t, 1503, 1857)).toBe(0)
+    expect(t.outputDuration).toBeCloseTo((4000 - 354) / 2, 5)
+  })
+
   it("cuts only the recording page's", () => {
     expect(processSpeed(trace([[1503, 1857, 'page@other']]), { duringIdle: 2 }).outputDuration).toBeCloseTo(2000, 0)
   })

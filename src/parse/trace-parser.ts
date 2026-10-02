@@ -107,7 +107,7 @@ export async function parseTrace(tracePath: string): Promise<ParsedTrace> {
 
   // Only in Chromium are the trace's frames the frames the video records
   const resizedFrames = ctxOpts?.browserName === 'chromium'
-    ? resizedFrameSpansFromJpegs(frames, (sha1) => (zip.has(`resources/${sha1}`) ? zip.readBinary(`resources/${sha1}`) : undefined), actions)
+    ? resizedFrameSpansFromJpegs(frames, (sha1) => zip.view(`resources/${sha1}`), actions)
     : []
 
   // Extract network resources
