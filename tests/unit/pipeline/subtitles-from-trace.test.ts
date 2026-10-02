@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   buildNarrationSubtitles,
+  sceneOf,
   type NarrationMarkerAction,
 } from '../../../src/pipeline/narration-subtitles'
 import {
@@ -124,5 +125,54 @@ describe('buildNarrationSubtitles', () => {
       { index: 1, startMs: 5000, endMs: 5000, text: 'A' },
       { index: 2, startMs: 5000, endMs: 10_000, text: 'B' },
     ])
+  })
+})
+
+describe('sceneOf()', () => {
+  // Parent chain as Playwright Test 1.60 traces it.
+  const step = (callId: string, title: string, parentId?: string) => ({ callId, method: 'test.step', title, ...(parentId ? { parentId } : {}) })
+  const narrate = (callId: string, parentId?: string) => step(callId, `${NARRATE_TITLE_PREFIX}line`, parentId)
+  const actions = [
+    { callId: 'hook@1', method: 'hook', title: 'Before Hooks' },
+    { callId: 'fixture@3', method: 'fixture', title: 'Fixture "page"', parentId: 'hook@1' },
+    step('test.step@4', 'Background', 'hook@1'),
+    narrate('test.step@5', 'test.step@4'),
+    step('test.step@41', '5. publish'),
+    narrate('test.step@43', 'test.step@41'),
+    step('test.step@44', 'zoomDialog', 'test.step@41'),
+    step('test.step@45', 'zoom marker', 'test.step@44'),
+    step('test.step@46', 'open dialog'),
+    step('test.step@47', 'zoom marker', 'test.step@46'),
+    narrate('test.step@48'),
+  ]
+  const of = sceneOf(actions)
+  const at = (id: string) => actions.find((a) => a.callId === id)!
+
+  it('is the outermost step holding a narration, through helper steps', () => {
+    expect(of(at('test.step@45'))).toBe('test.step@41')
+    expect(of(at('test.step@43'))).toBe('test.step@41')
+  })
+
+  it('counts a beforeEach step on its own, skipping the hook container', () => {
+    expect(of(at('test.step@5'))).toBe('test.step@4')
+    expect(of(at('fixture@3'))).toBeUndefined()
+  })
+
+  it('is undefined in a step without narration and in the test body', () => {
+    expect(of(at('test.step@47'))).toBeUndefined()
+    expect(of(at('test.step@48'))).toBeUndefined()
+  })
+
+  it('is undefined for a broken parent chain', () => {
+    expect(of({ parentId: 'gone@1' })).toBeUndefined()
+  })
+
+  it('makes no scene of a step that holds only hidden narrations, which get no cue', () => {
+    const hidden = sceneOf([
+      { callId: 'test.step@1', method: 'test.step', title: 'setup' },
+      { callId: 'test.step@2', method: 'test.step', title: `${NARRATE_HIDDEN_TITLE_PREFIX}quiet`, parentId: 'test.step@1' },
+      { callId: 'test.step@3', method: 'test.step', title: 'zoom marker', parentId: 'test.step@1' },
+    ])
+    expect(hidden({ parentId: 'test.step@1' })).toBeUndefined()
   })
 })

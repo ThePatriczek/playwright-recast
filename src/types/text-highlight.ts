@@ -44,4 +44,6 @@ export interface HighlightEvent {
   untilNarrationEnd?: boolean
   /** Raw trace time of the highlight() marker, to order it against holds exactly */
   traceMs?: number
+  /** See sceneOf(); `untilNarrationEnd` only ends with a narration of this scene */
+  sceneId?: string
 }

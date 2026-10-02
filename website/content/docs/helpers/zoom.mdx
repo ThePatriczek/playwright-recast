@@ -7,6 +7,13 @@ description: Zoom into a UI element during a test step for the demo video.
 
 `zoom(locator, level)` measures the element's center as viewport-relative coordinates and emits a marker-prefixed `test.step()` directly into the Playwright trace zip. During video generation, [`subtitlesFromTrace()`](/docs/pipeline/subtitles) picks up these markers automatically and attaches the zoom to the narration playing at the call site, or else to the next one - so `zoom()` can come just before the `narrate()` it illustrates. With a voiceover, "playing" means its audio: a narration spoken over a wait does not keep a zoom set after it has finished. No separate `.enrichZoomFromReport()` call needed.
 
+Test steps scope this:
+
+| Where `zoom()` runs | Goes to |
+|---|---|
+| A top-level `test.step()` that narrates | Only that step's narrations. After its last one, it stays with that line while the cue is open, else it is dropped with a log line. |
+| The test body, or a step without narration (a page-object helper) | Any narration: a helper step between two narrating steps zooms into the next one. |
+
 The zoom **starts at the helper's call site** (not at the start of the surrounding narration) and runs until the end of the subtitle, so the camera kicks in only once the target is visible. Called before its narration, it starts with it.
 
 ## Usage
@@ -43,7 +50,7 @@ Text is measured inside the element's own frame and placed in page space, so it 
 1. Gets the element's bounding box via `locator.boundingBox()`
 2. Computes the center as viewport-relative fractions (0.0--1.0)
 3. Writes a marker-prefixed `test.step()` carrying `{ x, y, level }` into the trace zip (and pushes a matching `zoom` annotation onto `testInfo` for legacy reporters)
-4. `subtitlesFromTrace()` finds the marker step at parse time and attaches the zoom to the subtitle covering the call site, or else the next one
+4. `subtitlesFromTrace()` finds the marker step at parse time and attaches the zoom to the subtitle covering the call site, or else the next one, scoped by test step as above
 5. The renderer applies the crop-and-scale zoom from the call-site time until the end of that subtitle, with smooth easing transitions
 
 ## Zoom coordinates

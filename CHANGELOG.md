@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Bug fixes
+
+- **A zoom or highlight held over the next step's first narration** - a `zoom()` or `highlight({ duration: 'narration' })` could go to a narration of the neighbouring test step, so a narration hold at the start of a step showed the previous step's zoom. Inside a top-level `test.step()` that narrates, they now only go to that step's narrations; elsewhere nothing changes. A zoom left without a narration of its step is dropped with a log line.
+
 ## 0.22.1 (2026-09-30)
 
 ### Bug fixes

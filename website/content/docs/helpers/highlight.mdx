@@ -62,7 +62,7 @@ await highlight(heading, {
 
 ## Lasting exactly as long as the narration
 
-With `duration: 'narration'` the mark ends when its narration's audio ends, so it neither clears mid-sentence nor lingers into the next action. It belongs to the narration playing when it appears, else to the next one, so it can be set just before the `narrate()` it illustrates. Without a voiceover it falls back to the default duration.
+With `duration: 'narration'` the mark ends when its narration's audio ends, so it neither clears mid-sentence nor lingers into the next action. It belongs to the narration playing when it appears, else to the next one, so it can be set just before the `narrate()` it illustrates. Inside a top-level `test.step()` that narrates, only that step's narrations count. Without a voiceover it falls back to the default duration.
 
 ```typescript
 await highlight(line, { duration: 'narration' })
