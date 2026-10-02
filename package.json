@@ -106,6 +106,9 @@
     "fflate": "^0.8.2",
     "zod": "^4.3.6"
   },
+  "engines": {
+    "node": ">=18"
+  },
   "peerDependencies": {
     "@aws-sdk/client-polly": ">=3.500.0",
     "@elevenlabs/elevenlabs-js": ">=2.0.0",

@@ -989,6 +989,8 @@ TTS provider is auto-detected from available API keys when `RECAST_TTS_PROVIDER`
 
 Contributions welcome! Please check the [issues](https://github.com/ThePatriczek/playwright-recast/issues) for open tasks.
 
+Needs Node.js 20.19+ or 22.12+ (the library itself runs on 18+).
+
 ```bash
 git clone https://github.com/ThePatriczek/playwright-recast.git
 cd playwright-recast
