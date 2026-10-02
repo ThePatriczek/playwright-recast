@@ -1,8 +1,6 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
-import { execFileSync } from 'node:child_process'
-import { runFfmpeg } from '../utils/ffmpeg.js'
-import { probeAudioFormat, planAudioConcat } from './audio-format.js'
+import { planAudioConcat, probeAudioFormat } from './audio-format.js'
 import type { SubtitledTrace } from '../types/subtitle.js'
 import type {
   TtsProvider,
@@ -12,28 +10,33 @@ import type {
   VoiceoverOptions,
   LoudnessNormalizeConfig,
 } from '../types/voiceover.js'
-import { normalizeLoudness } from './normalize.js'
+import { normalizeLoudness, NORMALIZE_SAMPLE_RATE } from './normalize.js'
+import { WavWriter } from './wav.js'
+import { runFfmpegAsync } from '../utils/ffmpeg.js'
 import { alignFreezeToFrame, alignNarrationHold } from './frame-align.js'
 
-function getAudioDurationMs(filePath: string): number {
-  const output = execFileSync('ffprobe', [
-    '-v', 'quiet',
-    '-show_entries', 'format=duration',
-    '-of', 'csv=p=0',
-    filePath,
-  ]).toString().trim()
-  return Math.round(Number(output) * 1000)
-}
-
-function generateSilence(durationMs: number, outputPath: string, sampleRate = 24000, channels = 1): void {
-  const durationSec = Math.max(0.01, durationMs / 1000)
-  runFfmpeg([
-    '-y', '-f', 'lavfi',
-    '-i', `anullsrc=r=${sampleRate}:cl=${channels}c`,
-    '-t', String(durationSec),
-    '-c:a', 'libmp3lame', '-q:a', '9',
-    outputPath,
-  ])
+/**
+ * `fn` over `items`, at most `limit` at a time, results in order. After a
+ * failure no new item starts, and running ones finish before the first
+ * error is thrown, so no ffmpeg outlives the call.
+ */
+async function mapWithLimit<T, R>(items: readonly T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length)
+  let next = 0
+  let failure: { error: unknown } | undefined
+  const worker = async (): Promise<void> => {
+    while (!failure && next < items.length) {
+      const i = next++
+      try {
+        results[i] = await fn(items[i]!, i)
+      } catch (error) {
+        failure ??= { error }
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
+  if (failure) throw failure.error
+  return results
 }
 
 /** Resolve normalize option to a concrete config or `null` (disabled). */
@@ -74,192 +77,159 @@ export async function generateVoiceover(
   }
 
   const texts = trace.subtitles.map((s) => s.ttsText ?? s.text)
-  const audios = await provider.synthesize(texts, { workDir: tmpDir })
-
-  if (audios.length !== texts.length) {
-    throw new Error(
-      `Provider "${provider.name}" returned ${audios.length} segments for ${texts.length} texts`,
-    )
-  }
-
-  // Generated silence must match the TTS segments' format, not a hardcoded
-  // rate: planAudioConcat takes a majority vote across every segment
-  // (up to two silence pads per subtitle), so a fixed rate that disagrees
-  // with the provider's could win the vote and normalise the whole
-  // narration down to it. Probing the first real segment keeps silence
-  // agreeing with TTS, so formats match and concat stays on -c copy.
-  const firstTtsFormat = audios.length > 0 ? probeAudioFormat(audios[0]!.path) : null
-  const silenceSampleRate = firstTtsFormat?.sampleRate ?? 24000
-  const silenceChannels = firstTtsFormat?.channels ?? 1
-
-  const entries: VoiceoverEntry[] = []
-  const segmentFiles: string[] = []
-  const freezes: VoiceoverFreeze[] = []
-  // Capture each subtitle's pre-mutation start/end — these are the video
-  // positions (in the speed-mapped timeline) where we may need to freeze
-  // the frame so audio has time to finish. We freeze at the current
-  // subtitle's window END (e.g. a waitForNarration() marker), not the next
-  // subtitle's start: with waitForNarration() the window can close earlier
-  // than the next narration begins, and the frame must hold at that point so
-  // intervening visuals (clicks) don't play through before the audio ends.
-  const originalStartsMs = trace.subtitles.map((s) => s.startMs)
-  const originalEndsMs = trace.subtitles.map((s) => s.endMs)
-  let timeShift = 0
-  /** Where the track really ends. Every MP3 here runs longer than requested
-   *  (24ms frames at 24kHz, encoder delay, padding), so measuring lets the next
-   *  gap absorb the excess instead of it accumulating. */
-  let audioEndMs = 0
-
-  // Approach holds (cursor-glide pauses at marked clicks) are interleaved with
-  // the subtitles by position: each one drained below adds its duration to
-  // timeShift — the subtitle's gap-fill silence then lengthens by exactly the
-  // hold, keeping narration aligned — and is recorded as a freeze for the
-  // renderer to apply to the video + click/cursor positions.
-  const holds = [...approachHolds].sort((a, b) => a.atVideoMs - b.atVideoMs)
-  let holdIndex = 0
-
-  for (let si = 0; si < trace.subtitles.length; si++) {
-    const subtitle = trace.subtitles[si]!
-    const audio = audios[si]!
-
-    while (holdIndex < holds.length && holds[holdIndex]!.atVideoMs <= originalStartsMs[si]!) {
-      const h = holds[holdIndex]!
-      const aligned = alignFreezeToFrame(h.atVideoMs, h.durationMs, outputFps, h.sourceMs)
-      freezes.push(aligned)
-      timeShift += aligned.durationMs
-      holdIndex++
+  // Private: tmpDir is reused across runs, and a provider's file names must
+  // not collide with the track's. Files outside it (a cache) are the provider's.
+  const workDir = fs.mkdtempSync(path.join(tmpDir, 'recast-vo-'))
+  const ttsDir = path.join(workDir, 'tts')
+  fs.mkdirSync(ttsDir)
+  const segPathFor = (si: number): string => path.join(workDir, `seg-${si}.wav`)
+  try {
+    const audios = await provider.synthesize(texts, { workDir: ttsDir })
+    if (audios.length !== texts.length) {
+      throw new Error(
+        `Provider "${provider.name}" returned ${audios.length} segments for ${texts.length} texts`,
+      )
     }
-
-    subtitle.startMs += timeShift
-    subtitle.endMs += timeShift
-    if (subtitle.zoom?.startMs !== undefined) subtitle.zoom.startMs += timeShift
-    if (subtitle.zoom?.endMs !== undefined) subtitle.zoom.endMs += timeShift
-
-    // Fill from where the track really ends up to this cue's start.
-    const gapMs = subtitle.startMs - audioEndMs
-    if (gapMs > 0) {
-      const silencePath = path.join(tmpDir, `silence-${subtitle.index}.mp3`)
-      generateSilence(gapMs, silencePath, silenceSampleRate, silenceChannels)
-      const silenceMs = getAudioDurationMs(silencePath)
-      // A tiny gap's smallest writable file overshoots more than skipping it.
-      if (Math.abs(silenceMs - gapMs) < gapMs) {
-        segmentFiles.push(silencePath)
-        audioEndMs += silenceMs
-      } else {
-        fs.unlinkSync(silencePath)
-      }
-    }
-
-    const segPath = path.join(tmpDir, `seg-${subtitle.index}.mp3`)
+    // Every segment becomes 16-bit PCM in one format, so the track is written
+    // sample by sample and every duration is a sample count. Files are keyed
+    // by position: SRT indexes can repeat.
+    let format: { sampleRate: number; channels: number }
     if (normalizeConfig) {
-      await normalizeLoudness(audio.path, segPath, normalizeConfig)
+      // normalize writes 16-bit PCM, mono, at its own rate
+      format = { sampleRate: normalizeConfig.sampleRate ?? NORMALIZE_SAMPLE_RATE, channels: 1 }
+      await mapWithLimit(audios, 4, (audio, si) => normalizeLoudness(audio.path, segPathFor(si), normalizeConfig))
     } else {
-      // Move (rename) the provider's output into the canonical seg-N.mp3 slot.
-      // Falls back to copy+unlink across devices.
-      try {
-        fs.renameSync(audio.path, segPath)
-      } catch (err) {
-        if ((err as NodeJS.ErrnoException).code !== 'EXDEV') throw err
-        fs.copyFileSync(audio.path, segPath)
-        fs.unlinkSync(audio.path)
+      const plan = planAudioConcat(await mapWithLimit(audios, 4, (audio) => probeAudioFormat(audio.path)))
+      if (plan.mismatch) {
+        console.log(`  Voiceover: segment formats differ - resampling to ${plan.sampleRate}Hz/${plan.channels}ch`)
       }
+      format = plan
+      await mapWithLimit(audios, 4, (audio, si) =>
+        runFfmpegAsync(['-y', '-v', 'error', '-i', audio.path, '-c:a', 'pcm_s16le', '-ar', String(plan.sampleRate), '-ac', String(plan.channels), segPathFor(si)]))
     }
+    const toMs = (samples: number): number => (samples * 1000) / format.sampleRate
+    const toSamples = (ms: number): number => Math.max(0, Math.round((ms * format.sampleRate) / 1000))
+    const audioTrackPath = path.join(tmpDir, 'voiceover.wav')
+    const track = new WavWriter(audioTrackPath, format.sampleRate, format.channels)
 
-    const audioDuration = getAudioDurationMs(segPath)
-    const windowDuration = subtitle.endMs - subtitle.startMs
-    // Where the track really is, not the cue start: the gap above can over- or undershoot.
-    const spokenEndMs = audioEndMs + audioDuration
+    const entries: VoiceoverEntry[] = []
+    const freezes: VoiceoverFreeze[] = []
+    // Capture each subtitle's pre-mutation start/end — these are the video
+    // positions (in the speed-mapped timeline) where we may need to freeze
+    // the frame so audio has time to finish. We freeze at the current
+    // subtitle's window END (e.g. a waitForNarration() marker), not the next
+    // subtitle's start: with waitForNarration() the window can close earlier
+    // than the next narration begins, and the frame must hold at that point so
+    // intervening visuals (clicks) don't play through before the audio ends.
+    const originalStartsMs = trace.subtitles.map((s) => s.startMs)
+    const originalEndsMs = trace.subtitles.map((s) => s.endMs)
+    let timeShift = 0
+    /** Where the track ends, in whole samples: a gap's rounding is absorbed by the next. */
+    let audioEndMs = 0
 
-    // A tiny/zero window (fast trace + waitForNarration, no autoWait) falls
-    // through to the overflow branch below: the audio plays, the subtitle
-    // stretches to the audio length, and a freeze is recorded at the window
-    // end (the waitForNarration position). windowDuration is always >= 0 —
-    // the builder clamps it and the loop shifts start/end by the same amount.
-    if (audioDuration <= windowDuration) {
-      segmentFiles.push(segPath)
-      audioEndMs += audioDuration
-      const pad = windowDuration - audioDuration
-      if (pad > 50) {
-        const padPath = path.join(tmpDir, `pad-${subtitle.index}.mp3`)
-        generateSilence(pad, padPath, silenceSampleRate, silenceChannels)
-        segmentFiles.push(padPath)
-        audioEndMs += getAudioDurationMs(padPath)
+    // Approach holds (cursor-glide pauses at marked clicks) are interleaved with
+    // the subtitles by position: each one drained below adds its duration to
+    // timeShift — the subtitle's gap-fill silence then lengthens by exactly the
+    // hold, keeping narration aligned — and is recorded as a freeze for the
+    // renderer to apply to the video + click/cursor positions.
+    const holds = [...approachHolds].sort((a, b) => a.atVideoMs - b.atVideoMs)
+    let holdIndex = 0
+
+    try {
+      for (let si = 0; si < trace.subtitles.length; si++) {
+        const subtitle = trace.subtitles[si]!
+        const audio = audios[si]!
+
+        while (holdIndex < holds.length && holds[holdIndex]!.atVideoMs <= originalStartsMs[si]!) {
+          const h = holds[holdIndex]!
+          const aligned = alignFreezeToFrame(h.atVideoMs, h.durationMs, outputFps, h.sourceMs)
+          freezes.push(aligned)
+          timeShift += aligned.durationMs
+          holdIndex++
+        }
+
+        subtitle.startMs += timeShift
+        subtitle.endMs += timeShift
+        if (subtitle.zoom?.startMs !== undefined) subtitle.zoom.startMs += timeShift
+        if (subtitle.zoom?.endMs !== undefined) subtitle.zoom.endMs += timeShift
+
+        // Fill from where the track really ends up to this cue's start.
+        const gapMs = subtitle.startMs - audioEndMs
+        if (gapMs > 0) track.silence(toSamples(gapMs))
+        audioEndMs = toMs(track.samples)
+
+        const audioDuration = toMs(track.append(segPathFor(si)))
+        const windowDuration = subtitle.endMs - subtitle.startMs
+        // Where the track really is, not the cue start: the gap above can over- or undershoot.
+        const spokenEndMs = audioEndMs + audioDuration
+
+        // A tiny/zero window (fast trace + waitForNarration, no autoWait) falls
+        // through to the overflow branch below: the audio plays, the subtitle
+        // stretches to the audio length, and a freeze is recorded at the window
+        // end (the waitForNarration position). windowDuration is always >= 0 —
+        // the builder clamps it and the loop shifts start/end by the same amount.
+        if (audioDuration <= windowDuration) {
+          const pad = windowDuration - audioDuration
+          track.silence(toSamples(pad))
+        } else {
+          const overflow = audioDuration - windowDuration
+          subtitle.endMs = subtitle.startMs + audioDuration
+          // Freeze the video on the last frame of this segment's window so the
+          // narration finishes before the next visual action starts. Hold at the
+          // window END (originalEndsMs[si]) — for back-to-back narrations this
+          // equals the next subtitle's start, but when waitForNarration() narrows
+          // the window it closes earlier, and that earlier point is where the
+          // pause belongs. The final segment has nothing after it to freeze
+          // before; the renderer's end-of-video tpad handles its overflow instead.
+          const nextOriginalStartMs = originalStartsMs[si + 1]
+          if (nextOriginalStartMs !== undefined) {
+            // Rounds up: a short hold leaves captions ahead of the voice.
+            const aligned = alignNarrationHold(originalEndsMs[si]!, overflow, outputFps)
+            const endTraceMs = trace.subtitles[si]!.endTraceMs
+            freezes.push(endTraceMs !== undefined ? { ...aligned, sourceTraceMs: endTraceMs } : aligned)
+            timeShift += aligned.durationMs
+          } else {
+            timeShift += overflow
+          }
+        }
+        audioEndMs = toMs(track.samples)
+
+        entries.push({
+          subtitle,
+          audio,
+          outputStartMs: subtitle.startMs,
+          outputEndMs: subtitle.endMs,
+          spokenEndMs,
+        })
       }
-    } else {
-      const overflow = audioDuration - windowDuration
-      segmentFiles.push(segPath)
-      audioEndMs += audioDuration
-      subtitle.endMs = subtitle.startMs + audioDuration
-      // Freeze the video on the last frame of this segment's window so the
-      // narration finishes before the next visual action starts. Hold at the
-      // window END (originalEndsMs[si]) — for back-to-back narrations this
-      // equals the next subtitle's start, but when waitForNarration() narrows
-      // the window it closes earlier, and that earlier point is where the
-      // pause belongs. The final segment has nothing after it to freeze
-      // before; the renderer's end-of-video tpad handles its overflow instead.
-      const nextOriginalStartMs = originalStartsMs[si + 1]
-      if (nextOriginalStartMs !== undefined) {
-        // Rounds up: a short hold leaves captions ahead of the voice.
-        const aligned = alignNarrationHold(originalEndsMs[si]!, overflow, outputFps)
-        const endTraceMs = trace.subtitles[si]!.endTraceMs
-        freezes.push(endTraceMs !== undefined ? { ...aligned, sourceTraceMs: endTraceMs } : aligned)
-        timeShift += aligned.durationMs
-      } else {
-        timeShift += overflow
+
+      // Holds after the last subtitle have no following narration to extend the
+      // audio for; record them so the renderer still holds the video there.
+      while (holdIndex < holds.length) {
+        const h = holds[holdIndex]!
+        freezes.push(alignFreezeToFrame(h.atVideoMs, h.durationMs, outputFps, h.sourceMs))
+        holdIndex++
       }
+      track.close()
+    } catch (error) {
+      track.abort()
+      throw error
     }
+    const totalDurationMs = Math.round(toMs(track.samples))
+    // No narration: no file, which is how the renderer tells
+    if (track.samples === 0) fs.rmSync(audioTrackPath, { force: true })
 
-    entries.push({
-      subtitle,
-      audio,
-      outputStartMs: subtitle.startMs,
-      outputEndMs: subtitle.endMs,
-      spokenEndMs,
-    })
-  }
-
-  // Holds after the last subtitle have no following narration to extend the
-  // audio for; record them so the renderer still holds the video there.
-  while (holdIndex < holds.length) {
-    const h = holds[holdIndex]!
-    freezes.push(alignFreezeToFrame(h.atVideoMs, h.durationMs, outputFps, h.sourceMs))
-    holdIndex++
-  }
-
-  const concatList = path.join(tmpDir, 'concat.txt')
-  fs.writeFileSync(
-    concatList,
-    segmentFiles.map((f) => `file '${path.basename(f)}'`).join('\n'),
-  )
-
-  const audioTrackPath = path.join(tmpDir, 'voiceover.mp3')
-  if (segmentFiles.length > 0) {
-    const plan = planAudioConcat(segmentFiles.map(probeAudioFormat))
-    const codecArgs = plan.normalise
-      ? ['-c:a', 'libmp3lame', '-b:a', '128k', '-ar', String(plan.sampleRate), '-ac', String(plan.channels)]
-      : ['-c', 'copy']
-    if (plan.normalise) {
-      console.log(`  Voiceover: segment formats differ — normalising to ${plan.sampleRate}Hz/${plan.channels}ch`)
+    return {
+      ...trace,
+      voiceover: {
+        entries,
+        audioTrackPath,
+        totalDurationMs,
+        freezes,
+      },
     }
-    runFfmpeg([
-      '-y', '-f', 'concat', '-safe', '0',
-      '-i', concatList,
-      ...codecArgs,
-      audioTrackPath,
-    ])
-  }
-
-  const totalDurationMs = segmentFiles.length > 0
-    ? getAudioDurationMs(audioTrackPath)
-    : 0
-
-  return {
-    ...trace,
-    voiceover: {
-      entries,
-      audioTrackPath,
-      totalDurationMs,
-      freezes,
-    },
+  } finally {
+    // A locked file must not fail a finished voiceover
+    try { fs.rmSync(workDir, { recursive: true, force: true }) } catch { /* left behind */ }
   }
 }

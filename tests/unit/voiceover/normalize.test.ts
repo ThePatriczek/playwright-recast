@@ -63,4 +63,14 @@ describe('normalizeLoudness', () => {
     expect(fs.existsSync(out)).toBe(true)
     expect(fs.statSync(out).size).toBeGreaterThan(1000)
   })
+
+  it('writes 16-bit PCM for a .wav output', async () => {
+    const src = path.join(TMP_ROOT, 'src-wav.mp3')
+    const out = path.join(TMP_ROOT, 'out.wav')
+    makeSineMp3(src, -20)
+    await normalizeLoudness(src, out, { targetLufs: -16 })
+    const codec = spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'stream=codec_name', '-of', 'csv=p=0', out], { encoding: 'utf8' }).stdout.trim()
+    expect(codec).toBe('pcm_s16le')
+    expect(measureLufs(out)).toBeGreaterThan(-17.5)
+  })
 })
