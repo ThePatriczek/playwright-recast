@@ -5,7 +5,7 @@ import type { LoudnessNormalizeConfig } from '../types/voiceover.js'
 
 const execFileAsync = promisify(execFile)
 
-/** Rate normalizeLoudness() writes at unless configured. */
+/** Default sample rate of normalizeLoudness() output. */
 export const NORMALIZE_SAMPLE_RATE = 44100
 
 const DEFAULTS = {

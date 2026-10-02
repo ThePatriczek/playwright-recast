@@ -47,7 +47,8 @@ export function wavData(filePath: string): WavData {
         fs.readSync(fd, fmt, 0, 16, pos + 8)
       } else if (id === 'data') {
         if (!fmt) break
-        const bytes = size === 0xffffffff && ds64Data !== undefined ? ds64Data : size
+        // 0xffffffff without ds64: a streamed WAV whose data runs to the end
+        const bytes = size !== 0xffffffff ? size : ds64Data ?? fs.fstatSync(fd).size - (pos + 8)
         return {
           offset: pos + 8,
           bytes,

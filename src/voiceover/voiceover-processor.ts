@@ -94,14 +94,13 @@ export async function generateVoiceover(
   const texts = trace.subtitles.map((s) => s.ttsText ?? s.text)
   const audios = await provider.synthesize(texts, { workDir: tmpDir })
 
-  if (audios.length !== texts.length) {
-    throw new Error(
-      `Provider "${provider.name}" returned ${audios.length} segments for ${texts.length} texts`,
-    )
-  }
-
   const segPathFor = (si: number): string => path.join(tmpDir, `recast-seg-${si}.wav`)
   try {
+    if (audios.length !== texts.length) {
+      throw new Error(
+        `Provider "${provider.name}" returned ${audios.length} segments for ${texts.length} texts`,
+      )
+    }
     // Every segment becomes 16-bit PCM in one format, so the track is written
     // sample by sample and every duration is a sample count. Files are keyed
     // by position: SRT indexes can repeat.

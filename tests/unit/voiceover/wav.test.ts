@@ -57,6 +57,14 @@ describe('wavData()', () => {
     fs.writeFileSync(file, header)
     expect(wavData(file)).toMatchObject({ offset: 80, bytes: 5_000_000_000, blockAlign: 2 })
   })
+
+  it('reads a streamed WAV with an unknown data size up to the end of the file', () => {
+    const header = wavHeader(0, 48_000, 1)
+    header.writeUInt32LE(0xffffffff, 4); header.writeUInt32LE(0xffffffff, 76)
+    const file = path.join(dir, 'streamed.wav')
+    fs.writeFileSync(file, Buffer.concat([header, Buffer.alloc(10)]))
+    expect(wavData(file)).toMatchObject({ offset: 80, bytes: 10 })
+  })
 })
 
 describe('wavHeader()', () => {
