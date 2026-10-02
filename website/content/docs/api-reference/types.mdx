@@ -175,6 +175,7 @@ interface SpeedConfig {
   segments?: Array<{ startMs: number; endMs: number; speed: number }>
   recordingPageId?: string
   postFastForwardSettleMs?: number // Default: 0
+  keepResizedFrames?: boolean       // Default: false
 }
 ```
 

@@ -97,6 +97,8 @@ export interface ParsedTrace {
   resources: TraceResource[]
   events: TraceEvent[]
   cursorPositions: CursorPosition[]
+  /** Spans a page was rendered at another size (see resizedFrameSpans()); Chromium only */
+  resizedFrames?: Array<{ pageId: string; start: MonotonicMs; end: MonotonicMs }>
   frameReader: FrameReader
 }
 

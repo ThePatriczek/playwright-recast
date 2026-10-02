@@ -6,6 +6,7 @@
 
 - **A zoom or highlight held over the next step's first narration** - a `zoom()` or `highlight({ duration: 'narration' })` could go to a narration of the neighbouring test step, so a narration hold at the start of a step showed the previous step's zoom. Inside a top-level `test.step()` that narrates, they now only go to that step's narrations; elsewhere nothing changes. A zoom left without a narration of its step is dropped with a log line.
 - **Narration still drifted behind its subtitles** - follow-up to [#26](https://github.com/ThePatriczek/playwright-recast/pull/26): the track was joined by stream copy, which keeps every MP3's encoder padding, so speech started 80-130 ms later per silence segment, seconds late after a few dozen lines. Segments are now decoded to 16-bit PCM in one format and the track is written with silence as exact samples, for any codec and sample rate a provider returns. The voiceover track and its click-sound mix are WAV; the final mux encodes once. `normalizeLoudness()` writes PCM for a `.wav` output.
+- **Screenshots left gray frames in the video** - a clip, element or `toHaveScreenshot()` screenshot makes Chromium re-render the page at the screenshot size, and the video showed that over gray padding. With `speedUp()`, frames the trace shows briefly at another size than the page's viewport are cut like hidden steps, unless a `setViewportSize()` explains them. Chromium only; `speedUp({ keepResizedFrames: true })` keeps them.
 
 ## 0.22.1 (2026-09-30)
 

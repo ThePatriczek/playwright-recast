@@ -19,16 +19,18 @@ export function buildSamplePoints(opts: {
   sampleInterval: number
   exactBoundaries: boolean
   boundaryTimes: readonly number[]
+  /** Join the grid even with `exactBoundaries` off, so a cut lands exactly. */
+  cutTimes?: readonly number[]
 }): number[] {
-  const { visibleStart, visibleEnd, sampleInterval, exactBoundaries, boundaryTimes } = opts
+  const { visibleStart, visibleEnd, sampleInterval, exactBoundaries, boundaryTimes, cutTimes = [] } = opts
 
   const points: number[] = []
   for (let t = visibleStart; t < visibleEnd; t += sampleInterval) points.push(t)
   points.push(visibleEnd)
 
-  if (!exactBoundaries) return points
+  if (!exactBoundaries && cutTimes.length === 0) return points
 
-  for (const b of boundaryTimes) {
+  for (const b of [...(exactBoundaries ? boundaryTimes : []), ...cutTimes]) {
     if (b > visibleStart && b < visibleEnd) points.push(b)
   }
 

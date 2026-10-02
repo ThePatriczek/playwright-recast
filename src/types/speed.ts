@@ -55,6 +55,12 @@ export interface SpeedConfig {
    * than `minSegmentDuration` are being swallowed. Default: false
    */
   exactBoundaries?: boolean
+  /**
+   * Keep frames Chromium rendered at another size than the viewport, as for a
+   * clip, element or toHaveScreenshot() screenshot: the video shows them over
+   * gray padding. Cut by default. Default: false
+   */
+  keepResizedFrames?: boolean
   /** Custom rules (evaluated first, first match wins) */
   rules?: SpeedRule[]
   /**

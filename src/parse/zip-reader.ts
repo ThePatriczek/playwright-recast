@@ -38,6 +38,12 @@ export class ZipReader {
     return Buffer.from(entry)
   }
 
+  /** An entry's bytes without copying them, or undefined if missing */
+  view(name: string): Buffer | undefined {
+    const entry = this.entries[name]
+    return entry && Buffer.from(entry.buffer, entry.byteOffset, entry.byteLength)
+  }
+
   /** Check if an entry exists */
   has(name: string): boolean {
     return name in this.entries

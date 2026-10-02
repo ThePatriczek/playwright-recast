@@ -44,6 +44,8 @@ describe.skipIf(!hasFixture)('ZipReader', () => {
       if (resourceFile) {
         const data = reader.readBinary(resourceFile)
         expect(data.length).toBeGreaterThan(0)
+        expect(reader.view(resourceFile)).toEqual(data)
+        expect(reader.view('resources/missing')).toBeUndefined()
       }
     } finally {
       reader.dispose()

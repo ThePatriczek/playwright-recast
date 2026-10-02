@@ -1,4 +1,4 @@
-import type { FilteredTrace, TraceAction, TraceResource } from '../types/trace.js'
+import type { FilteredTrace, MonotonicMs, TraceAction, TraceResource } from '../types/trace.js'
 import { toMonotonic } from '../types/trace.js'
 import type { SpeedConfig, SpeedSegment, SpeedMappedTrace, SpeedRuleContext } from '../types/speed.js'
 import { classifyTimepoint, USER_ACTION_METHODS } from './classifiers.js'
@@ -6,7 +6,7 @@ import { computeOutputTimes, buildTimeRemap } from './time-remap.js'
 import { buildSamplePoints } from './sample-points.js'
 import { isNarrationBoundaryTitle } from '../pipeline/narration-subtitles.js'
 
-const DEFAULTS: Required<Omit<SpeedConfig, 'rules' | 'recordingPageId' | 'postFastForwardSettleMs' | 'segments' | 'exactBoundaries'>> = {
+const DEFAULTS: Required<Omit<SpeedConfig, 'rules' | 'recordingPageId' | 'postFastForwardSettleMs' | 'segments' | 'exactBoundaries' | 'keepResizedFrames'>> = {
   duringIdle: 4.0,
   duringUserAction: 1.0,
   duringNetworkWait: 2.0,
@@ -73,6 +73,23 @@ function timeUntilNextUserAction(t: number, sortedStarts: number[]): number {
   return best >= 0 ? sortedStarts[best]! - t : Infinity
 }
 
+/** [start, end) without the given ranges. */
+function withoutRanges(
+  start: number,
+  end: number,
+  ranges: ReadonlyArray<{ start: MonotonicMs; end: MonotonicMs }>,
+): Array<[number, number]> {
+  let parts: Array<[number, number]> = [[start, end]]
+  for (const r of ranges) {
+    parts = parts.flatMap(([s, e]): Array<[number, number]> => {
+      const rs = r.start as number, re = r.end as number
+      if (re <= s || rs >= e) return [[s, e]]
+      return [...(rs > s ? [[s, rs] as [number, number]] : []), ...(re < e ? [[re, e] as [number, number]] : [])]
+    })
+  }
+  return parts
+}
+
 /**
  * Process a trace into speed segments based on activity classification.
  * Evaluates custom rules first (first match wins), then falls back to
@@ -84,7 +101,7 @@ export function processSpeed(
   config: SpeedConfig,
 ): SpeedMappedTrace {
   const c = { ...DEFAULTS, ...config }
-  const { actions, resources, hiddenRanges } = trace
+  const { actions, resources } = trace
   const rules = config.rules ?? []
 
   // Determine time boundaries from visible content
@@ -100,26 +117,34 @@ export function processSpeed(
     }
   }
 
+  // The page the renderer takes the video from: the one with the LAST frame
+  // (the recording context runs longest; frames[0] may be a hidden setup context)
+  const videoPageId = trace.frames[trace.frames.length - 1]?.pageId
+  const recordingPageId = config.recordingPageId ?? videoPageId
+
+  const resizedCuts = config.keepResizedFrames
+    ? []
+    : (trace.resizedFrames ?? []).filter((r) => !videoPageId || r.pageId === videoPageId)
+
   // Explicit segments mode: caller provides pre-built segments (e.g., voiceover-driven).
   // Convert from SRT-time-based segments to trace-monotonic SpeedSegments.
   if (config.segments && config.segments.length > 0) {
     // Determine the recording page's first frame as the SRT time baseline
-    const recPageId = trace.frames.length > 0
-      ? trace.frames[trace.frames.length - 1]!.pageId : undefined
-    const recFrames = recPageId
-      ? trace.frames.filter((f) => f.pageId === recPageId) : trace.frames
+    const recFrames = videoPageId
+      ? trace.frames.filter((f) => f.pageId === videoPageId) : trace.frames
     // Baseline = first recording frame (not first action — actions may start later)
     const baseline = recFrames.length > 0
       ? (recFrames[0]!.timestamp as number)
       : visibleStart
 
-    const speedSegments: SpeedSegment[] = config.segments.map((seg) => ({
-      originalStart: toMonotonic(seg.startMs + baseline),
-      originalEnd: toMonotonic(seg.endMs + baseline),
-      speed: seg.speed,
-      outputStart: 0,
-      outputEnd: 0,
-    }))
+    const speedSegments: SpeedSegment[] = config.segments.flatMap((seg) =>
+      withoutRanges(seg.startMs + baseline, seg.endMs + baseline, resizedCuts).map(([start, end]) => ({
+        originalStart: toMonotonic(start),
+        originalEnd: toMonotonic(end),
+        speed: seg.speed,
+        outputStart: 0,
+        outputEnd: 0,
+      })))
 
     const withOutputTimes = computeOutputTimes(speedSegments)
     const timeRemap = buildTimeRemap(withOutputTimes)
@@ -135,13 +160,7 @@ export function processSpeed(
     }
   }
 
-  // Auto-detect recording page ID from the page that has the LAST screencast frame
-  // (the recording context runs longest). Using frames[0] is wrong — it may be
-  // from a hidden setup context that was created before the recording context.
-  const recordingPageId = config.recordingPageId ??
-    (trace.frames.length > 0
-      ? trace.frames[trace.frames.length - 1]!.pageId
-      : undefined)
+  const hiddenRanges = [...trace.hiddenRanges, ...resizedCuts]
 
   // Pre-compute user action timeline for rule context
   const userTimeline = buildUserActionTimeline(actions, recordingPageId)
@@ -165,6 +184,7 @@ export function processSpeed(
     sampleInterval,
     exactBoundaries: config.exactBoundaries ?? false,
     boundaryTimes,
+    cutTimes: resizedCuts.flatMap((r) => [r.start as number, r.end as number]),
   })
 
   for (let pi = 0; pi < samplePoints.length - 1; pi++) {
