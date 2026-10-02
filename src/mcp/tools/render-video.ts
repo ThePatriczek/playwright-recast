@@ -10,6 +10,8 @@ import { analyzeTrace } from '../analyzer.js'
 import { writeSrtFile } from '../srt-builder.js'
 import { Pipeline } from '../../pipeline/pipeline.js'
 import { parseTrace } from '../../parse/trace-parser.js'
+import { mcpTimeBases, wallToTrace } from '../time-bases.js'
+import { hiddenRanges, speedSegments } from '../segments.js'
 import { OpenAIProvider } from '../../voiceover/providers/openai.js'
 import { ElevenLabsProvider } from '../../voiceover/providers/elevenlabs.js'
 import { PollyProvider } from '../../voiceover/providers/polly.js'
@@ -179,22 +181,24 @@ export function registerRenderVideo(server: McpServer, config: RecastMcpConfig):
         const analyzedSteps = analysis.steps
         analysis.dispose()
 
-        // Build a map: step.id -> AnalyzedStep (for action index lookups)
-        const stepMap = new Map(analyzedSteps.map((s) => [s.id, s]))
-
         // ------------------------------------------------------------------
         // 2. Merge user-provided hidden/voiceover into analyzed steps
         //    to build the SRT input
         // ------------------------------------------------------------------
         const userStepMap = new Map(steps.map((s) => [s.id, s]))
 
+        const parsed = await parseTrace(tracePath)
+        parsed.frameReader.dispose()
+        const time = mcpTimeBases(parsed)
+
         const srtSteps = analyzedSteps.map((analyzed) => {
           const userStep = userStepMap.get(analyzed.id)
           return {
             id: analyzed.id,
-            hidden: userStep?.hidden ?? analyzed.hidden,
-            startTimeMs: analyzed.startTimeMs,
-            endTimeMs: analyzed.endTimeMs,
+            // Over before the recording page's first action: no line
+            hidden: (userStep?.hidden ?? analyzed.hidden) || time.toSrt(analyzed.endTimeMs) <= 0,
+            startTimeMs: Math.max(0, time.toSrt(analyzed.startTimeMs)),
+            endTimeMs: Math.max(0, time.toSrt(analyzed.endTimeMs)),
             voiceover: userStep?.voiceover,
           }
         })
@@ -205,36 +209,13 @@ export function registerRenderVideo(server: McpServer, config: RecastMcpConfig):
         const srtPath = writeSrtFile(resolvedDir, srtSteps)
 
         // ------------------------------------------------------------------
-        // 4. Parse trace for metadata + build hidden time ranges
+        // 4. Hidden time ranges, on the video's clock
         // ------------------------------------------------------------------
-        const parsed = await parseTrace(tracePath)
-        parsed.frameReader.dispose()
-
-        // Build hidden time ranges from user-marked hidden steps.
-        // Merge overlapping/adjacent ranges so there are no tiny visible gaps
-        // between consecutive hidden steps (e.g., login flow).
-        const rawHidden: Array<{ startMs: number; endMs: number }> = []
-        for (const userStep of steps) {
-          if (!userStep.hidden) continue
-          const analyzed = stepMap.get(userStep.id)
-          if (!analyzed) continue
-          rawHidden.push({
-            startMs: analyzed.startTimeMs,
-            endMs: analyzed.endTimeMs,
-          })
-        }
-        rawHidden.sort((a, b) => a.startMs - b.startMs)
-
-        // Merge: if gap between consecutive hidden ranges is < 2s, merge them
-        const hiddenTimeRanges: Array<{ startMs: number; endMs: number }> = []
-        for (const range of rawHidden) {
-          const last = hiddenTimeRanges[hiddenTimeRanges.length - 1]
-          if (last && range.startMs <= last.endMs + 2000) {
-            last.endMs = Math.max(last.endMs, range.endMs)
-          } else {
-            hiddenTimeRanges.push({ ...range })
-          }
-        }
+        // Else the analyzer's flag: an auto-hidden login the caller left out must still be cut
+        const hiddenTimeRanges = hiddenRanges(
+          analyzedSteps.map((a) => ({ ...a, hidden: userStepMap.get(a.id)?.hidden ?? a.hidden })),
+          time.toVideo,
+        )
 
         // ------------------------------------------------------------------
         // 5. Build Pipeline (matching battle-tested demo pipeline config)
@@ -279,8 +260,7 @@ export function registerRenderVideo(server: McpServer, config: RecastMcpConfig):
             // Align timestamps to trace monotonic time.
             // Only inject actions from VISIBLE steps — hidden actions would
             // produce click sounds/effects in the intro/cut periods.
-            const traceStartAbs = parsed.metadata.startTime as number
-            const domBaseMs = recorded[0]!.timestamp
+            const toTrace = wallToTrace(parsed.metadata, recorded[0]!.timestamp)
 
             const allSynthetic: TraceAction[] = recorded.map((r, i) => ({
               callId: `recorded-${i}`,
@@ -292,17 +272,17 @@ export function registerRenderVideo(server: McpServer, config: RecastMcpConfig):
                 ...(r.value != null ? { value: r.value } : {}),
                 ...(r.method === 'goto' ? { url: r.value ?? '' } : {}),
               },
-              startTime: toMonotonic(traceStartAbs + (r.timestamp - domBaseMs)),
-              endTime: toMonotonic(traceStartAbs + (r.timestamp - domBaseMs) + 100),
+              startTime: toMonotonic(toTrace(r.timestamp)),
+              endTime: toMonotonic(toTrace(r.timestamp) + 100),
               point: r.x != null && r.y != null
-                ? { x: r.x, y: r.y, timestamp: toMonotonic(traceStartAbs + (r.timestamp - domBaseMs)) }
+                ? { x: r.x, y: r.y, timestamp: toMonotonic(toTrace(r.timestamp)) }
                 : undefined,
             }))
 
             // Filter: only keep actions from visible time ranges
             syntheticActions = allSynthetic.filter((action) => {
-              const relTimeMs = (action.startTime as number) - traceStartAbs
-              return !hiddenTimeRanges.some((h) => relTimeMs >= h.startMs && relTimeMs <= h.endMs)
+              const videoMs = time.toVideo(action.startTime as number)
+              return videoMs >= 0 && !hiddenTimeRanges.some((h) => videoMs >= h.startMs && videoMs <= h.endMs)
             })
           }
         }
@@ -318,35 +298,10 @@ export function registerRenderVideo(server: McpServer, config: RecastMcpConfig):
           pipeline = pipeline.injectActions(syntheticActions)
         }
 
-        // Build speed segments: ONLY visible periods get segments.
-        // Hidden periods have NO segment → renderer cuts them out completely.
-        //
-        // IMPORTANT: speedUp({ segments }) expects times RELATIVE to video start (0-based).
-        // The speed processor adds baseline (first frame timestamp) internally.
-        // Analyzer step times are already relative (from 0), so use them directly.
-        const traceDurationMs = (parsed.metadata.endTime as number) - (parsed.metadata.startTime as number)
-
-        const sortedHidden = [...hiddenTimeRanges].sort((a, b) => a.startMs - b.startMs)
-
-        const speedSegments: Array<{ startMs: number; endMs: number; speed: number }> = []
-        let cursor = 0
-
-        for (const hidden of sortedHidden) {
-          if (cursor < hidden.startMs) {
-            speedSegments.push({ startMs: cursor, endMs: hidden.startMs, speed: 1.0 })
-          }
-          // Hidden range: maximum speed → renderer outputs ~0 frames for this period.
-          // Must include a segment (not skip) because the renderer only applies speed
-          // processing when it detects at least one non-1x segment.
-          speedSegments.push({ startMs: hidden.startMs, endMs: hidden.endMs, speed: 9999 })
-          cursor = hidden.endMs
-        }
-        if (cursor < traceDurationMs) {
-          speedSegments.push({ startMs: cursor, endMs: traceDurationMs, speed: 1.0 })
-        }
+        const segments = speedSegments(hiddenTimeRanges, time.videoEndMs)
 
         pipeline = pipeline
-          .speedUp({ segments: speedSegments })
+          .speedUp({ segments })
           .subtitlesFromSrt(srtPath)
           .textProcessing({ builtins: true })
 
@@ -415,11 +370,10 @@ export function registerRenderVideo(server: McpServer, config: RecastMcpConfig):
         // ------------------------------------------------------------------
         // 6. Execute pipeline
         // ------------------------------------------------------------------
-        await pipeline.toFile(outputFile)
-
-        // Dispose TTS provider if created
-        if (ttsProvider) {
-          await ttsProvider.dispose()
+        try {
+          await pipeline.toFile(outputFile)
+        } finally {
+          await ttsProvider?.dispose()
         }
 
         // ------------------------------------------------------------------

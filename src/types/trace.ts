@@ -90,6 +90,8 @@ export interface ParsedTrace {
     startTime: MonotonicMs
     endTime: MonotonicMs
     wallTime: number
+    /** Monotonic time at `wallTime` */
+    wallMonotonicTime?: number
     playwrightVersion?: string
   }
   frames: ScreencastFrame[]
