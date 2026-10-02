@@ -35,4 +35,9 @@ describe('processSpeed: resized frames', () => {
   it("cuts only the recording page's", () => {
     expect(processSpeed(trace([[1503, 1857, 'page@other']]), { duringIdle: 2 }).outputDuration).toBeCloseTo(2000, 0)
   })
+
+  it("cuts the video page's, whatever recordingPageId scopes actions to", () => {
+    expect(processSpeed(trace([[1503, 1857]]), { duringIdle: 2, recordingPageId: 'page@other' }).outputDuration).toBeCloseTo((4000 - 354) / 2, 0)
+    expect(processSpeed(trace([[1503, 1857, 'page@other']]), { duringIdle: 2, recordingPageId: 'page@other' }).outputDuration).toBeCloseTo(2000, 0)
+  })
 })

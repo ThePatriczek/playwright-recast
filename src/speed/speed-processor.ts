@@ -117,26 +117,21 @@ export function processSpeed(
     }
   }
 
-  // Auto-detect recording page ID from the page that has the LAST screencast frame
-  // (the recording context runs longest). Using frames[0] is wrong — it may be
-  // from a hidden setup context that was created before the recording context.
-  const recordingPageId = config.recordingPageId ??
-    (trace.frames.length > 0
-      ? trace.frames[trace.frames.length - 1]!.pageId
-      : undefined)
+  // The page the renderer takes the video from: the one with the LAST frame
+  // (the recording context runs longest; frames[0] may be a hidden setup context)
+  const videoPageId = trace.frames[trace.frames.length - 1]?.pageId
+  const recordingPageId = config.recordingPageId ?? videoPageId
 
   const resizedCuts = config.keepResizedFrames
     ? []
-    : (trace.resizedFrames ?? []).filter((r) => !recordingPageId || r.pageId === recordingPageId)
+    : (trace.resizedFrames ?? []).filter((r) => !videoPageId || r.pageId === videoPageId)
 
   // Explicit segments mode: caller provides pre-built segments (e.g., voiceover-driven).
   // Convert from SRT-time-based segments to trace-monotonic SpeedSegments.
   if (config.segments && config.segments.length > 0) {
     // Determine the recording page's first frame as the SRT time baseline
-    const recPageId = trace.frames.length > 0
-      ? trace.frames[trace.frames.length - 1]!.pageId : undefined
-    const recFrames = recPageId
-      ? trace.frames.filter((f) => f.pageId === recPageId) : trace.frames
+    const recFrames = videoPageId
+      ? trace.frames.filter((f) => f.pageId === videoPageId) : trace.frames
     // Baseline = first recording frame (not first action — actions may start later)
     const baseline = recFrames.length > 0
       ? (recFrames[0]!.timestamp as number)
