@@ -4,8 +4,9 @@ import { jpegSize } from '../../../src/parse/jpeg'
 
 describe('jpegSize', () => {
   it('reads the size from the start-of-frame header', () => {
-    const data = execFileSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'color=c=gray:s=797x448', '-frames:v', '1', '-c:v', 'mjpeg', '-pix_fmt', 'yuvj444p', '-f', 'image2', 'pipe:'])
-    expect(jpegSize(data)).toEqual({ width: 797, height: 448 })
+    const data = execFileSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'color=c=gray:s=798x448', '-frames:v', '1', '-c:v', 'mjpeg', '-f', 'image2', 'pipe:'])
+    // Even: some ffmpeg builds round an odd width down; odd sizes are covered below
+    expect(jpegSize(data)).toEqual({ width: 798, height: 448 })
   })
 
   it('is undefined for data that is no JPEG', () => {
