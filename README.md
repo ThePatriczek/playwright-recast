@@ -600,7 +600,7 @@ When('the user opens the sidebar', async ({ page }) => {
 
 The helper captures the element's bounding box as a Playwright annotation. Use `enrichZoomFromReport()` to apply these coordinates during video generation.
 
-A zoom belongs to the narration whose audio is playing when it is set, else the next one, and starts with it. To zoom onto text inside an element instead of its whole box, pass `text` (a substring, or `true` for all of it); `align: 'start'` keeps the start of a line wider than the frame in view:
+A zoom belongs to the narration whose audio is playing when it is set, else the next one, and starts with it; inside a top-level `test.step()` that narrates, only to that step's narrations. To zoom onto text inside an element instead of its whole box, pass `text` (a substring, or `true` for all of it); `align: 'start'` keeps the start of a line wider than the frame in view:
 
 ```typescript
 await zoom(page.locator('.summary'), 1.6, { text: 'Total revenue', align: 'start' })

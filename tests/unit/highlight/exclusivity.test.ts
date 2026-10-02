@@ -255,4 +255,29 @@ describe('endHighlightsWithNarration()', () => {
 
     expect(endHighlightsWithNarration(input, narrations)).toEqual(input)
   })
+
+  it('does not end a mark with a narration of another test step', () => {
+    const scoped = [
+      { outputStartMs: 1000, outputEndMs: 4000, subtitle: { sceneId: 'step-5' } },
+      { outputStartMs: 6000, outputEndMs: 9000, subtitle: { sceneId: 'step-6' } },
+    ]
+    const late = makeEvent({ videoTimeMs: 5000, endTimeMs: 7000, untilNarrationEnd: true, sceneId: 'step-5' })
+    const early = makeEvent({ videoTimeMs: 3000, endTimeMs: 5000, untilNarrationEnd: true, sceneId: 'step-6' })
+    const [lateMark, earlyMark] = endHighlightsWithNarration([late, early], scoped)
+
+    expect(lateMark!.endTimeMs).toBe(7000)
+    expect(earlyMark!.endTimeMs).toBe(9000)
+  })
+
+  it('takes only the immediately next narration, not a later one of its scene', () => {
+    const later = [
+      { outputStartMs: 6000, outputEndMs: 8000, subtitle: { sceneId: 'step-6' } },
+      { outputStartMs: 9000, outputEndMs: 12_000, subtitle: { sceneId: 'step-5' } },
+    ]
+    const [mark] = endHighlightsWithNarration(
+      [makeEvent({ videoTimeMs: 5000, endTimeMs: 7000, untilNarrationEnd: true, sceneId: 'step-5' })],
+      later,
+    )
+    expect(mark!.endTimeMs).toBe(7000)
+  })
 })

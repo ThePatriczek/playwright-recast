@@ -81,3 +81,56 @@ describe('moveZoomsToSpokenNarration()', () => {
     expect(s2.zoom?.level).toBe(2)
   })
 })
+
+describe('zooms stay in their scene', () => {
+  const cues = [
+    { startMs: 1000, endMs: 4000, sceneId: 'step-5' },
+    { startMs: 5000, endMs: 8000, sceneId: 'step-6' },
+  ]
+
+  it('cueForZoomMarker() does not pick the next cue from another scene', () => {
+    expect(cueForZoomMarker(cues, 4500, 'step-5')).toBeUndefined()
+    expect(cueForZoomMarker(cues, 4500, 'step-6')).toBe(cues[1])
+    expect(cueForZoomMarker(cues, 2000, 'step-5')).toBe(cues[0])
+    expect(cueForZoomMarker(cues, 4500)).toBe(cues[1])
+  })
+
+  it('cueForZoomMarker() skips a playing cue from another step for the next one in its own', () => {
+    // Step 5 narrates without waitForNarration(), so its cue is still open
+    // when step 6 sets a zoom before its own narrate().
+    const open = [
+      { startMs: 1000, endMs: 5000, sceneId: 'step-5' },
+      { startMs: 5000, endMs: 8000, sceneId: 'step-6' },
+    ]
+    expect(cueForZoomMarker(open, 4500, 'step-6')).toBe(open[1])
+  })
+
+  it('cueForZoomMarker() gives a zoom outside any scene the next cue', () => {
+    expect(cueForZoomMarker(cues, 4500, undefined)).toBe(cues[1])
+  })
+
+  it('moveZoomsToSpokenNarration() keeps a stale zoom when the next narration is another scene', () => {
+    // Step 5 zooms a dialog after its line was spoken; step 6 opens with a narration hold.
+    const s5: SubtitleEntry = { index: 1, startMs: 1000, endMs: 10_000, text: 'publish', sceneId: 'step-5', zoom: { x: 0.8, y: 0.5, level: 1.3, startMs: 9_000, sceneId: 'step-5' } }
+    const s6: SubtitleEntry = { index: 2, startMs: 10_000, endMs: 14_000, text: 'connect', sceneId: 'step-6' }
+    moveZoomsToSpokenNarration([
+      { subtitle: s5, outputStartMs: 1000, outputEndMs: 10_000, spokenEndMs: 3000 },
+      { subtitle: s6, outputStartMs: 10_000, outputEndMs: 14_000, spokenEndMs: 14_000 },
+    ])
+    expect(s5.zoom?.startMs).toBe(9_000)
+    expect(s6.zoom).toBeUndefined()
+  })
+
+  it('moveZoomsToSpokenNarration() moves a zoom from outside any scene, even off a scene\'s cue', () => {
+    // Narrations in say() wrapper steps; the zoom ran in the test body after
+    // line A was spoken and sits on A's cue, which stays open to B.
+    const a: SubtitleEntry = { index: 1, startMs: 1000, endMs: 10_000, text: 'A', sceneId: 'say@1', zoom: { x: 0.5, y: 0.5, level: 1.5, startMs: 9_000 } }
+    const b: SubtitleEntry = { index: 2, startMs: 10_000, endMs: 14_000, text: 'B', sceneId: 'say@5' }
+    moveZoomsToSpokenNarration([
+      { subtitle: a, outputStartMs: 1000, outputEndMs: 10_000, spokenEndMs: 3000 },
+      { subtitle: b, outputStartMs: 10_000, outputEndMs: 14_000, spokenEndMs: 14_000 },
+    ])
+    expect(a.zoom).toBeUndefined()
+    expect(b.zoom?.startMs).toBe(10_000)
+  })
+})

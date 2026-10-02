@@ -12,6 +12,8 @@ export interface StepZoom {
   startMs?: number
   /** Zoom window end in ms (absolute video time). */
   endMs?: number
+  /** Scene of the `zoom()` call, see sceneOf() */
+  sceneId?: string
 }
 
 /** A single subtitle entry */
@@ -29,6 +31,8 @@ export interface SubtitleEntry {
    *  next narrate() or waitForNarration()). Orders overlays against its hold
    *  exactly, where rounded video times can tie. */
   endTraceMs?: number
+  /** Scene of the `narrate()` call, see sceneOf() */
+  sceneId?: string
 }
 
 /** Subtitle format */

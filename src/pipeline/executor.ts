@@ -11,7 +11,7 @@ import {
   HIGHLIGHT_TITLE_PREFIX,
   ZOOM_TITLE_PREFIX,
 } from '../helpers.js'
-import { buildNarrationSubtitles, isNarrationBoundaryTitle } from './narration-subtitles.js'
+import { buildNarrationSubtitles, isNarrationBoundaryTitle, sceneOf } from './narration-subtitles.js'
 import { cueForZoomMarker } from './zoom-markers.js'
 import {
   parseClickMarkersFromRecordingContext,
@@ -55,7 +55,8 @@ import { approachHold } from '../voiceover/frame-align.js'
 import { validateDirectorOptions } from '../director/planner.js'
 import type { DirectorOptions, DirectorProvider } from '../types/director.js'
 
-type PipelineState = {
+/** @internal */
+export type PipelineState = {
   parsed?: ParsedTrace
   filtered?: FilteredTrace
   speedMapped?: SpeedMappedTrace
@@ -293,7 +294,8 @@ export class PipelineExecutor {
     return buffer
   }
 
-  private async runStages(): Promise<PipelineState> {
+  /** @internal Exposed for tests. */
+  async runStages(): Promise<PipelineState> {
     const state: PipelineState = {}
 
     // Find source video in the trace directory
@@ -517,12 +519,14 @@ export class PipelineExecutor {
             (a) => typeof a.title === 'string' && a.title.startsWith(NARRATE_TITLE_PREFIX),
           )
 
+          const scene = sceneOf(speedMapped.originalActions)
           if (hasVisibleNarrate) {
             const traceEndMs = toVideoMs(speedMapped.metadata.endTime as number)
             const subtitles = buildNarrationSubtitles(
               boundaryActions.map((a) => ({
                 title: a.title as string,
                 startTime: a.startTime as number,
+                sceneId: scene(a),
               })),
               (t) => toVideoMs(t),
               traceEndMs,
@@ -566,7 +570,7 @@ export class PipelineExecutor {
                 opacity: data.opacity ?? hlDefaults.opacity,
                 swipeDuration: data.swipeDuration ?? hlDefaults.swipeDuration,
                 fadeOut,
-                ...(untilNarrationEnd ? { untilNarrationEnd } : {}),
+                ...(untilNarrationEnd ? { untilNarrationEnd, sceneId: scene(action) } : {}),
                 traceMs: action.startTime as number,
               })
             } catch {
@@ -592,7 +596,8 @@ export class PipelineExecutor {
                 }
                 // Cues start on whole ms; unrounded, a marker in the same ms as its narrate() misses it.
                 const tMs = Math.round(toVideoMs(action.startTime as number))
-                const sub = cueForZoomMarker(state.subtitled.subtitles, tMs)
+                const sceneId = scene(action)
+                const sub = cueForZoomMarker(state.subtitled.subtitles, tMs, sceneId)
                 if (sub) {
                   // Start at the zoom() marker when it falls inside the cue,
                   // so the zoom kicks in only once the target is visible; a
@@ -604,7 +609,10 @@ export class PipelineExecutor {
                     y: data.y,
                     level: data.level,
                     startMs: Math.max(tMs, sub.startMs),
+                    ...(sceneId ? { sceneId } : {}),
                   }
+                } else if (hasVisibleNarrate) {
+                  console.log(`  zoom: dropped a zoom() at ${tMs}ms, no cue of its scene plays or follows`)
                 }
               } catch {
                 // skip malformed markers
