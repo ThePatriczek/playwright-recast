@@ -1010,11 +1010,13 @@ export function renderVideo(
     }
 
     // Mix click sound into voiceover track
-    const mixedPath = path.join(tmpDir, 'mixed-audio.mp3')
+    // Float PCM: the final mux encodes once, to AAC, and the voice plus a
+    // click can sum past full scale without clipping here
+    const mixedPath = path.join(tmpDir, 'mixed-audio.wav')
     ffmpeg([
       '-y', '-i', finalAudioPath, '-i', clickInput,
       '-filter_complex', '[0:a]aresample=44100,aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo[a0];[1:a]aresample=44100,aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo[a1];[a0][a1]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0',
-      '-c:a', 'libmp3lame', '-q:a', '2', mixedPath,
+      '-c:a', 'pcm_f32le', '-rf64', 'auto', mixedPath,
     ])
     finalAudioPath = mixedPath
   } else if (clickSoundTrackPath && !finalAudioPath) {

@@ -4,7 +4,7 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 import * as os from 'node:os'
 import { generateVoiceover } from '../../../src/voiceover/voiceover-processor'
-import { probeAudioFormat, planAudioConcat } from '../../../src/voiceover/audio-format'
+import { probeAudioFormat } from '../../../src/voiceover/audio-format'
 import type { TtsProvider } from '../../../src/types/voiceover'
 import type { SubtitledTrace } from '../../../src/types/subtitle'
 
@@ -52,7 +52,7 @@ function makeTrace(): SubtitledTrace {
   return { subtitles: subs } as unknown as SubtitledTrace
 }
 
-describe('generateVoiceover — silence matches TTS sample rate (#22)', () => {
+describe('generateVoiceover - the track keeps the TTS sample rate (#22)', () => {
   beforeAll(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'recast-vo-silence-rate-'))
   })
@@ -61,27 +61,12 @@ describe('generateVoiceover — silence matches TTS sample rate (#22)', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 
-  it('generates silence at the provider rate, so a 44.1kHz mono narration stays on -c copy', async () => {
+  it('keeps the provider rate, so a 44.1kHz mono narration is not resampled', async () => {
     const trace = makeTrace()
     const workDir = path.join(tmpDir, 'run')
     await generateVoiceover(trace, fixedFormatProvider(), workDir, undefined, undefined, 25)
 
-    const segmentFiles = fs.readdirSync(workDir)
-      .filter((f) => f.endsWith('.mp3') && f !== 'voiceover.mp3')
-      .map((f) => path.join(workDir, f))
-
-    // Sanity: this run actually exercised generated silence, not just TTS.
-    expect(segmentFiles.some((f) => path.basename(f).startsWith('silence-'))).toBe(true)
-    expect(segmentFiles.some((f) => path.basename(f).startsWith('pad-'))).toBe(true)
-
-    const formats = segmentFiles.map((f) => probeAudioFormat(f))
-    expect(formats.every((f) => f !== null)).toBe(true)
-    for (const f of formats) {
-      expect(f).toEqual({ sampleRate: 44100, channels: 1 })
-    }
-
-    // The real point: fed through the same planner the processor uses,
-    // matching formats mean the -c copy path, not a downsampling re-encode.
-    expect(planAudioConcat(formats)).toEqual({ normalise: false })
+    // Speech and silence are written into the track in the narration's format.
+    expect(await probeAudioFormat(path.join(workDir, 'voiceover.wav'))).toEqual({ sampleRate: 44100, channels: 1 })
   })
 })

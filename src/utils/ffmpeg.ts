@@ -1,4 +1,5 @@
-import { execFileSync } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
+import { promisify } from 'node:util'
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
@@ -50,6 +51,25 @@ export function runFfmpeg(args: string[]): void {
     throw new Error(describeFfmpegFailure(error) + spilled.note(), { cause: error })
   }
   spilled.discard()
+}
+
+const execFileAsync = promisify(execFile)
+
+/**
+ * Async {@link runFfmpeg}, for work that runs several ffmpeg at once. Short
+ * argument lists only: large filter graphs are not spilled to files.
+ */
+export async function runFfmpegAsync(args: string[]): Promise<void> {
+  try {
+    await execFileAsync('ffmpeg', args, { maxBuffer: MAX_FFMPEG_OUTPUT })
+  } catch (error: unknown) {
+    // The async form reports the exit status as a numeric `code`
+    const err = error as { code?: unknown; signal?: unknown; stderr?: Buffer | string }
+    const sync = typeof err.code === 'number' || typeof err.signal === 'string'
+      ? { status: typeof err.code === 'number' ? err.code : null, signal: err.signal, stderr: err.stderr }
+      : error
+    throw new Error(describeFfmpegFailure(sync), { cause: error })
+  }
 }
 
 /** Filter options and the file-based equivalent ffmpeg reads them from. */
@@ -111,13 +131,15 @@ function spillLargeFilters(args: string[]): SpilledFilters {
 }
 
 function describeFfmpegFailure(error: unknown): string {
-  const err = error as NodeJS.ErrnoException & { status?: number | null; stderr?: Buffer | string }
+  const err = error as NodeJS.ErrnoException & { status?: number | null; signal?: string | null; stderr?: Buffer | string }
   if (err.code === 'ENOENT') {
     return '"ffmpeg" is not installed or not on PATH.'
   }
 
   const status = err.status ?? null
-  const header = `ffmpeg failed${status === null ? '' : ` (exit ${status})`}${err.code ? ` [${err.code}]` : ''}`
+  // Killed by a signal (OOM, SIGKILL): no exit status, so name the signal
+  const reason = status !== null ? ` (exit ${status})` : err.signal ? ` (signal ${err.signal})` : ''
+  const header = `ffmpeg failed${reason}${err.code ? ` [${err.code}]` : ''}`
   const output = err.stderr?.toString() ?? ''
   if (output.trim() === '') return `${header}: no output captured.`
 

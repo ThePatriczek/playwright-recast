@@ -25,9 +25,15 @@ function makeSineBuffer(gainDb: number, durationSec = 4): Buffer {
   return buf
 }
 
-function measureLufs(file: string): number {
+/** Loudness of each cue's speech in the assembled track. */
+function segmentLufs(result: { voiceover: { audioTrackPath: string; entries: Array<{ outputStartMs: number; spokenEndMs?: number; outputEndMs: number }> } }): number[] {
+  return result.voiceover.entries.map((e) =>
+    measureLufs(result.voiceover.audioTrackPath, { startMs: e.outputStartMs, endMs: e.spokenEndMs ?? e.outputEndMs }))
+}
+
+function measureLufs(file: string, range?: { startMs: number; endMs: number }): number {
   const r = spawnSync('ffmpeg', [
-    '-hide_banner', '-nostats', '-i', file,
+    '-hide_banner', '-nostats', ...(range ? ['-ss', String(range.startMs / 1000), '-t', String((range.endMs - range.startMs) / 1000)] : []), '-i', file,
     '-af', 'ebur128=peak=true', '-f', 'null', '-',
   ], { encoding: 'utf8' })
   const m = (r.stderr ?? '').match(/Integrated loudness:[\s\S]*?I:\s+(-?\d+(?:\.\d+)?)\s+LUFS/)
@@ -157,8 +163,7 @@ describe('generateVoiceover with VoiceoverOptions.normalize', () => {
     const trace = makeTrace(2)
 
     const result = await generateVoiceover(trace, provider, tmp, undefined, undefined, 25)
-    const l1 = measureLufs(path.join(tmp, 'seg-1.mp3'))
-    const l2 = measureLufs(path.join(tmp, 'seg-2.mp3'))
+    const [l1, l2] = segmentLufs(result)
     expect(Math.abs(l1 - l2)).toBeGreaterThan(10)
     expect(result.voiceover.entries).toHaveLength(2)
   })
@@ -170,9 +175,7 @@ describe('generateVoiceover with VoiceoverOptions.normalize', () => {
     const tmp = path.join(TMP_ROOT, 'norm-on')
     const trace = makeTrace(2)
 
-    await generateVoiceover(trace, provider, tmp, { normalize: true }, undefined, 25)
-    const l1 = measureLufs(path.join(tmp, 'seg-1.mp3'))
-    const l2 = measureLufs(path.join(tmp, 'seg-2.mp3'))
+    const [l1, l2] = segmentLufs(await generateVoiceover(trace, provider, tmp, { normalize: true }, undefined, 25))
     expect(Math.abs(l1 - l2)).toBeLessThan(2)
     expect(l1).toBeGreaterThan(-18)
     expect(l1).toBeLessThan(-14)
@@ -184,8 +187,7 @@ describe('generateVoiceover with VoiceoverOptions.normalize', () => {
     const tmp = path.join(TMP_ROOT, 'norm-custom')
     const trace = makeTrace(1)
 
-    await generateVoiceover(trace, provider, tmp, { normalize: { targetLufs: -22 } }, undefined, 25)
-    const l = measureLufs(path.join(tmp, 'seg-1.mp3'))
+    const [l] = segmentLufs(await generateVoiceover(trace, provider, tmp, { normalize: { targetLufs: -22 } }, undefined, 25))
     expect(l).toBeGreaterThan(-24)
     expect(l).toBeLessThan(-20)
   })

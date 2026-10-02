@@ -42,39 +42,39 @@ describe('probeAudioFormat (real files)', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 
-  it('reads the exact format of a 24000Hz mono file', () => {
-    expect(probeAudioFormat(monoLow)).toEqual({ sampleRate: 24000, channels: 1 })
+  it('reads the exact format of a 24000Hz mono file', async () => {
+    expect(await probeAudioFormat(monoLow)).toEqual({ sampleRate: 24000, channels: 1 })
   })
 
-  it('reads the exact format of a 44100Hz mono file', () => {
-    expect(probeAudioFormat(monoHigh)).toEqual({ sampleRate: 44100, channels: 1 })
+  it('reads the exact format of a 44100Hz mono file', async () => {
+    expect(await probeAudioFormat(monoHigh)).toEqual({ sampleRate: 44100, channels: 1 })
   })
 
-  it('reads the exact format of a 44100Hz stereo file', () => {
-    expect(probeAudioFormat(stereoHigh)).toEqual({ sampleRate: 44100, channels: 2 })
+  it('reads the exact format of a 44100Hz stereo file', async () => {
+    expect(await probeAudioFormat(stereoHigh)).toEqual({ sampleRate: 44100, channels: 2 })
   })
 
-  it('returns null, not a throw, for a file with no audio stream', () => {
-    expect(probeAudioFormat(notAudio)).toBeNull()
+  it('returns null, not a throw, for a file with no audio stream', async () => {
+    expect(await probeAudioFormat(notAudio)).toBeNull()
   })
 
-  it('returns null, not a throw, for a path that does not exist', () => {
-    expect(probeAudioFormat(path.join(tmpDir, 'does-not-exist.wav'))).toBeNull()
+  it('returns null, not a throw, for a path that does not exist', async () => {
+    expect(await probeAudioFormat(path.join(tmpDir, 'does-not-exist.wav'))).toBeNull()
   })
 
-  it('planAudioConcat normalises when fed three genuinely different real probed formats', () => {
+  it('planAudioConcat reports a mismatch for three genuinely different real probed formats', async () => {
     const formats: Array<AudioFormat | null> = [
-      probeAudioFormat(monoLow),
-      probeAudioFormat(monoHigh),
-      probeAudioFormat(stereoHigh),
+      await probeAudioFormat(monoLow),
+      await probeAudioFormat(monoHigh),
+      await probeAudioFormat(stereoHigh),
     ]
     const plan = planAudioConcat(formats)
-    expect(plan.normalise).toBe(true)
+    expect(plan.mismatch).toBe(true)
   })
 
-  it('planAudioConcat keeps stream copy when fed three copies of the same real probed format', () => {
-    const format = probeAudioFormat(monoLow)
+  it('planAudioConcat keeps the format of three copies of the same real probed format', async () => {
+    const format = await probeAudioFormat(monoLow)
     const plan = planAudioConcat([format, format, format])
-    expect(plan).toEqual({ normalise: false })
+    expect(plan).toEqual({ ...format, mismatch: false })
   })
 })

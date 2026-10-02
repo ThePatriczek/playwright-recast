@@ -55,7 +55,7 @@ export interface LoudnessNormalizeConfig {
   linear?: boolean
   /** Output sample rate. Default: 44100. */
   sampleRate?: number
-  /** Output bitrate for the re-encoded mp3. Default: '128k'. */
+  /** Output bitrate when the output is an MP3 (a `.wav` output is PCM). Default: '128k'. */
   bitrate?: string
 }
 

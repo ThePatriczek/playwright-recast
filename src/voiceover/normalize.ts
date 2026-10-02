@@ -1,15 +1,19 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
+import { runFfmpegAsync } from '../utils/ffmpeg.js'
 import type { LoudnessNormalizeConfig } from '../types/voiceover.js'
 
 const execFileAsync = promisify(execFile)
+
+/** Rate normalizeLoudness() writes at unless configured. */
+export const NORMALIZE_SAMPLE_RATE = 44100
 
 const DEFAULTS = {
   targetLufs: -16,
   truePeakDb: -1,
   lra: 11,
   linear: true,
-  sampleRate: 44100,
+  sampleRate: NORMALIZE_SAMPLE_RATE,
   bitrate: '128k',
 } as const
 
@@ -63,16 +67,16 @@ export async function normalizeLoudness(
     'print_format=summary',
   ].join(':')
 
-  await execFileAsync('ffmpeg', [
+  await runFfmpegAsync([
     '-y', '-hide_banner', '-loglevel', 'error',
     '-i', inputPath,
     '-af', pass2Filter,
-    '-ar', String(cfg.sampleRate),
+    '-ar', String(cfg.sampleRate ?? NORMALIZE_SAMPLE_RATE),
     '-ac', '1',
-    '-c:a', 'libmp3lame',
-    '-b:a', cfg.bitrate,
+    // A .wav output stays lossless for the voiceover's own PCM join
+    ...(outputPath.endsWith('.wav') ? ['-c:a', 'pcm_s16le'] : ['-c:a', 'libmp3lame', '-b:a', cfg.bitrate]),
     outputPath,
-  ], { maxBuffer: 10 * 1024 * 1024 })
+  ])
 }
 
 /** Extract the JSON block printed by `loudnorm` pass 1. */
