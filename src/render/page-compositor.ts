@@ -34,7 +34,8 @@ const isFull = (pageId: string, layout: PageLayout, primaryId: string): boolean 
  * spanning the timeline. A full-frame page (the primary page, a replacing
  * tab) takes the frame while it is on screen. A popup or an overlaid tab
  * shows over the full-frame page that was on screen before it, darkened
- * (`'overlay'`), or over a plain background (`'replace'`). Each page's
+ * (`'overlay'`; a popup also over the overlaid tab on it), or over a plain
+ * background (`'replace'`). Each page's
  * content is cropped out of its padded video and placed per its layout.
  */
 export function buildCompositeArgs(input: CompositeInput): string[] {
@@ -47,6 +48,8 @@ export function buildCompositeArgs(input: CompositeInput): string[] {
     windows.set(id, [...(windows.get(id) ?? []), w])
   }
   let lastFull = input.primaryId
+  // An overlaid tab on screen: a popup opened now shows over it too
+  let overlaidTab: string | undefined
   for (const s of input.timeline) {
     const layout = layoutOf.get(s.pageId)
     const w: [number, number] = [toVideo(s.startMs), toVideo(s.endMs)]
@@ -54,21 +57,25 @@ export function buildCompositeArgs(input: CompositeInput): string[] {
     if (isFull(s.pageId, layout, input.primaryId)) {
       add(s.pageId, w)
       lastFull = s.pageId
+      overlaidTab = undefined
       continue
     }
     if (layout.mode === 'overlay') {
       add(lastFull, w)
+      if (overlaidTab && overlaidTab !== s.pageId) add(overlaidTab, w)
       dimWindows.push(w)
     } else {
       plainWindows.push(w)
     }
     add(s.pageId, w)
+    if (layout.kind === 'tab') overlaidTab = s.pageId
   }
 
-  // Full-frame pages first, then the darkening, then what sits on top.
+  // Full-frame pages first, then the darkening, then overlaid tabs, then popups on top.
+  const rank = (p: CompositeInput['pages'][number]): number => (isFull(p.pageId, p.layout, input.primaryId) ? 0 : p.layout.kind === 'tab' ? 1 : 2)
   const shown = input.pages
     .filter((p) => windows.has(p.pageId))
-    .sort((a, b) => Number(!isFull(a.pageId, a.layout, input.primaryId)) - Number(!isFull(b.pageId, b.layout, input.primaryId)))
+    .sort((a, b) => rank(a) - rank(b))
   const firstOnTop = shown.findIndex((p) => !isFull(p.pageId, p.layout, input.primaryId))
 
   const { width, height } = input.size

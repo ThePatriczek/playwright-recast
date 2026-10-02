@@ -683,7 +683,7 @@ await Recast
 
 | `.pages()` option | Default | |
 |---|---|---|
-| `popup` | `'overlay'` | Page smaller than the frame: centered over the darkened full-frame page that was on screen before it (`overlay`) or on a plain background (`replace`) |
+| `popup` | `'overlay'` | Page smaller than the frame: centered over the darkened full-frame page that was on screen before it, and an overlaid tab on it (`overlay`) or on a plain background (`replace`) |
 | `tab` | `'replace'` | Page that fills the frame: hard switch (`replace`) or shrunk to `tabScale` (0.85) over the darkened page (`overlay`) |
 | `backdrop` | `{ dim: 0.6, color: '#000000' }` | Darkening behind overlays; background behind a replacing popup |
 

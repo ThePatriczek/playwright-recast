@@ -80,6 +80,13 @@ describe('buildCompositeArgs: backdrops', () => {
     expect(g).toContain('crop=1280:720:0:0,scale=1088:612')
   })
 
+  it('keeps an overlaid tab on screen under a popup opened over it', () => {
+    const g = run({ tab: 'overlay' })
+    // The tab through the popup's stretch, drawn after the backdrop and before the popup
+    expect(g).toContain("[backdrop][pg1]overlay=96:54:enable='between(t,1.000,2.000)+between(t,2.000,2.500)+between(t,2.500,3.000)':eof_action=pass[cmp1]")
+    expect(g).toContain("[cmp1][pg2]overlay=")
+  })
+
   it('keeps the primary page as the backdrop when only the popup has a stretch', () => {
     const layouts = computePageLayouts('main', pages(new Map([['main', vp], ['popup', { width: 640, height: 480 }]])))
     const args = buildCompositeArgs({
