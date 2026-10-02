@@ -183,6 +183,7 @@ export async function parseTrace(tracePath: string): Promise<ParsedTrace> {
       startTime: toMonotonic(startTime),
       endTime: toMonotonic(endTime),
       wallTime: ctxOpts?.wallTime ?? 0,
+      ...(ctxOpts?.monotonicTime !== undefined ? { wallMonotonicTime: ctxOpts.monotonicTime } : {}),
       playwrightVersion: ctxOpts?.playwrightVersion,
     },
     frames,

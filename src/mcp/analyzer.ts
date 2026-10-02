@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ParsedTrace } from '../types/trace.js'
+import { wallToTrace } from './time-bases.js'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -504,7 +505,8 @@ export async function analyzeTrace(
       }> = JSON.parse(readFileSync(recordedActionsPath, 'utf-8'))
 
       if (recorded.length > 0) {
-        const baseTime = recorded[0]!.timestamp
+        // Trace times, like the steps from trace actions
+        const toTrace = wallToTrace(metadata, recorded[0]!.timestamp)
         const syntheticActions: RawAction[] = recorded.map((r, i) => ({
           callId: `recorded-${i}`,
           method: r.method,
@@ -513,8 +515,8 @@ export async function analyzeTrace(
             ...(r.value != null ? { value: r.value } : {}),
             ...(r.method === 'goto' ? { url: r.value ?? '' } : {}),
           },
-          startTime: r.timestamp - baseTime,
-          endTime: r.timestamp - baseTime + 100,
+          startTime: toTrace(r.timestamp),
+          endTime: toTrace(r.timestamp) + 100,
           title: '',
         }))
         steps = groupActions(syntheticActions)

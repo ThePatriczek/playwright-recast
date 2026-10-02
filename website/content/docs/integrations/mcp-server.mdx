@@ -132,7 +132,7 @@ Returns metadata (action count, duration, viewport, URL) and an array of steps. 
 - `label` -- human-readable description (e.g., "Click Download button")
 - `hidden` -- whether the step was auto-detected as setup/login
 - `actions` -- raw actions in the step (method, selector, value)
-- `startTimeMs` / `endTimeMs` -- timing relative to trace start
+- `startTimeMs` / `endTimeMs` -- trace time in ms (Playwright monotonic clock)
 - `durationMs` -- step duration
 
 Hidden steps are auto-detected for login sequences, cookie consent dialogs, and initial navigation.
