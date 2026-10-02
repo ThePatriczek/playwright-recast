@@ -2,12 +2,21 @@
 
 ## Unreleased
 
+### Features
+
+- **`recastPageVideos` fixture** (`playwright-recast/helpers`, `base.extend(recastPageVideos)`) - records in the trace which page each of a Playwright Test's videos (`video.webm`, `video-N.webm`) belongs to, so tests recorded with `video: 'on'` get their pages composited. Uses Playwright's client-internal `page._guid`; warns when it is missing.
+- **Multi-page recordings** - with the fixture above, or `page@<pageId>.webm` videos from the context option `recordVideo`, `.parse()` cuts the popups and tabs of the main page's browser context into one video. The page of the most recent action is on screen; a closing page hands back to its opener; pages without actions get no screen time. Each page's recorded size comes from the trace's screencast frames (Chromium; other browsers stay uncropped), so the output is the main page's content without padding. Clicks, cursor, `autoZoom()` and the `highlight()` / `zoom()` / `click()` markers follow the page; markers now record it. Without them the first page's video is used and a warning says why.
+- **`.pages({ popup, tab, tabScale, backdrop })`** - popups (smaller than the frame) show over the darkened full-frame page that was on screen before them (`'overlay'`, default) or on a plain background (`'replace'`); tabs (frame-filling) switch hard (`'replace'`, default) or shrink over the darkened page (`'overlay'`).
+- **`.urlBar({ show, durationMs, stripQuery, redact, position, fontFile })`** - shows the URL of the page on screen as a pill: on host changes (default; hosts seen only in hidden steps do not count), always, or at `showUrl(page)` markers. Strips query strings, non-route fragments (`#access_token=...`) and credentials; `redact` masks parts. URLs come from the trace's DOM snapshots. Needs ffmpeg's `drawtext`; not with `direct()` yet.
+- **`showUrl(page, { durationMs })`** helper - marks where the URL bar shows with `show: 'marked'`.
+
 ### Bug fixes
 
 - **A zoom or highlight held over the next step's first narration** - a `zoom()` or `highlight({ duration: 'narration' })` could go to a narration of the neighbouring test step, so a narration hold at the start of a step showed the previous step's zoom. Inside a top-level `test.step()` that narrates, they now only go to that step's narrations; elsewhere nothing changes. A zoom left without a narration of its step is dropped with a log line.
 - **Narration still drifted behind its subtitles** - follow-up to [#26](https://github.com/ThePatriczek/playwright-recast/pull/26): the track was joined by stream copy, which keeps every MP3's encoder padding, so speech started 80-130 ms later per silence segment, seconds late after a few dozen lines. Segments are now decoded to 16-bit PCM in one format and the track is written with silence as exact samples, for any codec and sample rate a provider returns. The voiceover track and its click-sound mix are WAV; the final mux encodes once. `normalizeLoudness()` writes PCM for a `.wav` output.
 - **Screenshots left gray frames in the video** - a clip, element or `toHaveScreenshot()` screenshot makes Chromium re-render the page at the screenshot size, and the video showed that over gray padding. With `speedUp()`, frames the trace shows briefly at another size than the page's viewport are cut like hidden steps, unless a `setViewportSize()` explains them. Chromium only; `speedUp({ keepResizedFrames: true })` keeps them.
 - **MCP `render_video` cut hidden steps and showed subtitles at the wrong time** - trace times were used as video times: late by the trace's start time, past the video's end in a long-lived browser. `record_session` steps landed early by the page load; they are now mapped through the trace's wall clock, and `analyze_trace` reports trace times for them too. A step the analyzer hides (a login) is cut even if the client omits it.
+- **A test with two pages rendered the second page's video** - the video lookup took the first `.webm` by name, and Playwright Test's `video-1.webm` sorts before `video.webm`. It now prefers `video.webm`, then `video-N.webm` in order.
 
 ## 0.22.1 (2026-09-30)
 

@@ -13,6 +13,7 @@ playwright-recast is a fluent pipeline library that turns Playwright trace files
 - [System Requirements](https://thepatriczek.github.io/playwright-recast/docs/getting-started/system-requirements): ffmpeg, Node.js, and optional TTS API keys
 - [Pipeline Overview](https://thepatriczek.github.io/playwright-recast/docs/pipeline/overview): Architecture, lazy evaluation, and immutable branching
 - [Parse](https://thepatriczek.github.io/playwright-recast/docs/pipeline/parse): Extract structured data from Playwright trace.zip
+- [Multi-Page Recordings](https://thepatriczek.github.io/playwright-recast/docs/pipeline/pages): Popups and new tabs cut into one video, overlay or switch
 - [Hide Steps](https://thepatriczek.github.io/playwright-recast/docs/pipeline/hide-steps): Filter out setup/login steps
 - [Speed Control](https://thepatriczek.github.io/playwright-recast/docs/pipeline/speed-up): Smart speed adjustment based on activity type
 - [Subtitles](https://thepatriczek.github.io/playwright-recast/docs/pipeline/subtitles): Generate or import subtitles (SRT, WebVTT, ASS)
@@ -23,6 +24,7 @@ playwright-recast is a fluent pipeline library that turns Playwright trace files
 - [Cursor Overlay](https://thepatriczek.github.io/playwright-recast/docs/pipeline/cursor-overlay): Animated cursor at click positions
 - [Click Effect](https://thepatriczek.github.io/playwright-recast/docs/pipeline/click-effect): Ripple animation and sound at clicks
 - [Text Highlight](https://thepatriczek.github.io/playwright-recast/docs/pipeline/text-highlight): Animated marker overlay on text
+- [URL Bar](https://thepatriczek.github.io/playwright-recast/docs/pipeline/url-bar): Show the URL of the page on screen, with redaction
 - [Frame Interpolation](https://thepatriczek.github.io/playwright-recast/docs/pipeline/frame-interpolation): Smooth out choppy recordings (minterpolate)
 - [Background Music](https://thepatriczek.github.io/playwright-recast/docs/pipeline/background-music): Background music with auto-ducking
 - [Intro/Outro](https://thepatriczek.github.io/playwright-recast/docs/pipeline/intro-outro): Branded clips with crossfade transitions
@@ -38,6 +40,7 @@ playwright-recast is a fluent pipeline library that turns Playwright trace files
 - [narrate() Helper](https://thepatriczek.github.io/playwright-recast/docs/helpers/narrate): Add voiceover narration to steps
 - [zoom() Helper](https://thepatriczek.github.io/playwright-recast/docs/helpers/zoom): Capture zoom targets during tests
 - [pace() Helper](https://thepatriczek.github.io/playwright-recast/docs/helpers/pace): Control pacing in step definitions
+- [showUrl() Helper](https://thepatriczek.github.io/playwright-recast/docs/helpers/show-url): Show the page's URL at a marked point
 - [typeText() Helper](https://thepatriczek.github.io/playwright-recast/docs/helpers/type-text): Type visible text with naturally varied, configurable timing
 - [highlight() Helper](https://thepatriczek.github.io/playwright-recast/docs/helpers/highlight): Mark text for highlight overlay
 - [setupRecast() Helper](https://thepatriczek.github.io/playwright-recast/docs/helpers/setup-recast): Register recast fixtures with Playwright

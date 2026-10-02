@@ -7,6 +7,8 @@ export type TraceEventRaw =
   | ScreencastFrameEvent
   | ResourceSnapshotEvent
   | ConsoleEvent
+  | PageLifecycleEvent
+  | FrameSnapshotEvent
   | GenericEvent
 
 export interface ContextOptionsEvent {
@@ -15,6 +17,7 @@ export interface ContextOptionsEvent {
   platform?: string
   options?: {
     viewport?: { width: number; height: number }
+    baseURL?: string
   }
   wallTime?: number
   monotonicTime?: number
@@ -75,6 +78,25 @@ export interface ConsoleEvent {
   time: number
   text?: string
   pageId?: string
+}
+
+/** BrowserContext `page` / `pageClosed` event */
+export interface PageLifecycleEvent {
+  type: 'event'
+  time: number
+  class: 'BrowserContext'
+  method: 'page' | 'pageClosed'
+  params: { pageId: string; openerPageId?: string }
+}
+
+export interface FrameSnapshotEvent {
+  type: 'frame-snapshot'
+  snapshot: {
+    pageId: string
+    frameUrl: string
+    isMainFrame?: boolean
+    timestamp: number
+  }
 }
 
 export interface GenericEvent {

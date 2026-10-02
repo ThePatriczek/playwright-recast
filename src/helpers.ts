@@ -1,4 +1,4 @@
-import type { Page, Locator, TestInfo } from '@playwright/test'
+import type { BrowserContext, Page, Locator, TestInfo } from '@playwright/test'
 
 type StepFn = <T>(title: string, body: () => T | Promise<T>) => Promise<T>
 type RecastTest = { info: () => TestInfo; step: StepFn }
@@ -85,6 +85,13 @@ export const ZOOM_TITLE_PREFIX = '__recast_zoom__: '
  *  prefers these markers over auto-detected clicks and gives them a held
  *  cursor approach. */
 export const CLICK_TITLE_PREFIX = '__recast_click__: '
+/** Title prefix written to a trace step by `showUrl()`. JSON payload carries
+ *  the page's URL, its pageId and an optional duration. */
+export const URL_TITLE_PREFIX = '__recast_url__: '
+
+/** Title prefix of the step `recastPageVideos` writes: a JSON array of trace
+ *  page ids (null if unknown), one per Playwright Test video in its order. */
+export const PAGES_TITLE_PREFIX = '__recast_pages__: '
 
 /** Title prefix written to a trace step by `waitForNarration()`. The pipeline
  *  uses this marker as a hard boundary for the preceding narration's subtitle
@@ -227,6 +234,20 @@ function resolveAutoWait(
 }
 
 type Box = { x: number; y: number; width: number; height: number }
+
+/**
+ * The trace's id for `page`, so a multi-page render places a marker on the
+ * right page. Playwright's client object id equals it; private, so optional.
+ */
+function pageIdOf(page: () => Page): { pageId?: string } {
+  try {
+    const guid = (page() as unknown as { _guid?: unknown })._guid
+    // The form of page@<pageId>.webm, which .parse() matches to the trace
+    return typeof guid === 'string' && /^page@[0-9a-f]+$/.test(guid) ? { pageId: guid } : {}
+  } catch {
+    return {}
+  }
+}
 
 /**
  * Page-space box of `locator`, or of text inside it: a substring, or with
@@ -380,7 +401,7 @@ export async function zoom(
     ? (box.x + frameWidth * 0.45) / viewport.width
     : (box.x + box.width / 2) / viewport.width
   const y = (box.y + box.height / 2) / viewport.height
-  const payload = { x, y, level }
+  const payload = { x, y, level, ...pageIdOf(() => page) }
 
   _getTestInfo().annotations.push({
     type: 'zoom',
@@ -435,6 +456,7 @@ export async function highlight(
     width: box.width,
     height: box.height,
     ...styleOpts,
+    ...pageIdOf(() => locator.page()),
   }
 
   _getTestInfo().annotations.push({
@@ -519,7 +541,20 @@ export async function markClick(locator: Locator): Promise<void> {
   if (!box) return
   const x = box.x + box.width / 2
   const y = box.y + box.height / 2
-  await _step(`${CLICK_TITLE_PREFIX}${JSON.stringify({ x, y })}`, async () => {})
+  await _step(`${CLICK_TITLE_PREFIX}${JSON.stringify({ x, y, ...pageIdOf(() => locator.page()) })}`, async () => {})
+}
+
+/**
+ * Show the page's URL in the rendered video, with `.urlBar({ show: 'marked' })`.
+ * Records a marker step; the bar shows `page.url()` as it is now, through the
+ * stage's `stripQuery` and `redact`.
+ *
+ * @param opts.durationMs How long the bar stays, in output ms (default: the stage's `durationMs`)
+ */
+export async function showUrl(page: Page, opts?: { durationMs?: number }): Promise<void> {
+  if (!_step) return
+  const payload = { url: page.url(), ...pageIdOf(() => page), ...(opts?.durationMs !== undefined ? { durationMs: opts.durationMs } : {}) }
+  await _step(`${URL_TITLE_PREFIX}${JSON.stringify(payload)}`, async () => {})
 }
 
 /**
@@ -553,4 +588,42 @@ export async function click(
   // inside a short window, and an unpaired marker renders a second click.
   await markClick(locator)
   await locator.click(options)
+}
+
+/**
+ * Playwright Test fixture override: records which page each video of the
+ * test (`video.webm`, `video-1.webm`, ...) belongs to, as one trace step, so
+ * `.parse()` composites popups and tabs. Use with
+ * `base.extend(recastPageVideos)`, `video: 'on'` (or `recastVideo()`) and
+ * `trace: 'on'`.
+ *
+ * It wraps `context`, so it sees every page from the context's creation, the
+ * order Playwright Test numbers the videos in; extend it before other
+ * `context` overrides, whose pages it would miss. The ids are the
+ * client-internal `page._guid`, equal to the trace's page id
+ * (runtime-checked on 1.60, same derivation in the 1.40 and 1.51 source).
+ */
+export const recastPageVideos = {
+  context: async (
+    { context }: { context: BrowserContext },
+    use: (context: BrowserContext) => Promise<void>,
+  ): Promise<void> => {
+    const pages = [...context.pages()]
+    context.on('page', (page) => pages.push(page))
+    await use(context)
+    const ids = pages.filter((page) => page.video()).map((page) => {
+      const { pageId } = pageIdOf(() => page)
+      if (!pageId) console.warn(`recastPageVideos: no trace page id for ${page.url() || 'a page'}, so its video cannot be matched to the trace`)
+      return pageId ?? null
+    })
+    if (ids.length === 0) return
+    try {
+      // setupRecast()'s test, else the one this package resolves to
+      const step = _step ?? (await import('@playwright/test')).test.step
+      await step(`${PAGES_TITLE_PREFIX}${JSON.stringify(ids)}`, async () => {})
+    } catch (error) {
+      // A missing or second copy of @playwright/test must not fail the test
+      console.warn(`recastPageVideos: could not record the video pages (${error instanceof Error ? error.message : String(error)}); call setupRecast(test) to use your test's step`)
+    }
+  },
 }

@@ -99,14 +99,17 @@ export function interpolateVideo(
   inputPath: string,
   outputPath: string,
   config: InterpolateConfig,
+  /** Filter run on the source first, e.g. a crop of its padding. */
+  preFilter?: string,
 ): void {
+  const withPre = (filter: string): string => (preFilter ? `${preFilter},${filter}` : filter)
   const passes = config.passes ?? 1
   const targetFps = config.fps ?? 60
 
   if (passes <= 1) {
     const filter = buildMinterpolateFilter(config)
     console.log(`  Interpolating: ${filter}`)
-    runSinglePass(inputPath, outputPath, filter)
+    runSinglePass(inputPath, outputPath, withPre(filter))
     return
   }
 
@@ -121,7 +124,7 @@ export function interpolateVideo(
     const passOutput = isLast ? outputPath : outputPath.replace(/\.mp4$/, `-pass${i + 1}.mp4`)
     const filter = buildMinterpolateFilter(config, passFpsTargets[i])
     console.log(`    Pass ${i + 1}/${passes}: ${filter}`)
-    runSinglePass(currentInput, passOutput, filter)
+    runSinglePass(currentInput, passOutput, i === 0 ? withPre(filter) : filter)
 
     // Clean up intermediate file from previous pass
     if (i > 0 && currentInput !== inputPath) {

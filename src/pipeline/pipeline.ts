@@ -13,6 +13,8 @@ import type { BackgroundMusicConfig } from '../types/background-music.js'
 import type { StageDescriptor, AutoZoomConfig } from './stages.js'
 import { PipelineExecutor } from './executor.js'
 import type { DirectorOptions, DirectorProvider } from '../types/director.js'
+import type { UrlBarConfig } from '../types/url-bar.js'
+import type { PagesConfig } from '../types/pages.js'
 
 /**
  * Immutable, fluent pipeline builder.
@@ -148,6 +150,25 @@ export class Pipeline {
    */
   textHighlight(config: TextHighlightConfig = {}): Pipeline {
     return this.addStage({ type: 'textHighlight', config })
+  }
+
+  /**
+   * How pages other than the primary one show, when the recording has
+   * Playwright's per-page `page@<pageId>.webm` videos: popups on top of the
+   * darkened page (default) or alone, tabs as a hard switch (default) or
+   * shrunk on top. Applies wherever it sits in the chain.
+   */
+  pages(config: PagesConfig = {}): Pipeline {
+    return this.addStage({ type: 'pages', config })
+  }
+
+  /**
+   * Show the URL of the page on screen as a pill at the bottom of the frame:
+   * on host changes (default), always, or at `showUrl()` markers.
+   * Reads main-frame URLs from the trace's DOM snapshots (`trace: 'on'`).
+   */
+  urlBar(config: UrlBarConfig = {}): Pipeline {
+    return this.addStage({ type: 'urlBar', config })
   }
 
   /** Prepend an intro video with a crossfade transition into the main content */

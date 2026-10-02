@@ -246,6 +246,44 @@ Add animated ripple effects at click positions with optional sound.
 
 ---
 
+### `.pages(config?)`
+
+How pages other than the primary one show when the recording has a video per page. See [Multi-Page Recordings](/docs/pipeline/pages).
+
+```typescript
+.pages({ popup: 'overlay', tab: 'replace' })
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `popup` | `'overlay' \| 'replace'` | `'overlay'` | Page smaller than the frame: over the darkened page behind, or on a plain background |
+| `tab` | `'replace' \| 'overlay'` | `'replace'` | Page that fills the frame: hard switch, or shrunk over the darkened page |
+| `tabScale` | `number` | `0.85` | Size of an overlaid tab |
+| `backdrop` | `{ dim?: number; color?: string }` | `{ dim: 0.6, color: '#000000' }` | Darkening behind overlays; background behind a replacing popup |
+
+---
+
+### `.urlBar(config?)`
+
+Show the URL of the page on screen as a pill. See [URL Bar](/docs/pipeline/url-bar).
+
+```typescript
+.urlBar({ show: 'host-change', redact: [/acme-\d+/g] })
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `show` | `'host-change' \| 'always' \| 'marked'` | `'host-change'` | On host changes, always, or at `showUrl()` markers |
+| `durationMs` | `number` | `3000` | Display time in output ms |
+| `stripQuery` | `boolean` | `true` | Drop the query string |
+| `redact` | `Array<string \| RegExp>` | `[]` | Parts to mask |
+| `redactWith` | `string` | `'***'` | Mask text |
+| `position` | `'bottom' \| 'top'` | `'bottom'` | Edge of the frame |
+| `fontFile` | `string` | fontconfig default | Font file for the text |
+| `fontSize` / `color` / `background` / `backgroundOpacity` | | `28` / `'#FFFFFF'` / `'#1F2328'` / `0.8` | Pill style |
+
+---
+
 ### `.textHighlight(config?)`
 
 Render animated marker overlays on text captured by the `highlight()` helper.
