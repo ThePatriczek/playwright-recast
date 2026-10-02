@@ -414,14 +414,13 @@ export class PipelineExecutor {
             // Video time 0 = first FRAME from the recording page (after blank trim).
             // These differ by ~1s (action starts before frame renders).
             // Use the action time for subtitle mapping so content matches exactly.
-            const recActions = state.parsed.actions.filter((a) => a.pageId === recPageId)
-            const firstRecActionMs = recActions.length > 0
-              ? (recActions[0]!.startTime as number) : 0
-
             const recFrames = recPageId
               ? frames.filter((f) => f.pageId === recPageId) : frames
             const firstRecFrameMs = recFrames[0]?.timestamp as number ??
               (state.speedMapped.speedSegments[0]!.originalStart as number)
+            // No action with the page's id (pageId is optional): both clocks start at the frame
+            const firstRecActionMs = (state.parsed.actions.find((a) => a.pageId === recPageId)?.startTime as number | undefined) ??
+              firstRecFrameMs
 
             // Video output starts at the first frame. Subtract this offset so
             // subtitle time 0 aligns with video time 0.

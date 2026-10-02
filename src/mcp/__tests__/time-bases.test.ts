@@ -22,6 +22,11 @@ describe('mcpTimeBases', () => {
     expect(time.toSrt(55_000)).toBe(3500) // from the recording page's first action
     expect(time.videoEndMs).toBe(10_000)
   })
+
+  it('starts the SRT clock at the first frame when no action has the page id', () => {
+    const time = mcpTimeBases({ ...parsed, actions: [action(undefined, 51_500)] })
+    expect(time.toSrt(55_000)).toBe(4000)
+  })
 })
 
 describe('wallToTrace', () => {

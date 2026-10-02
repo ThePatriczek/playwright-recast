@@ -29,7 +29,8 @@ export function mcpTimeBases(
   const traceStart = parsed.metadata.startTime as number
   const recPageId = parsed.frames[parsed.frames.length - 1]?.pageId
   const firstFrameMs = (parsed.frames.find((f) => f.pageId === recPageId)?.timestamp as number | undefined) ?? traceStart
-  const firstActionMs = (parsed.actions.find((a) => a.pageId === recPageId)?.startTime as number | undefined) ?? 0
+  // No action with the page's id (pageId is optional): both clocks start at the frame
+  const firstActionMs = (parsed.actions.find((a) => a.pageId === recPageId)?.startTime as number | undefined) ?? firstFrameMs
   return {
     toVideo: (t) => t - firstFrameMs,
     toSrt: (t) => t - firstActionMs,
