@@ -114,6 +114,12 @@ function findLast<T>(items: ReadonlyArray<T>, match: (item: T) => boolean): T | 
   return undefined
 }
 
+/** `actions` without those of the pages `drop` matches, by their pageId or a marker's. */
+function withoutPages(actions: TraceAction[], drop: (pageId: string | undefined) => boolean): TraceAction[] {
+  return actions.filter((a) =>
+    !drop(a.pageId) && !(typeof a.title === 'string' && drop(markerPageId(a.title, a.startTime as number, []))))
+}
+
 /**
  * The plain video for the first page: its own when known, else the found one
  * unless it is known to be another page's (the screencast stands in then).
@@ -1334,7 +1340,9 @@ export class PipelineExecutor {
     })
 
     const moved = new Set([...onScreen].filter((id) => id !== primary))
-    const actions = parsed.actions.map((a) => {
+    // A page of this context that never comes on screen must not draw over the video
+    const offScreen = (id: string | undefined) => id !== undefined && id !== primary && sameContext(id) && !onScreen.has(id)
+    const actions = withoutPages(parsed.actions, offScreen).map((a) => {
       const layout = a.pageId && moved.has(a.pageId) ? layouts.get(a.pageId) : undefined
       let mapped = layout && a.point ? { ...a, point: { ...mapPoint(layout, a.point), timestamp: a.point.timestamp } } : a
       if (typeof a.title === 'string') {
@@ -1375,8 +1383,7 @@ export class PipelineExecutor {
     // By first frame: pages created before tracing come last in parsed.pages
     const first = videoPages?.[0] ?? parsed.frames.find((f) => sameContext(f.pageId))?.pageId ?? recording
     const other = (id: string | undefined) => id !== undefined && id !== first && sameContext(id)
-    const kept = parsed.actions.filter((a) =>
-      !other(a.pageId) && !(typeof a.title === 'string' && other(markerPageId(a.title, a.startTime as number, []))))
+    const kept = withoutPages(parsed.actions, other)
     const leftOut = parsed.actions.some((a) => other(a.pageId) && a.method !== 'close')
     const actions = kept.length < parsed.actions.length
       ? { actions: kept, cursorPositions: kept.filter((a) => a.point).map((a) => a.point!) }

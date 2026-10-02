@@ -220,6 +220,19 @@ describe('parse(): review round 3', () => {
     }
   })
 
+  it('composites without the actions of a page that never comes on screen', async () => {
+    // TAB has actions but no video: never on screen
+    const out = recording('offscreen-actions', [
+      pageEvent(MAIN, 0), frame(MAIN, 100),
+      pageEvent(POPUP, 120, MAIN), frame(POPUP, 150), ...click('c1', POPUP, 200),
+      pageEvent(TAB, 300, MAIN), frame(TAB, 350), ...click('c2', TAB, 400),
+      ...click('c3', MAIN, 1500),
+    ], { [`${MAIN}.webm`]: 2, [`${POPUP}.webm`]: 2 })
+    const state = await parsed(out)
+    expect(path.basename(state.sourceVideoPath)).toBe('pages.mp4')
+    expect(state.parsed.actions.map((a) => a.callId)).toEqual(['c1', 'c3'])
+  })
+
   it('warns about other pages with actions, pointing to the fixture', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
