@@ -100,7 +100,9 @@ export function buildCompositeArgs(input: CompositeInput): string[] {
     const scale = display.width !== crop.width || display.height !== crop.height
       ? `,scale=${display.width}:${display.height}` : ''
     graph.push(`[${i + 1}:v]setpts=PTS-STARTPTS+${sec(toVideo(p.startMs))}/TB,crop=${crop.width}:${crop.height}:0:0${scale}[pg${i}]`)
-    graph.push(`[${label}][pg${i}]overlay=${position.x}:${position.y}:enable='${enableExpr(windows.get(p.pageId)!)}':eof_action=pass[cmp${i}]`)
+    // A closed page may still be the backdrop of an open popup. Hold its last
+    // frame until the timeline disables the layer; the canvas bounds the output.
+    graph.push(`[${label}][pg${i}]overlay=${position.x}:${position.y}:enable='${enableExpr(windows.get(p.pageId)!)}':eof_action=repeat[cmp${i}]`)
     label = `cmp${i}`
   })
 

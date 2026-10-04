@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { buildCompositeArgs, PAGE_BACKDROP_DIM } from '../../../src/render/page-compositor'
+import { execFileSync } from 'node:child_process'
+import * as fs from 'node:fs'
+import * as os from 'node:os'
+import * as path from 'node:path'
+import { buildCompositeArgs, compositePageVideos, PAGE_BACKDROP_DIM } from '../../../src/render/page-compositor'
 import { computePageLayouts } from '../../../src/pages/page-timeline'
 
 const vp = { width: 1280, height: 720 }
@@ -8,6 +12,52 @@ const pages = (sizes: Map<string, { width: number; height: number }>) => new Map
 function graphOf(args: string[]): string {
   return args[args.indexOf('-filter_complex') + 1]!
 }
+
+describe('compositePageVideos: closed background page', () => {
+  it.each(['popup', 'tab'] as const)('holds the final background frame under an overlaid %s until the next page takes over', (kind) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'recast-closed-background-'))
+    try {
+      const size = { width: 64, height: 48 }
+      const overlaySize = kind === 'popup' ? { width: 32, height: 24 } : size
+      const sizes = new Map([['main', size], ['overlay', overlaySize], ['next', size]])
+      const layouts = computePageLayouts('main', pages(sizes), { tab: 'overlay', tabScale: 0.5 })
+      // The next page replaces the whole frame after the overlay is done.
+      const nextLayout = computePageLayouts('main', pages(sizes)).get('next')!
+      layouts.set('next', nextLayout)
+      const colors = ['red', 'blue', 'green']
+      const ids = ['main', 'overlay', 'next']
+      for (const [i, id] of ids.entries()) {
+        const s = sizes.get(id)!
+        execFileSync('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', `color=c=${colors[i]}:s=${s.width}x${s.height}:r=25:d=${id === 'overlay' ? 3 : 1}`, '-c:v', 'libvpx', path.join(dir, `${id}.webm`)])
+      }
+      const output = path.join(dir, 'out.mp4')
+      compositePageVideos({
+        primaryId: 'main',
+        pages: ids.map((id, i) => ({ pageId: id, video: path.join(dir, `${id}.webm`), startMs: [0, 500, 3000][i]!, layout: layouts.get(id)! })),
+        timeline: [
+          { pageId: 'main', startMs: 0, endMs: 500 },
+          { pageId: 'overlay', startMs: 500, endMs: 3000 },
+          { pageId: 'next', startMs: 3000, endMs: 4000 },
+        ],
+        startMs: 0, durationMs: 4000, size, fps: 25, outputPath: output,
+      })
+      const pixel = (t: number, x = 0, y = 0): number[] => [...execFileSync('ffmpeg', [
+        '-v', 'error', '-ss', String(t), '-i', output, '-frames:v', '1',
+        '-vf', `crop=2:2:${x}:${y}`, '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-',
+      ]).subarray(0, 3)]
+      const beforeClose = pixel(0.75)
+      const afterClose = pixel(2)
+      expect(beforeClose[0]).toBeGreaterThan(10)
+      expect(afterClose).toHaveLength(3)
+      afterClose.forEach((value, i) => expect(Math.abs(value - beforeClose[i]!)).toBeLessThan(8))
+      // The overlay still plays, and neither frozen layer obscures the next page.
+      expect(pixel(2, 32, 24)[2]).toBeGreaterThan(150)
+      expect(pixel(3.75, 32, 24)[1]).toBeGreaterThan(90)
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
 
 describe('buildCompositeArgs', () => {
   const layouts = computePageLayouts('main', pages(new Map([['main', vp], ['popup', { width: 640, height: 480 }]])))
@@ -45,7 +95,7 @@ describe('buildCompositeArgs', () => {
 
   it('starts the popup video at its first frame, cropped and centered on top', () => {
     expect(graph).toContain('[2:v]setpts=PTS-STARTPTS+1.200/TB,crop=640:480:0:0[pg1]')
-    expect(graph).toContain("[backdrop][pg1]overlay=320:120:enable='between(t,1.200,1.900)':eof_action=pass[cmp1]")
+    expect(graph).toContain("[backdrop][pg1]overlay=320:120:enable='between(t,1.200,1.900)':eof_action=repeat[cmp1]")
     expect(args[args.indexOf('-map') + 1]).toBe('[cmp1]')
   })
 })
@@ -83,7 +133,7 @@ describe('buildCompositeArgs: backdrops', () => {
   it('keeps an overlaid tab on screen under a popup opened over it', () => {
     const g = run({ tab: 'overlay' })
     // The tab through the popup's stretch, drawn after the backdrop and before the popup
-    expect(g).toContain("[backdrop][pg1]overlay=96:54:enable='between(t,1.000,2.000)+between(t,2.000,2.500)+between(t,2.500,3.000)':eof_action=pass[cmp1]")
+    expect(g).toContain("[backdrop][pg1]overlay=96:54:enable='between(t,1.000,2.000)+between(t,2.000,2.500)+between(t,2.500,3.000)':eof_action=repeat[cmp1]")
     expect(g).toContain("[cmp1][pg2]overlay=")
   })
 

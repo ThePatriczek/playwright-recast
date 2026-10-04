@@ -7,7 +7,7 @@ import { zipSync, strToU8 } from 'fflate'
 import { PipelineExecutor } from '../../../src/pipeline/executor'
 import { Recast } from '../../../src/index'
 import type { ParsedTrace } from '../../../src/types/trace'
-import { PAGES_TITLE_PREFIX } from '../../../src/helpers'
+import { CLICK_TITLE_PREFIX, HIGHLIGHT_TITLE_PREFIX, PAGES_TITLE_PREFIX, ZOOM_TITLE_PREFIX } from '../../../src/helpers'
 
 const MAIN = 'page@aa'
 const POPUP = 'page@bb'
@@ -50,6 +50,36 @@ beforeAll(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'recast-exec-pages
 afterAll(() => { fs.rmSync(dir, { recursive: true, force: true }) })
 
 describe('parse(): which video and which frames', () => {
+  it.each(['missing video', 'flicker'])('drops off-screen actions and markers when only the primary page remains: %s', async (reason) => {
+    const click = (id: string, pageId: string, t: number, x: number) => [
+      { type: 'before', callId: id, class: 'Frame', method: 'click', params: {}, startTime: t, pageId },
+      { type: 'input', callId: id, point: { x, y: 10 } },
+      { type: 'after', callId: id, endTime: t + 20 },
+    ]
+    const markers = [CLICK_TITLE_PREFIX, HIGHLIGHT_TITLE_PREFIX, ZOOM_TITLE_PREFIX].flatMap((prefix, i) => [
+      { type: 'before', callId: `marker-${i}`, class: 'Test', method: 'test.step', params: {}, startTime: 430 + i, title: prefix + JSON.stringify({ pageId: POPUP, x: 30, y: 25, width: 10, height: 5, level: 2 }) },
+      { type: 'after', callId: `marker-${i}`, endTime: 431 + i },
+    ])
+    const videos: Record<string, number> = { [`${MAIN}.webm`]: 2 }
+    if (reason === 'flicker') videos[`${POPUP}.webm`] = 0.5
+    const out = recording(`single-primary-${reason.replace(' ', '-')}`, [
+      pageEvent(MAIN, 0), frame(MAIN, 100), ...click('main-first', MAIN, 200, 8),
+      pageEvent(POPUP, 300, MAIN), frame(POPUP, 350), ...click('popup', POPUP, 400, 30),
+      ...markers, ...click('main-last', MAIN, 460, 16), frame(MAIN, 1000),
+    ], videos)
+    const pipeline = Recast.from(out).parse().clickEffect().cursorOverlay()
+    const state = await new PipelineExecutor(out, pipeline.getStages()).runStages()
+    try {
+      expect(path.basename(state.sourceVideoPath!)).toBe(`${MAIN}.webm`)
+      expect(state.parsed!.actions.map((a) => a.callId)).toEqual(['main-first', 'main-last'])
+      expect(state.parsed!.cursorPositions.map((p) => p.x)).toEqual([8, 16])
+      expect(state.clickEvents!.map((e) => e.x)).toEqual([8, 16])
+      expect(state.cursorKeyframes!.map((k) => k.x)).toEqual([8, 16])
+    } finally {
+      state.parsed!.frameReader.dispose()
+    }
+  })
+
   it('takes video.webm, not video-1.webm, which sorts first by name', async () => {
     const out = recording('plain', [pageEvent(MAIN, 0), frame(MAIN, 100), frame(MAIN, 1000)], { 'video.webm': 1, 'video-1.webm': 3 })
     expect(path.basename((await parsed(out)).sourceVideoPath)).toBe('video.webm')

@@ -1293,6 +1293,10 @@ export class PipelineExecutor {
       endMs,
     })
     const onScreen = new Set(timeline.map((s) => s.pageId))
+    // Prune before the single-page shortcut too: pages with no video or only
+    // flicker must not leave click, cursor or marker effects on the primary.
+    const offScreen = (id: string | undefined) => id !== undefined && id !== primary && sameContext(id) && !onScreen.has(id)
+    const visibleActions = withoutPages(parsed.actions, offScreen)
     const startMs = timeline[0]!.startMs
     // Pages of this context that are not in the video must not time it.
     const visibleFrames = parsed.frames.filter((f) => !sameContext(f.pageId) || (onScreen.has(f.pageId) && (f.timestamp as number) >= startMs))
@@ -1310,7 +1314,11 @@ export class PipelineExecutor {
     const primarySize = pageSizes.get(primary)!
     const metadata = { ...parsed.metadata, viewport: primarySize.viewport }
     if (onScreen.size === 1 && onScreen.has(primary) && startMs === firstFrameMs.get(primary)) {
-      state.parsed = { ...parsed, metadata, frames: visibleFrames }
+      state.parsed = {
+        ...parsed, metadata, frames: visibleFrames,
+        actions: visibleActions,
+        cursorPositions: visibleActions.filter((a) => a.point).map((a) => a.point!),
+      }
       // A page@ video: Playwright's own, padded around the content
       if (primarySize.recorded) state.contentCrop = primarySize.recorded
       return videos.get(primary)!
@@ -1340,9 +1348,7 @@ export class PipelineExecutor {
     })
 
     const moved = new Set([...onScreen].filter((id) => id !== primary))
-    // A page of this context that never comes on screen must not draw over the video
-    const offScreen = (id: string | undefined) => id !== undefined && id !== primary && sameContext(id) && !onScreen.has(id)
-    const actions = withoutPages(parsed.actions, offScreen).map((a) => {
+    const actions = visibleActions.map((a) => {
       const layout = a.pageId && moved.has(a.pageId) ? layouts.get(a.pageId) : undefined
       let mapped = layout && a.point ? { ...a, point: { ...mapPoint(layout, a.point), timestamp: a.point.timestamp } } : a
       if (typeof a.title === 'string') {
