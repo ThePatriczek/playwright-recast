@@ -7,6 +7,8 @@ import type {
   CursorPosition,
   FrameReader,
   MonotonicMs,
+  TracePage,
+  PageUrl,
 } from '../types/trace.js'
 import { toMonotonic } from '../types/trace.js'
 import { ZipReader } from './zip-reader.js'
@@ -20,7 +22,12 @@ import {
   type ScreencastFrameEvent,
   type ResourceSnapshotEvent,
   type ConsoleEvent,
+  type PageLifecycleEvent,
+  type FrameSnapshotEvent,
 } from './jsonl-parser.js'
+
+/** A frame's image in the zip: a path (Playwright 1.63+) or a resource sha1. */
+const frameEntry = (key: string): string => (key.includes('/') ? key : `resources/${key}`)
 
 /**
  * Parse a Playwright trace zip into structured data.
@@ -33,7 +40,8 @@ export async function parseTrace(tracePath: string): Promise<ParsedTrace> {
   const traceFiles = entries.filter((n) => n.endsWith('.trace'))
   const networkFiles = entries.filter((n) => n.endsWith('.network'))
 
-  const traceEvents = traceFiles.flatMap((f) => parseJsonl(zip.readText(f)))
+  const eventsByFile = traceFiles.map((f) => ({ file: f, events: parseJsonl(zip.readText(f)) }))
+  const traceEvents = eventsByFile.flatMap((f) => f.events)
   const networkEvents = networkFiles.flatMap((f) => parseJsonl(zip.readText(f)))
 
   // Find the most informative context-options event (one with browserName set)
@@ -48,6 +56,8 @@ export async function parseTrace(tracePath: string): Promise<ParsedTrace> {
   const actionStarts = new Map<string, BeforeActionEvent>()
   const actionEnds = new Map<string, AfterActionEvent>()
   const inputPoints = new Map<string, { x: number; y: number }>()
+  // Playwright 1.63 dropped `pageId` from 'before': an action's snapshots still carry it
+  const snapshotPages = new Map<string, string>()
 
   for (const event of traceEvents) {
     switch (event.type) {
@@ -64,6 +74,11 @@ export async function parseTrace(tracePath: string): Promise<ParsedTrace> {
       case 'input': {
         const e = event as InputEvent
         if (e.point) inputPoints.set(e.callId, e.point)
+        break
+      }
+      case 'frame-snapshot': {
+        const { callId, pageId } = (event as FrameSnapshotEvent).snapshot ?? {}
+        if (callId && pageId && !snapshotPages.has(callId)) snapshotPages.set(callId, pageId)
         break
       }
     }
@@ -84,7 +99,7 @@ export async function parseTrace(tracePath: string): Promise<ParsedTrace> {
       startTime: toMonotonic(start.startTime),
       endTime: toMonotonic(end?.endTime ?? start.startTime),
       parentId: start.parentId,
-      pageId: start.pageId,
+      pageId: start.pageId ?? snapshotPages.get(callId),
       error: end?.error,
       point: point
         ? { x: point.x, y: point.y, timestamp: toMonotonic(start.startTime) }
@@ -97,7 +112,7 @@ export async function parseTrace(tracePath: string): Promise<ParsedTrace> {
   const frames: ScreencastFrame[] = traceEvents
     .filter((e): e is ScreencastFrameEvent => e.type === 'screencast-frame')
     .map((e) => ({
-      sha1: e.sha1,
+      sha1: e.sha1 ?? e.file ?? '',
       timestamp: toMonotonic(e.timestamp),
       pageId: e.pageId,
       width: e.width,
@@ -107,7 +122,7 @@ export async function parseTrace(tracePath: string): Promise<ParsedTrace> {
 
   // Only in Chromium are the trace's frames the frames the video records
   const resizedFrames = ctxOpts?.browserName === 'chromium'
-    ? resizedFrameSpansFromJpegs(frames, (sha1) => zip.view(`resources/${sha1}`), actions)
+    ? resizedFrameSpansFromJpegs(frames, (sha1) => zip.view(frameEntry(sha1)), actions)
     : []
 
   // Extract network resources
@@ -155,6 +170,15 @@ export async function parseTrace(tracePath: string): Promise<ParsedTrace> {
       text: e.text,
     }))
 
+  const pages = eventsByFile.flatMap((f) => extractPages(f.events, f.file))
+  const baseURLs = new Map<string, string>()
+  for (const f of eventsByFile) {
+    const base = f.events.find((e): e is ContextOptionsEvent => e.type === 'context-options')?.options?.baseURL
+    if (!base) continue
+    for (const p of pages) if (p.contextId === f.file) baseURLs.set(p.pageId, base)
+  }
+  const pageUrls = extractPageUrls(traceEvents, actions, baseURLs)
+
   // Compute time boundaries
   const allTimes = [
     ...actions.map((a) => a.startTime as number),
@@ -167,8 +191,7 @@ export async function parseTrace(tracePath: string): Promise<ParsedTrace> {
   // Create frame reader
   const frameReader: FrameReader = {
     readFrame(sha1: string): Promise<Buffer> {
-      const name = `resources/${sha1}`
-      return Promise.resolve(zip.readBinary(name))
+      return Promise.resolve(zip.readBinary(frameEntry(sha1)))
     },
     dispose() {
       zip.dispose()
@@ -192,6 +215,79 @@ export async function parseTrace(tracePath: string): Promise<ParsedTrace> {
     events,
     cursorPositions,
     resizedFrames,
+    pages,
+    pageUrls,
     frameReader,
   }
+}
+
+function extractPages(events: ReadonlyArray<{ type: string }>, contextId: string): TracePage[] {
+  const pages = new Map<string, TracePage>()
+  const options = events.find((e): e is ContextOptionsEvent => e.type === 'context-options')?.options
+  const page = (pageId: string): TracePage => ({
+    pageId,
+    contextId,
+    ...(options?.viewport ? { viewport: options.viewport } : {}),
+  })
+  const closedAt = new Map<string, MonotonicMs>()
+  for (const raw of events) {
+    if (raw.type !== 'event') continue
+    const e = raw as PageLifecycleEvent
+    if (e.class !== 'BrowserContext' || !e.params?.pageId) continue
+    if (e.method === 'page') {
+      pages.set(e.params.pageId, {
+        ...page(e.params.pageId),
+        ...(e.params.openerPageId ? { openerPageId: e.params.openerPageId } : {}),
+      })
+    } else if (e.method === 'pageClosed') {
+      closedAt.set(e.params.pageId, toMonotonic(e.time))
+    }
+  }
+  // A page created before tracing started has no page event, but its frames
+  // and calls are in its context's file.
+  for (const raw of events) {
+    const e = raw as { type: string; class?: string; pageId?: string }
+    // Runner entries (test.trace) are not a context's
+    const ofContext = e.type === 'screencast-frame' || (e.type === 'before' && e.class !== 'Test')
+    if (!e.pageId || !ofContext || pages.has(e.pageId)) continue
+    pages.set(e.pageId, page(e.pageId))
+  }
+  // After both loops: a page created before tracing can close during it
+  for (const [pageId, at] of closedAt) {
+    const known = pages.get(pageId)
+    if (known) known.closedAt = at
+  }
+  return [...pages.values()]
+}
+
+/**
+ * Each page's main-frame URL whenever it changes. Snapshots also catch hash
+ * routes; a trace without snapshots falls back to goto() targets.
+ */
+function extractPageUrls(events: ReadonlyArray<{ type: string }>, actions: TraceAction[], baseURLs: ReadonlyMap<string, string>): PageUrl[] {
+  const raw: PageUrl[] = []
+  for (const event of events) {
+    if (event.type !== 'frame-snapshot') continue
+    const s = (event as FrameSnapshotEvent).snapshot
+    if (!s?.isMainFrame || !s.pageId || !s.frameUrl) continue
+    raw.push({ pageId: s.pageId, url: s.frameUrl, timestamp: toMonotonic(s.timestamp) })
+  }
+  const withSnapshots = new Set(raw.map((u) => u.pageId))
+  for (const a of actions) {
+    if (a.method !== 'goto' || !a.pageId || withSnapshots.has(a.pageId)) continue
+    if (typeof a.params.url !== 'string') continue
+    // A goto with baseURL can be relative ('/login'); a host is needed to tell hosts apart.
+    let url = a.params.url
+    try {
+      url = new URL(url, baseURLs.get(a.pageId)).href
+    } catch { /* keep as given */ }
+    raw.push({ pageId: a.pageId, url, timestamp: a.endTime })
+  }
+  raw.sort((a, b) => (a.timestamp as number) - (b.timestamp as number))
+  const last = new Map<string, string>()
+  return raw.filter((u) => {
+    if (last.get(u.pageId) === u.url) return false
+    last.set(u.pageId, u.url)
+    return true
+  })
 }

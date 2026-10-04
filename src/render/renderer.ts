@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process'
 import type { RenderConfig } from '../types/render.js'
 import { resolveResolution } from '../types/render.js'
 import { upscaleWarning } from './sharpness.js'
+import { evenDown } from '../pages/page-timeline.js'
 import { moveZoomsToSpokenNarration } from '../pipeline/zoom-markers.js'
 import type { SubtitleEntry } from '../types/subtitle.js'
 import type { SpeedSegment } from '../types/speed.js'
@@ -31,7 +32,10 @@ import { filterRenderableSubtitles } from '../subtitles/renderable.js'
 import { interpolateVideo } from '../interpolate/interpolator.js'
 import { isSpeedClockAuthority } from '../speed/clock-authority.js'
 import { alignFreezeToFrame, approachHold, isAfterHold } from '../voiceover/frame-align.js'
-import { runFfmpeg } from '../utils/ffmpeg.js'
+import { filterGraphPath, runFfmpeg } from '../utils/ffmpeg.js'
+import { recordingFrame } from '../parse/recording-frame.js'
+import type { UrlBarConfig, UrlBarEvent } from '../types/url-bar.js'
+import { generatePillClip, type PillCache } from '../url-bar/pill.js'
 
 /**
  * Detect blank/white frames at the start of a video and return the timestamp
@@ -79,6 +83,8 @@ export function detectBlankLeadIn(videoPath: string, tmpDir: string): number {
  * handles any combination — callers do not need to provide every field.
  */
 export interface RenderableTrace extends ParsedTrace {
+  /** The page's content at the source video's top-left, the rest Playwright's padding */
+  contentCrop?: { width: number; height: number }
   preserveLeadIn?: boolean
   sourceVideoPath?: string
   subtitles?: SubtitleEntry[]
@@ -99,6 +105,8 @@ export interface RenderableTrace extends ParsedTrace {
   /** Highlight times are already on the freeze-extended clock. */
   highlightsOnFreezeClock?: boolean
   highlightConfig?: import('../text-highlight/defaults.js').ResolvedTextHighlightConfig
+  urlBarEvents?: UrlBarEvent[]
+  urlBarConfig?: UrlBarConfig
 }
 
 export function ffmpeg(args: string[]): void {
@@ -267,7 +275,7 @@ function buildCursorStage(
   const { x: xExpr, y: yExpr } = buildOverlayExpressions(keyframes, config, viewport, srcRes)
   const enableExpr = buildEnableExpression(keyframes, config)
 
-  const escapedClipPath = cursorClipPath.replace(/'/g, "'\\''").replace(/\\/g, '\\\\')
+  const escapedClipPath = filterGraphPath(cursorClipPath)
 
   console.log(`  Cursor overlay: ${keyframes.length} keyframes via movie+overlay`)
 
@@ -275,7 +283,7 @@ function buildCursorStage(
   // overlay animates position; enable controls per-click visibility
   return {
     statements: [
-      `movie='${escapedClipPath}':loop=0,setpts=N/30/TB,format=rgba[cursorSrc]`,
+      `movie=${escapedClipPath}:loop=0,setpts=N/30/TB,format=rgba[cursorSrc]`,
       `[${inLabel}][cursorSrc]overlay=x='${xExpr}':y='${yExpr}':enable='${enableExpr}':eof_action=pass:format=yuv420[cursorOut]`,
     ],
     outLabel: 'cursorOut',
@@ -331,9 +339,9 @@ function buildClickStage(
     const rippleLabel = `clkSrc${i}`
 
     // movie filter: read ripple, shift PTS to click time
-    const escapedPath = ripplePath.replace(/'/g, "'\\''").replace(/\\/g, '\\\\')
+    const escapedPath = filterGraphPath(ripplePath)
     statements.push(
-      `movie='${escapedPath}',setpts=PTS+${timeSec}/TB,format=rgba[${rippleLabel}]`,
+      `movie=${escapedPath},setpts=PTS+${timeSec}/TB,format=rgba[${rippleLabel}]`,
     )
     // Overlay at click position (centered)
     const ox = Math.max(0, cx - Math.round(halfSize))
@@ -390,9 +398,9 @@ function buildHighlightStage(
     const outLabel = `hlOut${i}`
     const hlLabel = `hlSrc${i}`
 
-    const escapedPath = clipPath.replace(/'/g, "'\\''").replace(/\\/g, '\\\\')
+    const escapedPath = filterGraphPath(clipPath)
     statements.push(
-      `movie='${escapedPath}',setpts=PTS+${timeSec}/TB,format=rgba[${hlLabel}]`,
+      `movie=${escapedPath},setpts=PTS+${timeSec}/TB,format=rgba[${hlLabel}]`,
     )
     statements.push(
       `[${prevLabel}][${hlLabel}]overlay=${ox}:${oy}:eof_action=pass:format=yuv420[${outLabel}]`,
@@ -402,6 +410,56 @@ function buildHighlightStage(
 
   console.log(`  Highlight overlay: ${highlightEvents.length} markers via movie+overlay`)
 
+  return { statements, outLabel: prevLabel }
+}
+
+/**
+ * URL bar: a pill clip per appearance, overlaid on the output-resolution
+ * video so zoom leaves it alone. Each ends where the next begins.
+ */
+function buildUrlBarStage(
+  inLabel: string,
+  events: UrlBarEvent[],
+  config: UrlBarConfig,
+  outRes: { width: number; height: number },
+  videoEndMs: number,
+  tmpDir: string,
+): GraphStage | null {
+  const sorted = [...events].sort((a, b) => a.videoTimeMs - b.videoTimeMs)
+  const cache: PillCache = new Map()
+  const style = {
+    fontSize: Math.max(10, Math.round((config.fontSize ?? 28) * outRes.height / 1080)),
+    ...(config.fontFile ? { fontFile: config.fontFile } : {}),
+    color: config.color ?? '#FFFFFF',
+    background: config.background ?? '#1F2328',
+    backgroundOpacity: config.backgroundOpacity ?? 0.8,
+  }
+  const margin = Math.round(outRes.height * 0.04)
+  const statements: string[] = []
+  let prevLabel = inLabel
+  let count = 0
+  sorted.forEach((ev, i) => {
+    const next = sorted[i + 1]
+    const end = Math.min(ev.endTimeMs ?? videoEndMs, next?.videoTimeMs ?? Infinity, videoEndMs)
+    if (end - ev.videoTimeMs < 40) return
+    const clipPath = path.join(tmpDir, `urlbar_${i}.mov`)
+    const { height } = generatePillClip({
+      text: ev.text,
+      style,
+      maxWidth: outRes.width - 2 * margin,
+      durationMs: end - ev.videoTimeMs,
+      outputPath: clipPath,
+      cache,
+    })
+    const y = config.position === 'top' ? margin : outRes.height - height - margin
+    const escapedPath = filterGraphPath(clipPath)
+    statements.push(`movie=${escapedPath},setpts=PTS+${(ev.videoTimeMs / 1000).toFixed(3)}/TB,format=rgba[ubSrc${i}]`)
+    statements.push(`[${prevLabel}][ubSrc${i}]overlay=(W-w)/2:${y}:eof_action=pass:format=yuv420[ubOut${i}]`)
+    prevLabel = `ubOut${i}`
+    count++
+  })
+  if (count === 0) return null
+  console.log(`  URL bar: ${count} appearance(s) via movie+overlay`)
   return { statements, outLabel: prevLabel }
 }
 
@@ -472,6 +530,8 @@ function renderWithSpeed(
   speedSegments: SpeedSegment[],
   baselineMs: number,
   tmpDir: string,
+  /** Filter run on the source first, e.g. a crop of its padding. */
+  preFilter?: string,
 ): string {
   if (!isSpeedClockAuthority(speedSegments)) return sourceVideo
 
@@ -508,7 +568,7 @@ function renderWithSpeed(
     ffmpeg([
       '-y', '-ss', String(seg.startSec), '-to', String(seg.endSec),
       '-i', sourceVideo,
-      '-filter:v', `setpts=PTS/${seg.speed},fps=${fps}`,
+      '-filter:v', `${preFilter ? `${preFilter},` : ''}setpts=PTS/${seg.speed},fps=${fps}`,
       '-frames:v', String(seg.frames),
       '-c:v', 'libx264', '-preset', 'fast', '-crf', '18', '-an',
       segPath,
@@ -632,6 +692,8 @@ function applyVoiceoverFreezes(
   videoPath: string,
   freezes: Array<{ atVideoMs: number; durationMs: number }>,
   tmpDir: string,
+  /** Filter run on the source first, e.g. a crop of its padding. */
+  preFilter?: string,
 ): string {
   if (freezes.length === 0) return videoPath
 
@@ -659,7 +721,7 @@ function applyVoiceoverFreezes(
     // Length stays in frames, counted from the seek point, so the boundary
     // frame lands with the cue that owns it rather than wherever timestamp
     // rounding puts it.
-    const filters: string[] = []
+    const filters: string[] = preFilter ? [preFilter] : []
     if (seg.endFrame !== null) {
       filters.push(`trim=end_frame=${seg.endFrame - seg.startFrame}`)
     }
@@ -729,9 +791,19 @@ function mergeFreezes(
  * `trace`.
  */
 export function shiftOverlaysForHolds(
-  trace: Pick<RenderableTrace, 'clickEvents' | 'cursorKeyframes' | 'highlightEvents' | 'highlightsOnFreezeClock'>,
+  trace: Pick<RenderableTrace, 'clickEvents' | 'cursorKeyframes' | 'highlightEvents' | 'highlightsOnFreezeClock' | 'urlBarEvents'>,
   holds: Array<{ atVideoMs: number; durationMs: number; sourceMs?: number; sourceTraceMs?: number }>,
 ): void {
+  for (const ev of trace.urlBarEvents ?? []) {
+    const start = shiftForFreezes(ev.videoTimeMs, holds, ev.traceMs)
+    // A fixed-length bar keeps its length; one that lasts until the next URL ends with it.
+    if (ev.endTimeMs !== undefined) {
+      ev.endTimeMs = ev.endTraceMs !== undefined
+        ? shiftForFreezes(ev.endTimeMs, holds, ev.endTraceMs)
+        : ev.endTimeMs + start - ev.videoTimeMs
+    }
+    ev.videoTimeMs = start
+  }
   for (const ce of trace.clickEvents ?? []) {
     ce.videoTimeMs = shiftForFreezes(ce.videoTimeMs, holds, ce.traceMs)
   }
@@ -790,16 +862,37 @@ export function renderVideo(
   // incompatible origin: the segment seeks below are computed against the
   // ORIGINAL recording clock and would land blankLeadIn seconds late (#20).
   let videoInput = sourceVideo
+  // The padding is cut off by the first encode that touches the source, so no
+  // encode works on (or fails at an odd size of) the padded frame; the graph
+  // cuts it only when none runs.
+  const sourceRes = probeResolution(sourceVideo)
+  // Even as well: x264 and yuv420p need it; Playwright writes even sizes, other videos may not
+  const target = evenDown({
+    width: Math.min(trace.contentCrop?.width ?? sourceRes.width, sourceRes.width),
+    height: Math.min(trace.contentCrop?.height ?? sourceRes.height, sourceRes.height),
+  })
+  let pending: { width: number; height: number } | undefined =
+    target.width < sourceRes.width || target.height < sourceRes.height ? target : undefined
+  const cropFilter = (size: { width: number; height: number }): string => `crop=${size.width}:${size.height}:0:0`
+  /** Runs `encode` with the crop while it is still due; it stays due if `encode` left the input as is. */
+  const firstEncode = (encode: (preFilter?: string) => string): void => {
+    const before = videoInput
+    videoInput = encode(pending && cropFilter(pending))
+    if (videoInput !== before) pending = undefined
+  }
   if (!hasSpeed && !trace.preserveLeadIn) {
     const blankLeadIn = detectBlankLeadIn(videoInput, tmpDir)
     if (blankLeadIn > 0) {
-      const trimmedPath = path.join(tmpDir, 'trimmed-input.mp4')
-      ffmpeg([
-        '-y', '-ss', String(blankLeadIn), '-i', videoInput,
-        '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '18',
-        trimmedPath,
-      ])
-      videoInput = trimmedPath
+      firstEncode((preFilter) => {
+        const trimmedPath = path.join(tmpDir, 'trimmed-input.mp4')
+        ffmpeg([
+          '-y', '-ss', String(blankLeadIn), '-i', videoInput,
+          ...(preFilter ? ['-vf', preFilter] : []),
+          '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '18',
+          trimmedPath,
+        ])
+        return trimmedPath
+      })
     }
   }
 
@@ -807,21 +900,17 @@ export function renderVideo(
   // Use the first screencast frame from the RECORDING page as baseline.
   // The recording page is identified by the last frame's pageId (it runs longest).
   if (hasSpeed && trace.speedSegments) {
-    const recordingPageId = trace.frames.length > 0
-      ? trace.frames[trace.frames.length - 1]!.pageId : undefined
-    const recordingFrames = recordingPageId
-      ? trace.frames.filter((f) => f.pageId === recordingPageId) : trace.frames
-    const firstRecFrameTime = recordingFrames.length > 0
-      ? (recordingFrames[0]!.timestamp as number)
-      : (trace.speedSegments[0]!.originalStart as number)
-    videoInput = renderWithSpeed(videoInput, trace.speedSegments, firstRecFrameTime, tmpDir)
+    const firstRecFrameTime = recordingFrame(trace.frames).firstFrameMs
+      ?? (trace.speedSegments[0]!.originalStart as number)
+    const segments = trace.speedSegments
+    firstEncode((preFilter) => renderWithSpeed(videoInput, segments, firstRecFrameTime, tmpDir, preFilter))
   }
 
   // Phase 2.5: Frame interpolation (on source resolution, before overlays and zoom upscale)
   if (trace.interpolateConfig) {
     const interpolatedPath = path.join(tmpDir, 'interpolated.mp4')
-    interpolateVideo(videoInput, interpolatedPath, trace.interpolateConfig)
-    videoInput = interpolatedPath
+    const interp = trace.interpolateConfig
+    firstEncode((preFilter) => { interpolateVideo(videoInput, interpolatedPath, interp, preFilter); return interpolatedPath })
   }
 
   // Phase 3.4: Voiceover-driven freezes. If a narration's audio is longer
@@ -855,7 +944,7 @@ export function renderVideo(
   const holds = [...voiceoverFreezes, ...approachFreezes]
   const allFreezes = mergeFreezes(holds)
   if (allFreezes.length > 0) {
-    videoInput = applyVoiceoverFreezes(videoInput, allFreezes, tmpDir)
+    firstEncode((preFilter) => applyVoiceoverFreezes(videoInput, allFreezes, tmpDir, preFilter))
     shiftOverlaysForHolds(trace, holds)
   }
 
@@ -882,6 +971,13 @@ export function renderVideo(
     vLabel = stage.outLabel
   }
 
+  // Padding still due (no encode ran before the graph): the graph's first filter
+  // cuts it, so overlays map CSS pixels to the content like to a full video.
+  if (pending) {
+    graph.push(`[${vLabel}]${cropFilter(pending)}[content]`)
+    vLabel = 'content'
+  }
+
   // Pad before the overlays, not after them: the clone repeats whatever is
   // baked into the last frame, so padding last would hold an overlay that is
   // still on screen there for the whole remaining narration.
@@ -890,8 +986,9 @@ export function renderVideo(
     vLabel = 'padded'
   }
 
-  // No overlay stage resizes or retimes, so probe the input once.
-  const graphInputRes = probeResolution(videoInput)
+  // Every encode before the graph keeps the size, and the crop ran in one of
+  // them or runs above, so the graph works on `target`.
+  const graphInputRes = target
   const graphInputFps = probeVideoFps(videoInput)
 
   // Highlights first, so one is visible for exactly as long as it was
@@ -1060,6 +1157,24 @@ export function renderVideo(
     vFilters.push(`scale=${resolution.width}:${resolution.height}`)
   }
 
+  // On the output frame: after zoom and scale, before subtitles.
+  if (trace.urlBarEvents && trace.urlBarEvents.length > 0) {
+    if (vFilters.length > 0) {
+      graph.push(`[${vLabel}]${vFilters.join(',')}[urlBarIn]`)
+      vLabel = 'urlBarIn'
+      vFilters.length = 0
+    }
+    const urlBarStage = buildUrlBarStage(
+      vLabel,
+      trace.urlBarEvents,
+      trace.urlBarConfig ?? {},
+      resolution,
+      (graphInputDur + tpadDuration) * 1000,
+      tmpDir,
+    )
+    if (urlBarStage) addStage(urlBarStage)
+  }
+
   if (config.burnSubtitles && renderableSubtitles.length > 0) {
     if (config.subtitleStyle) {
       // Styled subtitles via ASS format (background box, custom font, etc.)
@@ -1069,14 +1184,12 @@ export function renderVideo(
       }
       const assPath = path.join(tmpDir, 'burn-subtitles.ass')
       fs.writeFileSync(assPath, writeAss(burnEntries, config.subtitleStyle, resolution))
-      const escapedPath = assPath.replace(/'/g, "'\\''").replace(/:/g, '\\:')
-      vFilters.push(`ass='${escapedPath}'`)
+      vFilters.push(`ass=${filterGraphPath(assPath)}`)
     } else {
       // Plain SRT subtitles (default ffmpeg styling)
       const srtPath = path.join(tmpDir, 'burn-subtitles.srt')
       fs.writeFileSync(srtPath, writeSrt(renderableSubtitles))
-      const escapedPath = srtPath.replace(/'/g, "'\\''").replace(/:/g, '\\:')
-      vFilters.push(`subtitles='${escapedPath}'`)
+      vFilters.push(`subtitles=${filterGraphPath(srtPath)}`)
     }
   }
 

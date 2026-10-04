@@ -7,6 +7,8 @@ export type TraceEventRaw =
   | ScreencastFrameEvent
   | ResourceSnapshotEvent
   | ConsoleEvent
+  | PageLifecycleEvent
+  | FrameSnapshotEvent
   | GenericEvent
 
 export interface ContextOptionsEvent {
@@ -15,6 +17,7 @@ export interface ContextOptionsEvent {
   platform?: string
   options?: {
     viewport?: { width: number; height: number }
+    baseURL?: string
   }
   wallTime?: number
   monotonicTime?: number
@@ -53,7 +56,10 @@ export interface InputEvent {
 export interface ScreencastFrameEvent {
   type: 'screencast-frame'
   pageId: string
-  sha1: string
+  /** Before Playwright 1.63: the image is resources/<sha1> */
+  sha1?: string
+  /** Playwright 1.63+: the image's path in the zip */
+  file?: string
   width: number
   height: number
   timestamp: number
@@ -75,6 +81,26 @@ export interface ConsoleEvent {
   time: number
   text?: string
   pageId?: string
+}
+
+/** BrowserContext `page` / `pageClosed` event */
+export interface PageLifecycleEvent {
+  type: 'event'
+  time: number
+  class: 'BrowserContext'
+  method: 'page' | 'pageClosed'
+  params: { pageId: string; openerPageId?: string }
+}
+
+export interface FrameSnapshotEvent {
+  type: 'frame-snapshot'
+  snapshot: {
+    callId?: string
+    pageId: string
+    frameUrl: string
+    isMainFrame?: boolean
+    timestamp: number
+  }
 }
 
 export interface GenericEvent {

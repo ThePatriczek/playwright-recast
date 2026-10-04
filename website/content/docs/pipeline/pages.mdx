@@ -1,0 +1,100 @@
+---
+title: Multi-Page Recordings
+description: Cut popups and new tabs into one video, and choose how they show.
+---
+
+A test that opens a popup (an OAuth consent window from `window.open`) or a new tab records one video per page. Recast cuts them into one video; clicks, cursor, zoom and highlights keep working on the other pages.
+
+## Recording
+
+Recast needs to know which video belongs to which of the trace's pages. Keep `trace: 'on'`, with snapshots: the trace holds the page lifecycle that aligns the videos, and from Playwright 1.63 on only the snapshots tell which page an action ran on.
+
+| Setup | How |
+|---|---|
+| Playwright Test | Add the `recastPageVideos` fixture and record with `video: 'on'` (or `recastVideo()` for sharp zooms). It writes one step to the trace listing the page of each `video.webm` / `video-N.webm` (in the trace's folder); the step shows in the report under "After Hooks". |
+| Library | Context option `recordVideo`: Playwright 1.59+ writes `page@<pageId>.webm` itself, also for a popup that closes itself (older versions name videos by a hash no page maps to). `page@` files are found in the trace's folder and its subfolders. |
+| Neither | Only `video.webm` (the first page) is used; Recast warns when other pages had actions. |
+
+```typescript
+// fixtures.ts
+import { test as base } from '@playwright/test'
+import { recastPageVideos } from 'playwright-recast/helpers'
+
+export const test = base.extend(recastPageVideos)
+```
+
+```typescript
+// library: the video size is the viewport, so the page fills it
+const context = await browser.newContext({
+  viewport: { width: 1920, height: 1080 },
+  recordVideo: { dir: 'recordings/videos', size: { width: 1920, height: 1080 } },
+})
+await context.tracing.start({ screenshots: true, snapshots: true })
+// ...
+await context.tracing.stop({ path: 'recordings/trace.zip' })
+```
+
+The fixture:
+
+- Relies on Playwright Test naming videos in the order the context's pages open, and on the client-internal `page._guid` being the trace's page id (runtime-checked on 1.60, same derivation in the 1.40 and 1.51 source). It warns when an id is missing.
+- Wraps the `context` fixture, so it sees every page from the context's creation, also those other fixtures open. Extend it first: another `context` override extended before it can open pages it misses, which shifts the mapping.
+- Writes the step through `setupRecast(test)`'s test when set up, else through the `@playwright/test` this package resolves to; it warns when that fails.
+
+## Sizes
+
+- Playwright records a page into its video top-left, scaled down to fit and padded gray. Recast reads each page's recorded size from the trace's screencast frames, which in Chromium are the frames its video records; the largest over a page's frames counts.
+- The output is the primary page's content without padding; the crop happens in the first encode that touches the video.
+- Firefox and WebKit: not verified, so their videos are used uncropped.
+- Only pages of the primary page's browser context are cut in; another context (a setup login) is left out.
+
+## Which page is on screen
+
+| Rule | |
+|---|---|
+| Primary page | The page of the last frame, or its opener and so on up. Its size and coordinates are the video's. |
+| Active page | The page of the most recent action, from its first frame. A `close()` call does not count. |
+| Page closes | Its opener comes back, else the page active before it. When the primary page closes, the page opened from it goes on. |
+| No actions or no video | The page gets no screen time (e.g. an OAuth callback that redirects at once). |
+| Flicker | Less than 150 ms on screen goes to the page before; at the start it is dropped. |
+
+One page is on screen at a time.
+
+Pages that never appear in the video leave no click, cursor, zoom or highlight effects, including when only the primary page's video is used. If a background page closes while a popup or overlaid tab stays visible, its last frame remains behind the overlay until the next page takes over.
+
+## `.pages(config)`
+
+Optional; position in the chain does not matter.
+
+```typescript
+await Recast
+  .from('./test-results/consent-flow')
+  .parse()
+  .pages({ popup: 'overlay', tab: 'replace' })
+  .render()
+  .toFile('demo.mp4')
+```
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `popup` | `'overlay' \| 'replace'` | `'overlay'` | Page smaller than the frame. `overlay`: centered over the darkened full-frame page that was on screen before it, and an overlaid tab on it. `replace`: centered on a plain background. |
+| `tab` | `'replace' \| 'overlay'` | `'replace'` | Page that fills the frame. `replace`: hard switch. `overlay`: shrunk to `tabScale` over the darkened page before it. |
+| `tabScale` | `number` | `0.85` | Size of an overlaid tab relative to the frame |
+| `backdrop.dim` | `number` | `0.6` | How much the page behind an overlay is darkened (0-1) |
+| `backdrop.color` | `string` | `'#000000'` | Background behind a replacing popup |
+
+A popup keeps its size relative to the primary page, at the primary page's scale; one larger than the frame is fitted into it.
+
+## Effects on other pages
+
+Click ripples, cursor keyframes, `autoZoom()`, and the `highlight()`, `zoom()` and `click()` markers are moved to where the page sits in the frame. A marker belongs to the page it was recorded on, else to the page on screen at its time. Highlights from a `report.json` (`textHighlight()`) are not moved.
+
+## Short popups
+
+A popup is often on screen for under two seconds. Hold it with `narrate()` and `waitForNarration()` before the action that closes it: the hold freezes the composited frame.
+
+```typescript
+const popup = await popupPromise
+await narrate('Approve the connection.')
+await waitForNarration()
+await click(popup.getByRole('button', { name: 'Allow' }))
+```

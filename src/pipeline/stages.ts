@@ -12,6 +12,8 @@ import type { TextHighlightConfig } from '../types/text-highlight.js'
 import type { IntroConfig, OutroConfig } from '../types/intro-outro.js'
 import type { BackgroundMusicConfig } from '../types/background-music.js'
 import type { DirectorOptions, DirectorProvider } from '../types/director.js'
+import type { UrlBarConfig } from '../types/url-bar.js'
+import type { PagesConfig } from '../types/pages.js'
 
 export type StageDescriptor =
   | { type: 'parse' }
@@ -32,6 +34,8 @@ export type StageDescriptor =
   | { type: 'cursorOverlay'; config: CursorOverlayConfig }
   | { type: 'clickEffect'; config: ClickEffectConfig }
   | { type: 'textHighlight'; config: TextHighlightConfig }
+  | { type: 'urlBar'; config: UrlBarConfig }
+  | { type: 'pages'; config: PagesConfig }
   | { type: 'intro'; config: IntroConfig }
   | { type: 'outro'; config: OutroConfig }
   | { type: 'interpolate'; config: InterpolateConfig }

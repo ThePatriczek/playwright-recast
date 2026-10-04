@@ -23,6 +23,8 @@ async function record(scale: number): Promise<string> {
     recordVideo: { dir: tmpDir, size: use.video.size },
   })
   const page = await context.newPage()
+  // Include a blank lead to catch assertions that sample before the page paints.
+  await page.waitForTimeout(500)
   await page.setContent('<body style="margin:0;background:#000"><div style="position:fixed;right:0;bottom:0;width:8px;height:8px;background:#f00"></div></body>')
   // A frame painted with the content, or under load the screencast can close on the blank page
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
@@ -40,13 +42,15 @@ function size(file: string): { width: number; height: number } {
   return { width: width!, height: height! }
 }
 
-/** RGB of the bottom-right pixel (2x2 crop: 4:2:0 needs even sizes): red marker when exact, gray when padded, black when cropped. */
+/** RGB of the final frame's bottom-right pixel (2x2 crop: 4:2:0 needs even sizes): red marker when exact, gray when padded, black when cropped. */
 function bottomRight(file: string): number[] {
   const rgb = execFileSync('ffmpeg', [
-    '-v', 'error', '-ss', '0.3', '-i', file, '-frames:v', '1',
+    '-v', 'error', '-i', file,
     '-vf', 'crop=2:2:iw-2:ih-2', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-',
   ])
-  return [...rgb.subarray(9, 12)]
+  // Startup can take longer than 0.3s on CI. The final frame is after the
+  // paint wait; an absolute timestamp may still point at the blank page.
+  return [...rgb.subarray(-3)]
 }
 
 describe.skipIf(!available)('recastVideo() recording', () => {

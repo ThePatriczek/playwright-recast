@@ -16,6 +16,7 @@ Each stage transforms the pipeline state and passes it to the next. The full pro
 | Stage | Method | Description |
 |---|---|---|
 | **Parse** | `.parse()` | Extract actions, frames, network events, and cursor positions from trace.zip |
+| **Pages** | `.pages(config)` | How popups and new tabs show in the video |
 | **Inject Actions** | `.injectActions(actions)` | Add synthetic actions from DOM tracking into the parsed trace (for `page.pause()` recordings) |
 | **Filter** | `.hideSteps(predicate)` | Remove setup/login steps from the output |
 | **Speed** | `.speedUp(config)` | Adjust playback speed based on activity type |
@@ -26,6 +27,7 @@ Each stage transforms the pipeline state and passes it to the next. The full pro
 | **Cursor Overlay** | `.cursorOverlay(config)` | Animated cursor at click positions |
 | **Click Effect** | `.clickEffect(config)` | Ripple animation and sound at click positions |
 | **Text Highlight** | `.textHighlight(config)` | Animated marker overlay on text elements |
+| **URL Bar** | `.urlBar(config)` | Show the URL of the page on screen |
 | **Frame Interpolation** | `.interpolate(config)` | Smooth out choppy recordings |
 | **Voiceover** | `.voiceover(provider)` | Generate TTS audio from subtitle text |
 | **Background Music** | `.backgroundMusic(config)` | Add background music with auto-ducking |

@@ -23,7 +23,7 @@ export type {
 } from './types/director.js'
 
 // Step helpers
-export { setupRecast, narrate, zoom, pace, typeText, highlight, waitForNarration, markClick, click } from './helpers.js'
+export { setupRecast, narrate, zoom, pace, typeText, highlight, waitForNarration, markClick, click, showUrl, recastPageVideos } from './helpers.js'
 export type { SetupRecastOptions, TypeTextOptions } from './helpers.js'
 
 // Suite orchestration
@@ -133,6 +133,13 @@ export type { InterpolateConfig, InterpolateMode, InterpolateQuality } from './t
 
 // Text highlight
 export type { TextHighlightConfig, HighlightEvent } from './types/text-highlight.js'
+
+// Multi-page
+export type { PagesConfig } from './types/pages.js'
+
+// URL bar
+export type { UrlBarConfig, UrlBarEvent } from './types/url-bar.js'
+export { formatUrl } from './url-bar/url-bar-events.js'
 
 // Intro/Outro
 export type { IntroConfig, OutroConfig } from './types/intro-outro.js'

@@ -1,0 +1,20 @@
+---
+title: showUrl
+description: Show the page's URL in the rendered video at this point.
+---
+
+`showUrl(page)` records a marker with `page.url()`. With [`.urlBar({ show: 'marked' })`](/docs/pipeline/url-bar), the bar shows that URL from here, through the stage's `stripQuery` and `redact`.
+
+```typescript
+import { showUrl } from 'playwright-recast'
+
+await page.goto('https://app.example.com/#/workspaces/42')
+await showUrl(page)                        // stage durationMs
+await showUrl(page, { durationMs: 5000 })  // this call only
+```
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `durationMs` | `number` | stage `durationMs` | How long the bar stays, in output ms |
+
+No-op without `setupRecast(test)`. A marker inside a [hidden step](/docs/pipeline/hide-steps) shows nothing.

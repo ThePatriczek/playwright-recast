@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process'
 import { renderVideo, probeResolution, type RenderableTrace } from '../../../src/render/renderer'
 import { resolveCursorOverlayConfig } from '../../../src/cursor-overlay/defaults'
 import { toMonotonic } from '../../../src/types/trace'
+import { computeOutputTimes } from '../../../src/speed/time-remap'
 import type { SubtitleEntry } from '../../../src/types/subtitle'
 
 /**
@@ -178,6 +179,29 @@ describe('overlay and zoom stages render in a single pass', () => {
     },
   })
 
+  it('cuts a padded source to its content rect in the graph, with no encode of its own', () => {
+    // The top-left 320x180 holds the red square's top-left part at its bottom-right
+    const cropped = render('content-crop', baseTrace({ sourceVideoPath: SQUARE_SRC, contentCrop: { width: 321, height: 181 } }))
+    expect(isRed(pixelAt(cropped.output, 1.0, 310, 170))).toBe(true)
+    expect(isRed(pixelAt(render('content-full', baseTrace({ sourceVideoPath: SQUARE_SRC })).output, 1.0, 310, 170))).toBe(false)
+    expect(fs.readdirSync(cropped.tmpDir).filter((f) => f.endsWith('.mp4'))).toEqual([])
+  })
+
+  it('cuts the padding in the first encode, so no encoder sees an odd padded size', () => {
+    // Playwright keeps a user's recordVideo size as given, odd or not
+    const odd = path.join(TMP_ROOT, 'odd-src.webm')
+    execFileSync('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', `testsrc=s=129x73:r=${FPS}:d=${DURATION_SEC}`, '-c:v', 'libvpx', odd])
+    const speedSegments = computeOutputTimes([
+      { originalStart: toMonotonic(0), originalEnd: toMonotonic(1000), speed: 2, outputStart: 0, outputEnd: 0 },
+      { originalStart: toMonotonic(1000), originalEnd: toMonotonic(DURATION_SEC * 1000), speed: 1, outputStart: 0, outputEnd: 0 },
+    ])
+    const { output } = render('odd-speed', baseTrace({ sourceVideoPath: odd, contentCrop: { width: 129, height: 73 }, speedSegments }))
+    expect(probeResolution(output)).toEqual(TARGET)
+    // Without a content crop too (another browser, a JPEG that could not be read)
+    const plain = render('odd-speed-plain', baseTrace({ sourceVideoPath: odd, speedSegments }))
+    expect(probeResolution(plain.output)).toEqual(TARGET)
+  })
+
   it('writes no per-stage intermediate video', () => {
     const { tmpDir } = render('collapsed', everyStage())
     const leftovers = INTERMEDIATE_VIDEOS.filter((f) => fs.existsSync(path.join(tmpDir, f)))
@@ -229,6 +253,16 @@ describe('overlay and zoom stages render in a single pass', () => {
       .not.toEqual(pixelAt(withPad, DURATION_SEC + 1.5, x, y))
     expect(isYellow(pixelAt(withPad, DURATION_SEC - 0.5, x, y))).toBe(true)
     expect(isYellow(pixelAt(withPad, DURATION_SEC + 1.5, x, y))).toBe(false)
+  })
+
+  it.skipIf(!HAS_SUBTITLES_FILTER)('burns subtitles from a directory with an apostrophe', () => {
+    // The subtitle path sits inside -filter_complex: two levels of escaping
+    const tmpDir = path.join(TMP_ROOT, "o'brien")
+    fs.mkdirSync(tmpDir, { recursive: true })
+    const output = path.join(TMP_ROOT, 'apostrophe.mp4')
+    const cue: SubtitleEntry[] = [{ index: 0, startMs: 0, endMs: DURATION_SEC * 1000, text: 'BURNED IN' }]
+    renderVideo(baseTrace({ subtitles: cue }), { resolution: TARGET, crf: LOSSLESS_CRF, burnSubtitles: true }, output, tmpDir)
+    expect(fs.existsSync(output)).toBe(true)
   })
 
   it.skipIf(!HAS_SUBTITLES_FILTER)('burns subtitles through the graph tail', () => {

@@ -1,6 +1,7 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { runFfmpeg } from '../utils/ffmpeg.js'
+import { recordingFrame } from '../parse/recording-frame.js'
 import type { ScreencastFrame } from '../types/trace.js'
 
 const DEFAULT_TAIL_DURATION_SEC = 0.04
@@ -83,8 +84,8 @@ export async function assembleVideoFromScreencastFrames(opts: AssembleOptions): 
 export function selectRecordingPageFrames(
   frames: readonly ScreencastFrame[],
 ): readonly ScreencastFrame[] {
-  if (frames.length === 0) return frames
-  const recordingPageId = frames[frames.length - 1]!.pageId
-  if (recordingPageId === undefined) return frames
-  return frames.filter((f) => f.pageId === recordingPageId)
+  const { pageId } = recordingFrame(frames)
+  if (pageId === undefined) return frames
+  return frames.filter((f) => f.pageId === pageId)
 }
+
