@@ -5,6 +5,10 @@ description: Learn how to transform Playwright traces into polished demo videos.
 
 Welcome to the **playwright-recast** documentation.
 
+## New in 0.23.0
+
+Record popups and new tabs with [`recastPageVideos`](/docs/pipeline/pages), choose their layout with `pages()`, and show the current URL with [`urlBar()`](/docs/pipeline/url-bar) or [`showUrl()`](/docs/helpers/show-url). This release also fixes narration drift, screenshot artifacts and MCP timing. See the [release notes](https://github.com/ThePatriczek/playwright-recast/releases/tag/v0.23.0).
+
 ## What is playwright-recast?
 
 playwright-recast is a fluent pipeline library that transforms Playwright trace files into polished demo videos — complete with TTS voiceover, styled subtitles, speed control, click effects, animated zoom, cursor overlay, and more.
@@ -26,4 +30,6 @@ Every stage is optional and composable. Chain them to build your video processin
   <Card title="Speed Processing" href="/docs/pipeline/speed-up" />
   <Card title="Voiceover" href="/docs/pipeline/voiceover" />
   <Card title="Auto Zoom" href="/docs/pipeline/auto-zoom" />
+  <Card title="Multi-Page Recordings" href="/docs/pipeline/pages" />
+  <Card title="URL Bar" href="/docs/pipeline/url-bar" />
 </Cards>

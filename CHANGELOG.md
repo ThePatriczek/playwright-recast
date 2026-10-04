@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.23.0 (2026-10-04)
+
 ### Features
 
 - **`recastPageVideos` fixture** (`playwright-recast/helpers`, `base.extend(recastPageVideos)`) - records in the trace which page each of a Playwright Test's videos (`video.webm`, `video-N.webm`) belongs to, so tests recorded with `video: 'on'` get their pages composited. Uses Playwright's client-internal `page._guid`; warns when it is missing.
@@ -20,6 +22,19 @@
 - **MCP `render_video` cut hidden steps and showed subtitles at the wrong time** - trace times were used as video times: late by the trace's start time, past the video's end in a long-lived browser. `record_session` steps landed early by the page load; they are now mapped through the trace's wall clock, and `analyze_trace` reports trace times for them too. A step the analyzer hides (a login) is cut even if the client omits it.
 - **A test with two pages rendered the second page's video** - the video lookup took the first `.webm` by name, and Playwright Test's `video-1.webm` sorts before `video.webm`. It now prefers `video.webm`, then `video-N.webm` in order.
 - **Playwright 1.63 traces had no frames and no action pages** - 1.63 stores screencast frames as `screencast/*.jpeg` files and drops `pageId` from actions. Frames are read from their file; an action's page comes from its snapshots.
+
+### Packaging and documentation
+
+- The build copies the Qwen Python sidecar, and `npm pack` builds before packaging it ([#55](https://github.com/ThePatriczek/playwright-recast/pull/55)).
+- Added multi-page recording, `pages()`, `urlBar()` and `showUrl()` documentation, API references and LLM indexes. Updated macOS setup for the text-rendering filters and linked the re-uploaded Neo4j showcase.
+
+### Validation
+
+- CI: **1036 passed | 11 skipped** across 121 test files. Includes real Chromium recording and ffmpeg rendering, four new regression cases for invisible-page effects and closed-page backgrounds, and a deterministic final-frame check for recording dimensions.
+
+### Acknowledgements
+
+- Thanks to [@Andy2003](https://github.com/Andy2003) for the multi-page and URL-bar features and the timing, recording and packaging fixes in this release.
 
 ## 0.22.1 (2026-09-30)
 

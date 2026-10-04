@@ -22,8 +22,11 @@ playwright-recast uses ffmpeg and ffprobe for all video processing. Both must be
 ### macOS
 
 ```bash
-brew install ffmpeg
+brew install ffmpeg-full
+export PATH="$(brew --prefix ffmpeg-full)/bin:$PATH"
 ```
+
+[Homebrew’s `ffmpeg-full`](https://formulae.brew.sh/formula/ffmpeg-full) includes the text-rendering libraries needed by URL bars (`drawtext`) and burned subtitles (`libass`). It is keg-only, so add its `bin` directory to your shell’s `PATH`.
 
 ### Ubuntu / Debian
 

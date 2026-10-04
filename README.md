@@ -5,7 +5,7 @@
 [![npm version](https://img.shields.io/npm/v/playwright-recast)](https://www.npmjs.com/package/playwright-recast)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-**[Website](https://thepatriczek.github.io/playwright-recast/)** · **[Documentation](https://thepatriczek.github.io/playwright-recast/docs)**
+**[Website](https://thepatriczek.github.io/playwright-recast/)** · **[Documentation](https://thepatriczek.github.io/playwright-recast/docs)** · **[Release notes](https://github.com/ThePatriczek/playwright-recast/releases/tag/v0.23.0)** · **[Changelog](CHANGELOG.md)**
 
 > Your Playwright tests already capture everything — traces, screenshots, network activity, cursor positions. **playwright-recast** turns those artifacts into polished, narrated product videos with a single fluent pipeline.
 
@@ -96,8 +96,9 @@ bun add playwright-recast
 **System requirement:** `ffmpeg` and `ffprobe` must be on your PATH.
 
 ```bash
-# macOS
-brew install ffmpeg
+# macOS: includes drawtext for URL bars and libass for burned subtitles
+brew install ffmpeg-full
+export PATH="$(brew --prefix ffmpeg-full)/bin:$PATH"
 
 # Ubuntu
 sudo apt install ffmpeg

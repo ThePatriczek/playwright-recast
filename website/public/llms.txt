@@ -4,6 +4,11 @@
 
 playwright-recast is a fluent pipeline library that turns Playwright trace files into production-ready product videos. Your tests already capture everything — traces, screenshots, cursor positions. This library turns those artifacts into narrated, styled videos with a single pipeline.
 
+## Releases
+
+- [0.23.0 release notes](https://github.com/ThePatriczek/playwright-recast/releases/tag/v0.23.0): Multi-page recordings, URL bars, narration and timing fixes
+- [Changelog](https://github.com/ThePatriczek/playwright-recast/blob/main/CHANGELOG.md): Version history
+
 ## Docs
 
 - [Neo4j Showcase](https://thepatriczek.github.io/playwright-recast/docs/showcase/neo4j): Snowflake Cortex Neo4j Agent Integration video

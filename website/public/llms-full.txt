@@ -22,6 +22,10 @@ A huge thank you to [@Andy2003](https://github.com/Andy2003) for the outstanding
 
 Welcome to the **playwright-recast** documentation.
 
+## New in 0.23.0
+
+Record popups and new tabs with [`recastPageVideos`](/docs/pipeline/pages), choose their layout with `pages()`, and show the current URL with [`urlBar()`](/docs/pipeline/url-bar) or [`showUrl()`](/docs/helpers/show-url). This release also fixes narration drift, screenshot artifacts and MCP timing. See the [release notes](https://github.com/ThePatriczek/playwright-recast/releases/tag/v0.23.0).
+
 ## What is playwright-recast?
 
 playwright-recast is a fluent pipeline library that transforms Playwright trace files into polished demo videos — complete with TTS voiceover, styled subtitles, speed control, click effects, animated zoom, cursor overlay, and more.
@@ -58,8 +62,11 @@ playwright-recast uses ffmpeg and ffprobe for all video processing. Both must be
 ### macOS
 
 ```bash
-brew install ffmpeg
+brew install ffmpeg-full
+export PATH="$(brew --prefix ffmpeg-full)/bin:$PATH"
 ```
+
+[Homebrew’s `ffmpeg-full`](https://formulae.brew.sh/formula/ffmpeg-full) includes the text-rendering libraries needed by URL bars (`drawtext`) and burned subtitles (`libass`). It is keg-only, so add its `bin` directory to your shell’s `PATH`.
 
 ### Ubuntu / Debian
 
@@ -2637,6 +2644,33 @@ interface TypeTextOptions {
   delayMs?: number // Average delay; defaults to setupRecast typingDelayMs
 }
 ```
+
+---
+
+## Multi-Page and URL Bar Types
+
+`PagesConfig` configures [`pages()`](/docs/pipeline/pages); `UrlBarConfig` configures [`urlBar()`](/docs/pipeline/url-bar). Both are optional configurations with defaults.
+
+```typescript
+import type { PagesConfig, UrlBarConfig } from 'playwright-recast'
+
+const pages: PagesConfig = { popup: 'overlay', tab: 'overlay', tabScale: 0.85 }
+const urlBar: UrlBarConfig = { show: 'marked', position: 'top', redact: [/account-\d+/g] }
+```
+
+`UrlBarEvent` describes a URL appearance on the output timeline. Text has already been stripped and redacted; an omitted `endTimeMs` means the end of the video. Optional trace timestamps keep the appearance aligned with narration holds.
+
+```typescript
+interface UrlBarEvent {
+  text: string
+  videoTimeMs: number
+  endTimeMs?: number
+  traceMs?: number
+  endTraceMs?: number
+}
+```
+
+The exported `formatUrl(url, options)` utility applies the same query stripping and redaction outside a pipeline. Its options are `stripQuery`, `redact` and `redactWith` from `UrlBarConfig`; URL credentials are always removed.
 
 ---
 
