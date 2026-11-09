@@ -422,12 +422,14 @@ export function QwenTtsProvider(config: QwenTtsProviderConfig): TtsProvider {
         const { refAudio, scheduledDesign } = resolveRefAudio(sidecarDir)
         if (scheduledDesign || plan.missIndices.length > 0) {
           const sidecar = startSidecar(pythonBin, sidecarScript(config.__pythonScriptPath__))
-          // Each WAV converts while the sidecar makes the next ones
+          // Each WAV converts while the sidecar makes the next ones; one at a
+          // time, so a fast model cannot start an ffmpeg per line at once
           const conversions: Array<Promise<void>> = []
+          let previous: Promise<unknown> = Promise.resolve()
           sidecar.onWav = (wav) => {
-            const conversion = persistCloneWav(wav, plan, tmpDir)
+            const conversion = previous.then(() => persistCloneWav(wav, plan, tmpDir))
             // Awaited below: a failure until then must not count as unhandled
-            conversion.catch(() => {})
+            previous = conversion.catch(() => {})
             conversions.push(conversion)
           }
           let resp: SidecarResponseOk
@@ -448,7 +450,9 @@ export function QwenTtsProvider(config: QwenTtsProviderConfig): TtsProvider {
             }
             throw err
           }
-          await Promise.all(conversions)
+          // All settled before the finally removes the WAVs they read
+          const failed = (await Promise.allSettled(conversions)).find((r) => r.status === 'rejected')
+          if (failed) throw failed.reason
           if (resp.design) persistDesignWav(resp.design.path)
         }
         fillDuplicates(plan, tmpDir)
