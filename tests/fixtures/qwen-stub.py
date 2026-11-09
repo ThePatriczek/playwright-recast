@@ -1,7 +1,8 @@
 """Stub sidecar used by qwen.test.ts.
 
 Mimics the real protocol: reads request JSON from stdin, writes short
-silence WAVs to the requested workDir, prints a response on stdout.
+silence WAVs to the requested workDir, prints a WAV event per file and then
+a response on stdout.
 Has no torch/qwen-tts dependency.
 
 Supports env vars for failure injection:
@@ -47,12 +48,10 @@ try:
         stage = "clone"
         if fail_stage == "clone":
             raise RuntimeError("stub clone failure")
-        clone_results = []
         for i, _text in enumerate(req["clone"]["texts"]):
             p = f"{work_dir}/clone-{i}.wav"
             write_silence_wav(p)
-            clone_results.append({"path": p})
-        results["clone"] = clone_results
+            print(json.dumps({"event": "wav", "index": i, "path": p}), flush=True)
 
     print(json.dumps(results))
 except Exception as e:

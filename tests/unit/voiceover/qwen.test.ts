@@ -178,13 +178,13 @@ describe('QwenTtsProvider synthesize() — audio cache', () => {
       'req = json.loads(sys.stdin.read())',
       'with open(' + JSON.stringify(countFile) + ', "w") as f: f.write(str(len(req["clone"]["texts"])))',
       'work = req["workDir"]',
-      'results = {"ok": True, "clone": []}',
+      'results = {"ok": True}',
       'for i, _ in enumerate(req["clone"]["texts"]):',
       '    p = f"{work}/clone-{i}.wav"',
       '    with wave.open(p, "wb") as w:',
       '        w.setnchannels(1); w.setsampwidth(2); w.setframerate(24000)',
       '        w.writeframes(struct.pack("<" + "h" * 1000, *([0] * 1000)))',
-      '    results["clone"].append({"path": p})',
+      '    print(json.dumps({"event": "wav", "index": i, "path": p}), flush=True)',
       'print(json.dumps(results))',
     ].join('\n'))
 
@@ -207,6 +207,64 @@ describe('QwenTtsProvider synthesize() — audio cache', () => {
     expect(fs.readFileSync(countFile, 'utf8')).toBe('2')  // only 'hello' + 'world' sent to sidecar
   })
 
+  it('fails with a conversion error after every conversion settled', async () => {
+    const workDir = path.join(TMP, 'work-convert-fail')
+    fs.mkdirSync(workDir, { recursive: true })
+    const voiceSample = makeVoiceSample(workDir)
+    // The first WAV is not audio; the second is long enough to still be
+    // converting when the first fails
+    const stub = path.join(TMP, 'convert-fail-stub.py')
+    fs.writeFileSync(stub, [
+      'import json, sys, struct, wave',
+      'req = json.loads(sys.stdin.read())',
+      'work = req["workDir"]',
+      'for i, _ in enumerate(req["clone"]["texts"]):',
+      '    p = f"{work}/clone-{i}.wav"',
+      '    if i == 0:',
+      '        open(p, "w").write("not a wav")',
+      '    else:',
+      '        with wave.open(p, "wb") as w:',
+      '            w.setnchannels(1); w.setsampwidth(2); w.setframerate(24000)',
+      '            w.writeframes(bytes(2 * 24000 * 120))',
+      '    print(json.dumps({"event": "wav", "index": i, "path": p}), flush=True)',
+      'print(json.dumps({"ok": True}))',
+    ].join('\n'))
+    const cacheDir = path.join(TMP, 'cache-convert-fail')
+    const qwen = QwenTtsProvider({ mode: 'clone', voiceSample, refText: 'Welcome', cacheDir, cacheAudio: true, __pythonScriptPath__: stub })
+    await expect(qwen.synthesize(['bad', 'good'], { workDir })).rejects.toThrow(/ffmpeg/i)
+    // The good line still made it into the cache, but not into the work dir
+    expect(fs.readdirSync(path.join(cacheDir, 'audio'))).toHaveLength(1)
+    expect(fs.readdirSync(workDir).filter((f) => f.endsWith('.mp3'))).toEqual([])
+  })
+
+  it('names a cache file only once its conversion is complete', async () => {
+    const workDir = path.join(TMP, 'work-cache-atomic')
+    fs.mkdirSync(workDir, { recursive: true })
+    const voiceSample = makeVoiceSample(workDir)
+    // Long enough to watch the conversion run
+    const stub = path.join(TMP, 'cache-atomic-stub.py')
+    fs.writeFileSync(stub, [
+      'import json, sys, wave',
+      'req = json.loads(sys.stdin.read())',
+      'p = f"{req[\'workDir\']}/clone-0.wav"',
+      'with wave.open(p, "wb") as w:',
+      '    w.setnchannels(1); w.setsampwidth(2); w.setframerate(24000)',
+      '    w.writeframes(bytes(2 * 24000 * 600))',
+      'print(json.dumps({"event": "wav", "index": 0, "path": p}), flush=True)',
+      'print(json.dumps({"ok": True}))',
+    ].join('\n'))
+    const audioDir = path.join(TMP, 'cache-atomic', 'audio')
+    const qwen = QwenTtsProvider({ mode: 'clone', voiceSample, refText: 'Welcome', cacheDir: path.join(TMP, 'cache-atomic'), cacheAudio: true, __pythonScriptPath__: stub })
+    const done = qwen.synthesize(['long'], { workDir })
+    const list = () => (fs.existsSync(audioDir) ? fs.readdirSync(audioDir) : [])
+    for (let i = 0; i < 400 && !list().some((f) => f.endsWith('.partial')); i++) await new Promise((r) => setTimeout(r, 5))
+    const during = list()
+    await done
+    expect(during.some((f) => f.endsWith('.partial'))).toBe(true)
+    expect(during.filter((f) => f.endsWith('.mp3'))).toEqual([])
+    expect(list().filter((f) => !f.endsWith('.mp3'))).toEqual([])
+  })
+
   it('sends the batch size to the sidecar, 8 unless configured', async () => {
     const workDir = path.join(TMP, 'work-batch')
     fs.mkdirSync(workDir, { recursive: true })
@@ -218,13 +276,13 @@ describe('QwenTtsProvider synthesize() — audio cache', () => {
       'req = json.loads(sys.stdin.read())',
       'with open(' + JSON.stringify(seenFile) + ', "w") as f: f.write(str(req["clone"]["batchSize"]))',
       'work = req["workDir"]',
-      'results = {"ok": True, "clone": []}',
+      'results = {"ok": True}',
       'for i, _ in enumerate(req["clone"]["texts"]):',
       '    p = f"{work}/clone-{i}.wav"',
       '    with wave.open(p, "wb") as w:',
       '        w.setnchannels(1); w.setsampwidth(2); w.setframerate(24000)',
       '        w.writeframes(struct.pack("<" + "h" * 1000, *([0] * 1000)))',
-      '    results["clone"].append({"path": p})',
+      '    print(json.dumps({"event": "wav", "index": i, "path": p}), flush=True)',
       'print(json.dumps(results))',
     ].join('\n'))
     const make = (batchSize?: number) => QwenTtsProvider({
@@ -243,7 +301,7 @@ describe('QwenTtsProvider synthesize() — audio cache', () => {
     const texts = ['t0', 't1', 't2', 't3', 't4', 't5', 't6']
     const log = (name: string) => path.join(TMP, `${name}.log`)
     const read = (file: string) => fs.readFileSync(file, 'utf8').trim().split('\n').map((l) => JSON.parse(l))
-    const run = (name: string, cacheDir: string, failBatch?: number, runaway = '', inputs = texts) => {
+    const provider = (name: string, cacheDir: string, failBatch?: number, runaway = '') => {
       fs.rmSync(log(name), { force: true })
       vi.stubEnv('PYTHONPATH', MODULES)
       vi.stubEnv('PYTHONDONTWRITEBYTECODE', '1')
@@ -253,8 +311,11 @@ describe('QwenTtsProvider synthesize() — audio cache', () => {
       const workDir = path.join(TMP, `work-${name}`)
       fs.mkdirSync(workDir, { recursive: true })
       const voiceSample = makeVoiceSample(workDir)
-      return QwenTtsProvider({ mode: 'clone', voiceSample, refText: 'Welcome', batchSize: 3, cacheDir, cacheAudio: true })
-        .synthesize(inputs, { workDir })
+      return { workDir, qwen: QwenTtsProvider({ mode: 'clone', voiceSample, refText: 'Welcome', batchSize: 3, cacheDir, cacheAudio: true }) }
+    }
+    const run = (name: string, cacheDir: string, failBatch?: number, runaway?: string, inputs = texts) => {
+      const { workDir, qwen } = provider(name, cacheDir, failBatch, runaway)
+      return qwen.synthesize(inputs, { workDir })
     }
     afterAll(() => { vi.unstubAllEnvs() })
 
@@ -267,11 +328,17 @@ describe('QwenTtsProvider synthesize() — audio cache', () => {
       expect(entries.filter((e) => e.write).map((e) => e.write)).toEqual(texts.map((t, i) => [`clone-${i}.wav`, t]))
     })
 
-    it('caps generation by the longest text in the batch', async () => {
-      const inputs = ['x', 'mid line', 'a much longer line']
-      expect(await run('cap', path.join(TMP, 'cache-cap'), undefined, undefined, inputs)).toHaveLength(3)
-      const batches = read(log('cap')).filter((e) => e.batch)
-      // 12.5 frames/s for 2 s plus 1 s per 6 characters
+    it('synthesizes the shortest texts first, under a frame cap that grows with the text', async () => {
+      const inputs = ['a much longer line', 'mid line', 'x']
+      const out = await run('shortest-first', path.join(TMP, 'cache-shortest-first'), undefined, undefined, inputs)
+      expect(out).toHaveLength(3)
+      const batches = read(log('shortest-first')).filter((e) => e.batch)
+      expect(batches.map((e) => e.batch)).toEqual([['x', 'mid line', 'a much longer line']])
+      // Written under each text's own position
+      expect(read(log('shortest-first')).filter((e) => e.write).map((e) => e.write)).toEqual([
+        ['clone-2.wav', 'x'], ['clone-1.wav', 'mid line'], ['clone-0.wav', 'a much longer line'],
+      ])
+      // 12.5 frames/s for 2 s plus 1 s per 6 characters, set by the batch's longest text
       expect(batches[0].cap).toBe(Math.floor(12.5 * (2 + 18 / 6)) + 1)
     })
 
@@ -293,7 +360,7 @@ describe('QwenTtsProvider synthesize() — audio cache', () => {
       expect(err.name).toBe('QwenSidecarError')
       expect(err.message).toMatch(/no end of speech in 3 tries: 't4'/)
       // t3 finished before t4 failed
-      expect(err.partial.clone).toHaveLength(4)
+      expect(err.partial.clone.map((w: { index: number }) => w.index)).toEqual([0, 1, 2, 3])
     })
 
     it('caches the batches finished before a failure, so a rerun makes only the rest', async () => {
@@ -391,13 +458,13 @@ describe('QwenTtsProvider synthesize() — design mode', () => {
       'req = json.loads(sys.stdin.read())',
       'assert "design" not in req, "design block leaked through cache"',
       'work = req["workDir"]',
-      'results = {"ok": True, "clone": []}',
+      'results = {"ok": True}',
       'for i, _ in enumerate(req["clone"]["texts"]):',
       '    p = f"{work}/clone-{i}.wav"',
       '    with wave.open(p, "wb") as w:',
       '        w.setnchannels(1); w.setsampwidth(2); w.setframerate(24000)',
       '        w.writeframes(struct.pack("<" + "h" * 1000, *([0] * 1000)))',
-      '    results["clone"].append({"path": p})',
+      '    print(json.dumps({"event": "wav", "index": i, "path": p}), flush=True)',
       'print(json.dumps(results))',
     ].join('\n'))
 

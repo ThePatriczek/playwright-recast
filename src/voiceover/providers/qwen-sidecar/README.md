@@ -2,7 +2,9 @@
 
 Python sidecar invoked by `QwenTtsProvider`. Reads a single JSON request from
 stdin, generates voice-design and/or voice-clone audio, writes WAV files into
-the request's `workDir`, and prints a single JSON response on stdout.
+the request's `workDir`, and prints JSON lines on stdout: a
+`{"event":"wav","index","path"}` per clone WAV as it is written (shortest text
+first), then the response.
 
 ## Requirements
 
