@@ -27,7 +27,7 @@ import { filterSteps } from '../filter/step-filter.js'
 import { processSpeed } from '../speed/speed-processor.js'
 import { generateSubtitles } from '../subtitles/subtitle-generator.js'
 import { parseSrt } from '../subtitles/srt-parser.js'
-import { generateVoiceover } from '../voiceover/voiceover-processor.js'
+import { generateVoiceover, speechTexts, startSpeech, type Speech } from '../voiceover/voiceover-processor.js'
 import { renderVideo, detectBlankLeadIn, probeVideoFps, probeResolution, getVideoDuration, type RenderableTrace } from '../render/renderer.js'
 import {
   resolveBlankLeadInMs,
@@ -107,6 +107,13 @@ export type PipelineState = {
   urlBarConfig?: UrlBarConfig
   urlBarEvents?: UrlBarEvent[]
 }
+
+/** Stages that write the texts voiceover() speaks. */
+const SPEECH_TEXT_STAGES: ReadonlySet<StageDescriptor['type']> = new Set(['subtitles', 'subtitlesFromSrt', 'subtitlesFromTrace', 'textProcessing'])
+
+/** Where voiceover() writes its temp files. */
+const voiceoverTmpDir = (state: PipelineState): string =>
+  path.join(path.dirname(state.sourceVideoPath ?? '/tmp'), '.recast-vo-tmp')
 
 /** Array.prototype.findLast, which the build's target lib lacks. */
 function findLast<T>(items: ReadonlyArray<T>, match: (item: T) => boolean): T | undefined {
@@ -380,7 +387,33 @@ export class PipelineExecutor {
     // Find source video in the trace directory
     state.sourceVideoPath = this.findSourceVideo()
 
-    for (const stage of this.stages) {
+    // TTS runs beside the other stages: the provider sets up (a local model
+    // loads) from the start, and synthesis starts once the last stage that
+    // writes the spoken texts has run.
+    const voiceoverIndex = this.stages.findIndex((st) => st.type === 'voiceover')
+    const voiceoverStage = this.stages[voiceoverIndex]
+    const provider = voiceoverStage?.type === 'voiceover' ? voiceoverStage.provider : undefined
+    let textsFinalIndex = -1
+    for (let i = 0; i < voiceoverIndex; i++) if (SPEECH_TEXT_STAGES.has(this.stages[i]!.type)) textsFinalIndex = i
+    const tts: { speech?: Speech } = {}
+    const releaseWarm = provider?.prewarm?.()
+    try {
+      await this.runEachStage(state, tts, (i) => {
+        if (i === textsFinalIndex && provider && state.subtitled) {
+          tts.speech = startSpeech(provider, speechTexts(state.subtitled), voiceoverTmpDir(state))
+        }
+      })
+    } catch (error) {
+      await tts.speech?.cancel()
+      throw error
+    } finally {
+      releaseWarm?.()
+    }
+    return state
+  }
+
+  private async runEachStage(state: PipelineState, tts: { speech?: Speech }, afterStage: (index: number) => void): Promise<void> {
+    for (const [index, stage] of this.stages.entries()) {
       switch (stage.type) {
         case 'direct': {
           if (!state.parsed) throw new Error('direct() requires parse() first')
@@ -1151,15 +1184,18 @@ export class PipelineExecutor {
             }
           }
 
-          const tmpDir = path.join(path.dirname(state.sourceVideoPath ?? '/tmp'), '.recast-vo-tmp')
           const outputFps = state.sourceVideoPath ? probeVideoFps(state.sourceVideoPath) : 25
+          // generateVoiceover owns the started synthesis from here
+          const speech = tts.speech
+          tts.speech = undefined
           state.voiceovered = await generateVoiceover(
             state.subtitled,
             stage.provider,
-            tmpDir,
+            voiceoverTmpDir(state),
             stage.options,
             approachHolds,
             outputFps,
+            speech,
           )
           break
         }
@@ -1186,9 +1222,8 @@ export class PipelineExecutor {
           }
           break
       }
+      afterStage(index)
     }
-
-    return state
   }
 
   private findTraceZip(): string {

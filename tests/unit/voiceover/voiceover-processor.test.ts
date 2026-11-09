@@ -4,7 +4,7 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 import * as os from 'node:os'
 import * as crypto from 'node:crypto'
-import { generateVoiceover } from '../../../src/voiceover/voiceover-processor'
+import { generateVoiceover, startSpeech } from '../../../src/voiceover/voiceover-processor'
 import type { TtsProvider } from '../../../src/types/voiceover'
 import type { SubtitledTrace } from '../../../src/types/subtitle'
 
@@ -123,6 +123,52 @@ describe('generateVoiceover provider isAvailable guard', () => {
     // was reached before any downstream failure.
     await generateVoiceover(trace, okProvider, tmp, undefined, undefined, 25).catch(() => {})
     expect(synthesizeCalled).toBe(true)
+  })
+})
+
+describe('generateVoiceover with a synthesis started ahead', () => {
+  beforeAll(() => { fs.mkdirSync(TMP_ROOT, { recursive: true }) })
+  afterAll(() => { fs.rmSync(TMP_ROOT, { recursive: true, force: true }) })
+
+  function countingProvider(calls: string[][]): TtsProvider {
+    const inner = levelAlternatingProvider([makeSineBuffer(-20, 1)])
+    return { ...inner, async synthesize(texts, options) { calls.push(texts); return inner.synthesize(texts, options) } }
+  }
+
+  it('uses it when it speaks the trace\'s texts', async () => {
+    const calls: string[][] = []
+    const provider = countingProvider(calls)
+    const tmp = path.join(TMP_ROOT, 'started-same')
+    const speech = startSpeech(provider, ['line 1', 'line 2'], tmp)
+    const result = await generateVoiceover(makeTrace(2), provider, tmp, undefined, undefined, 25, speech)
+    expect(calls).toEqual([['line 1', 'line 2']])
+    expect(result.voiceover.entries).toHaveLength(2)
+    expect(fs.existsSync(speech.workDir)).toBe(false)
+  })
+
+  it('does not synthesize when cancelled while availability is checked', async () => {
+    const calls: string[][] = []
+    let available!: (yes: boolean) => void
+    const provider: TtsProvider = {
+      ...countingProvider(calls),
+      isAvailable: () => new Promise((resolve) => { available = resolve }),
+    }
+    const speech = startSpeech(provider, ['line 1'], path.join(TMP_ROOT, 'started-cancelled'))
+    const cancelled = speech.cancel()
+    available(true)
+    await cancelled
+    expect(calls).toEqual([])
+  })
+
+  it('replaces it when the texts changed since it started', async () => {
+    const calls: string[][] = []
+    const provider = countingProvider(calls)
+    const tmp = path.join(TMP_ROOT, 'started-stale')
+    const speech = startSpeech(provider, ['stale'], tmp)
+    await generateVoiceover(makeTrace(2), provider, tmp, undefined, undefined, 25, speech)
+    // The stale one was cancelled before it reached the provider
+    expect(calls).toEqual([['line 1', 'line 2']])
+    expect(fs.readdirSync(tmp).filter((f) => f.startsWith('recast-vo-'))).toEqual([])
   })
 })
 

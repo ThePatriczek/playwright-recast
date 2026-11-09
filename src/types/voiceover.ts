@@ -28,6 +28,12 @@ export interface TtsOptions {
   format?: 'mp3' | 'wav' | 'opus' | 'pcm'
   /** Directory the provider should write output files into. Caller owns cleanup. */
   workDir?: string
+  /**
+   * Aborts the synthesis, e.g. when the pipeline fails while it runs. A
+   * failing pipeline waits for `synthesize()` to settle, so a provider that
+   * ignores it delays the error until its requests finish.
+   */
+  signal?: AbortSignal
 }
 
 /** The contract every TTS provider must implement */
@@ -40,6 +46,13 @@ export interface TtsProvider {
    */
   synthesize(texts: string[], options?: TtsOptions): Promise<AudioSegment[]>
   isAvailable(): Promise<boolean>
+  /**
+   * Optional: start slow setup (e.g. loading a local model) before the texts
+   * are known. The pipeline calls it when it starts; the next `synthesize()`
+   * uses what it set up. Returns a release function, called when the run ends,
+   * that frees the setup if `synthesize()` never took it.
+   */
+  prewarm?(): () => void
   dispose(): Promise<void>
 }
 

@@ -129,8 +129,8 @@ const sidecarScript = (override: string | undefined): string =>
   override ?? path.join(path.dirname(fileURLToPath(import.meta.url)), 'qwen-sidecar', 'sidecar.py')
 
 /** Starts the sidecar; it waits for its request on stdin. */
-function startSidecar(pythonBin: string, script: string): Sidecar {
-  const child = spawn(pythonBin, [script], { stdio: ['pipe', 'pipe', 'pipe'] })
+function startSidecar(pythonBin: string, script: string, args: string[] = []): Sidecar {
+  const child = spawn(pythonBin, [script, ...args], { stdio: ['pipe', 'pipe', 'pipe'] })
   let stdout = ''
   let partialLine = ''
   let stderr = ''
@@ -171,9 +171,15 @@ async function runSidecar(
   sidecar: Sidecar,
   pythonBin: string,
   req: SidecarRequest,
+  signal: AbortSignal | undefined,
 ): Promise<SidecarResponseOk> {
+  const kill = (): void => { sidecar.child.kill() }
+  signal?.addEventListener('abort', kill, { once: true })
+  if (signal?.aborted) kill()
   sidecar.child.stdin!.end(JSON.stringify(req))
   const r = await sidecar.exited
+  signal?.removeEventListener('abort', kill)
+  signal?.throwIfAborted()
   if (r.error && (r.error as NodeJS.ErrnoException).code === 'ENOENT') {
     throw new Error(
       `QwenTtsProvider: could not spawn '${pythonBin}'. ` +
@@ -324,15 +330,16 @@ export function QwenTtsProvider(config: QwenTtsProviderConfig): TtsProvider {
     return { targets, paths, missIndices, duplicates }
   }
 
+  const designCached = (): boolean => cacheVoiceDesign && fs.existsSync(designCachePath())
+
   /** Pick the reference audio path and decide whether the sidecar must generate
    *  a fresh design WAV first. */
   function resolveRefAudio(sidecarDir: string): { refAudio: string; scheduledDesign: boolean } {
     if (config.mode === 'clone') {
       return { refAudio: config.voiceSample, scheduledDesign: false }
     }
-    const cached = designCachePath()
-    if (cacheVoiceDesign && fs.existsSync(cached)) {
-      return { refAudio: cached, scheduledDesign: false }
+    if (designCached()) {
+      return { refAudio: designCachePath(), scheduledDesign: false }
     }
     return { refAudio: path.join(sidecarDir, 'design.wav'), scheduledDesign: true }
   }
@@ -416,8 +423,29 @@ export function QwenTtsProvider(config: QwenTtsProviderConfig): TtsProvider {
     }))
   }
 
+  /** A sidecar started by prewarm(), loading its model until synthesize() takes it. */
+  let warm: Sidecar | undefined
+  const takeWarm = (): Sidecar | undefined => {
+    const sidecar = warm
+    warm = undefined
+    return sidecar
+  }
+
   return {
     name: 'qwen',
+
+    prewarm(): () => void {
+      takeWarm()?.child.kill()
+      // The model the sidecar needs first: the design one makes the voice the clone one reads with
+      const model = config.mode === 'design' && !designCached() ? designModel! : cloneModel
+      const sidecar = startSidecar(pythonBin, sidecarScript(config.__pythonScriptPath__), ['--preload', JSON.stringify({ model, device, dtype })])
+      warm = sidecar
+      return () => {
+        if (warm !== sidecar) return
+        warm = undefined
+        sidecar.child.kill()
+      }
+    },
 
     async synthesize(texts: string[], options?: TtsOptions): Promise<AudioSegment[]> {
       const tmpDir = options?.workDir ?? os.tmpdir()
@@ -429,7 +457,7 @@ export function QwenTtsProvider(config: QwenTtsProviderConfig): TtsProvider {
         const plan = planSynthesis(texts, tmpDir)
         const { refAudio, scheduledDesign } = resolveRefAudio(sidecarDir)
         if (scheduledDesign || plan.missIndices.length > 0) {
-          const sidecar = startSidecar(pythonBin, sidecarScript(config.__pythonScriptPath__))
+          const sidecar = takeWarm() ?? startSidecar(pythonBin, sidecarScript(config.__pythonScriptPath__))
           // Each WAV converts while the sidecar makes the next ones; one at a
           // time, so a fast model cannot start an ffmpeg per line at once
           const conversions: Array<Promise<void>> = []
@@ -446,6 +474,7 @@ export function QwenTtsProvider(config: QwenTtsProviderConfig): TtsProvider {
               sidecar,
               pythonBin,
               buildSidecarRequest(plan, sidecarDir, refAudio, scheduledDesign),
+              options?.signal,
             )
           } catch (err) {
             // The finished WAVs are in the cache by now, so a rerun only makes
@@ -465,6 +494,9 @@ export function QwenTtsProvider(config: QwenTtsProviderConfig): TtsProvider {
             throw failed.reason
           }
           if (resp.design) persistDesignWav(resp.design.path)
+        } else {
+          // All cached: free the GPU of the preloaded model
+          takeWarm()?.child.kill()
         }
         fillDuplicates(plan, tmpDir)
         return buildResult(plan)
@@ -480,7 +512,7 @@ export function QwenTtsProvider(config: QwenTtsProviderConfig): TtsProvider {
     },
 
     async dispose(): Promise<void> {
-      // sidecar is per-call; nothing to release
+      takeWarm()?.child.kill()
     },
   }
 }

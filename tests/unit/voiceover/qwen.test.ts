@@ -317,6 +317,10 @@ describe('QwenTtsProvider synthesize() — audio cache', () => {
       const { workDir, qwen } = provider(name, cacheDir, failBatch, runaway)
       return qwen.synthesize(inputs, { workDir })
     }
+    const waitFor = async (check: () => boolean) => {
+      for (let i = 0; i < 200 && !check(); i++) await new Promise((r) => setTimeout(r, 25))
+      expect(check()).toBe(true)
+    }
     afterAll(() => { vi.unstubAllEnvs() })
 
     it('synthesizes in batches, writing each text to its own file and preparing the voice once', async () => {
@@ -361,6 +365,32 @@ describe('QwenTtsProvider synthesize() — audio cache', () => {
       expect(err.message).toMatch(/no end of speech in 3 tries: 't4'/)
       // t3 finished before t4 failed
       expect(err.partial.clone.map((w: { index: number }) => w.index)).toEqual([0, 1, 2, 3])
+    })
+
+    it('prewarm() loads the model before the texts arrive, and synthesize() uses it', async () => {
+      const { workDir, qwen } = provider('prewarm', path.join(TMP, 'cache-prewarm'))
+      qwen.prewarm!()
+      // Loaded while no request was sent yet
+      await waitFor(() => fs.existsSync(log('prewarm')))
+      expect(read(log('prewarm'))).toEqual([{ load: 'Qwen/Qwen3-TTS-12Hz-0.6B-Base' }])
+      expect(await qwen.synthesize(texts, { workDir })).toHaveLength(7)
+      expect(read(log('prewarm')).filter((e) => e.load)).toHaveLength(1)
+    })
+
+    it('a released prewarm is not used', async () => {
+      const { workDir, qwen } = provider('prewarm-release', path.join(TMP, 'cache-prewarm-release'))
+      const release = qwen.prewarm!()
+      await waitFor(() => fs.existsSync(log('prewarm-release')))
+      release()
+      expect(await qwen.synthesize(texts, { workDir })).toHaveLength(7)
+      expect(read(log('prewarm-release')).filter((e) => e.load)).toHaveLength(2)
+    })
+
+    it('an aborted synthesis stops the sidecar', async () => {
+      const { workDir, qwen } = provider('abort', path.join(TMP, 'cache-abort'))
+      const controller = new AbortController()
+      controller.abort()
+      await expect(qwen.synthesize(texts, { workDir, signal: controller.signal })).rejects.toThrow(/abort/i)
     })
 
     it('caches the batches finished before a failure, so a rerun makes only the rest', async () => {

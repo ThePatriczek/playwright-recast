@@ -30,7 +30,7 @@ const DEFAULT_SPEED = 1.0
 interface OpenAIClient {
   audio: {
     speech: {
-      create(params: Record<string, unknown>): Promise<{ arrayBuffer(): Promise<ArrayBuffer> }>
+      create(params: Record<string, unknown>, options?: { signal?: AbortSignal }): Promise<{ arrayBuffer(): Promise<ArrayBuffer> }>
     }
   }
 }
@@ -72,7 +72,7 @@ export function OpenAIProvider(config: OpenAIProviderConfig = {}): TtsProvider {
           model, voice, speed, input: text, response_format: 'mp3',
         }
         if (instructions) params.instructions = instructions
-        const response = await openai.audio.speech.create(params)
+        const response = await openai.audio.speech.create(params, { signal: options?.signal })
         return Buffer.from(await response.arrayBuffer())
       }
 

@@ -423,7 +423,8 @@ import { QwenTtsProvider } from 'playwright-recast/providers/qwen'
 ```
 
 The provider spawns a Python sidecar (PyTorch + `qwen-tts` + `flash-attn`)
-once per pipeline run. The deps are heavy (~5–8 GB on disk for PyTorch +
+once per pipeline run, when the run starts, so the model loads while the
+trace is parsed. The deps are heavy (~5–8 GB on disk for PyTorch +
 flash-attn), so the recommended setup is **one shared venv reused across
 projects**, pointed at via `pythonBin`:
 

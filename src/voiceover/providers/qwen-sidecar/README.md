@@ -5,6 +5,8 @@ stdin, generates voice-design and/or voice-clone audio, writes WAV files into
 the request's `workDir`, and prints JSON lines on stdout: a
 `{"event":"wav","index","path"}` per clone WAV as it is written (shortest text
 first), then the response.
+`--preload '{"model","device","dtype"}'` loads a model before the request
+arrives (`TtsProvider.prewarm()`).
 
 ## Requirements
 

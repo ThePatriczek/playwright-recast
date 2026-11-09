@@ -17,6 +17,7 @@ class Qwen3TTSModel:
 
     @classmethod
     def from_pretrained(cls, name, **kwargs):
+        _log({"load": name})
         return cls()
 
     def create_voice_clone_prompt(self, ref_audio, ref_text):

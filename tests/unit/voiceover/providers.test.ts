@@ -71,7 +71,7 @@ describe('ElevenLabsProvider', () => {
     expect(mocks.convertMock).toHaveBeenCalledTimes(2)
     expect(mocks.convertMock).toHaveBeenNthCalledWith(1, 'v1', expect.objectContaining({
       text: 'hello', modelId: 'm1', languageCode: 'cs', outputFormat: 'mp3_44100_128',
-    }))
+    }), expect.anything())
   })
 
   it('options override factory config per call', async () => {
@@ -79,7 +79,7 @@ describe('ElevenLabsProvider', () => {
     await p.synthesize(['hello'], { workDir: TMP_ROOT, voice: 'v2', model: 'm2', languageCode: 'en' })
     expect(mocks.convertMock).toHaveBeenCalledWith('v2', expect.objectContaining({
       modelId: 'm2', languageCode: 'en',
-    }))
+    }), expect.anything())
   })
 
   it('passes voiceSettings to the API call when provided', async () => {
@@ -90,7 +90,7 @@ describe('ElevenLabsProvider', () => {
     await p.synthesize(['x'], { workDir: TMP_ROOT })
     expect(mocks.convertMock).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
       voiceSettings: { stability: 0.75, similarityBoost: 0.8, style: 0.1, useSpeakerBoost: true },
-    }))
+    }), expect.anything())
   })
 
   it('omits voiceSettings when not provided', async () => {
@@ -149,10 +149,10 @@ describe('OpenAIProvider', () => {
     expect(mocks.openaiCreateMock).toHaveBeenCalledTimes(2)
     expect(mocks.openaiCreateMock).toHaveBeenNthCalledWith(1, expect.objectContaining({
       voice: 'nova', model: 'tts-1', speed: 1.1, input: 'hi', response_format: 'mp3',
-    }))
+    }), expect.anything())
     expect(mocks.openaiCreateMock).toHaveBeenNthCalledWith(2, expect.objectContaining({
       input: 'there',
-    }))
+    }), expect.anything())
   })
 
   it('options override factory config per call', async () => {
@@ -160,13 +160,13 @@ describe('OpenAIProvider', () => {
     await p.synthesize(['hi'], { workDir: TMP_ROOT, voice: 'echo', model: 'tts-2', speed: 0.9 })
     expect(mocks.openaiCreateMock).toHaveBeenCalledWith(expect.objectContaining({
       voice: 'echo', model: 'tts-2', speed: 0.9,
-    }))
+    }), expect.anything())
   })
 
   it('adds instructions from factory config when provided', async () => {
     const p = OpenAIProvider({ apiKey: 'k', instructions: 'be calm' })
     await p.synthesize(['x'], { workDir: TMP_ROOT })
-    expect(mocks.openaiCreateMock).toHaveBeenCalledWith(expect.objectContaining({ instructions: 'be calm' }))
+    expect(mocks.openaiCreateMock).toHaveBeenCalledWith(expect.objectContaining({ instructions: 'be calm' }), expect.anything())
   })
 
   it('omits instructions when not provided', async () => {
@@ -252,5 +252,30 @@ describe('PollyProvider', () => {
 
     await p.synthesize(['hi', 'there'], { workDir })
     expect(mocks.pollySendMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('the abort signal reaches each SDK request', () => {
+  const signal = new AbortController().signal
+
+  it('ElevenLabs', async () => {
+    mocks.convertMock.mockReset()
+    mocks.convertMock.mockResolvedValue(makeStream(new Uint8Array([1, 2, 3])))
+    await ElevenLabsProvider({ apiKey: 'k', voice: 'v1' }).synthesize(['x'], { workDir: TMP_ROOT, signal })
+    expect(mocks.convertMock).toHaveBeenCalledWith('v1', expect.anything(), { abortSignal: signal })
+  })
+
+  it('OpenAI', async () => {
+    mocks.openaiCreateMock.mockReset()
+    mocks.openaiCreateMock.mockResolvedValue({ arrayBuffer: async () => new ArrayBuffer(3) })
+    await OpenAIProvider({ apiKey: 'k' }).synthesize(['x'], { workDir: TMP_ROOT, signal })
+    expect(mocks.openaiCreateMock).toHaveBeenCalledWith(expect.anything(), { signal })
+  })
+
+  it('Polly', async () => {
+    mocks.pollySendMock.mockReset()
+    mocks.pollySendMock.mockResolvedValue({ AudioStream: { transformToByteArray: async () => new Uint8Array([1, 2, 3]) } })
+    await PollyProvider({ region: 'us-east-1', accessKeyId: 'a', secretAccessKey: 's' }).synthesize(['x'], { workDir: TMP_ROOT, signal })
+    expect(mocks.pollySendMock).toHaveBeenCalledWith(expect.anything(), { abortSignal: signal })
   })
 })
