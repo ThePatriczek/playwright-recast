@@ -3,6 +3,7 @@ import * as path from 'node:path'
 import { planAudioConcat, probeAudioFormat } from './audio-format.js'
 import type { SubtitledTrace } from '../types/subtitle.js'
 import type {
+  AudioSegment,
   TtsProvider,
   VoiceoveredTrace,
   VoiceoverEntry,
@@ -48,6 +49,59 @@ function resolveNormalize(
   return opt
 }
 
+/** What the voiceover speaks, one text per subtitle. */
+export const speechTexts = (trace: SubtitledTrace): string[] => trace.subtitles.map((s) => s.ttsText ?? s.text)
+
+/** A synthesis started ahead of `generateVoiceover()`, which finishes it. */
+export interface Speech {
+  readonly texts: readonly string[]
+  /** Private: tmpDir is reused across runs, and a provider's file names must
+   *  not collide with the track's. Files outside it (a cache) are the provider's. */
+  readonly workDir: string
+  readonly audios: Promise<AudioSegment[]>
+  /** Stops the synthesis and removes its files. */
+  cancel(): Promise<void>
+}
+
+/** Starts synthesizing `texts`, so it runs while the pipeline does other work. */
+export function startSpeech(provider: TtsProvider, texts: readonly string[], tmpDir: string): Speech {
+  fs.mkdirSync(tmpDir, { recursive: true })
+  const workDir = fs.mkdtempSync(path.join(tmpDir, 'recast-vo-'))
+  const ttsDir = path.join(workDir, 'tts')
+  fs.mkdirSync(ttsDir)
+  const controller = new AbortController()
+  const audios = (async () => {
+    if (!(await provider.isAvailable())) {
+      throw new Error(
+        `Voiceover provider "${provider.name}" is not available — ` +
+          `check credentials, peer-dependency installation, or runtime prerequisites.`,
+      )
+    }
+    const out = await provider.synthesize([...texts], { workDir: ttsDir, signal: controller.signal })
+    if (out.length !== texts.length) {
+      throw new Error(`Provider "${provider.name}" returned ${out.length} segments for ${texts.length} texts`)
+    }
+    return out
+  })()
+  // Awaited later: a failure until then must not count as unhandled
+  audios.catch(() => {})
+  return {
+    texts,
+    workDir,
+    audios,
+    async cancel() {
+      controller.abort()
+      await audios.catch(() => {})
+      removeWorkDir(workDir)
+    },
+  }
+}
+
+function removeWorkDir(workDir: string): void {
+  // A locked file must not fail a finished voiceover
+  try { fs.rmSync(workDir, { recursive: true, force: true }) } catch { /* left behind */ }
+}
+
 /**
  * Generate voiceover audio from subtitles using a TTS provider.
  * Produces individual audio segments, optionally normalizes loudness per segment,
@@ -57,6 +111,8 @@ function resolveNormalize(
  *   the renderer's video hold all use identical numbers. Aligning downstream
  *   instead would leave shiftForFreezes() on raw milliseconds while the video
  *   held frame-rounded ones, desyncing every click and cursor keyframe.
+ * @param started A synthesis from `startSpeech()`; used when it speaks this
+ *   trace's texts, else cancelled.
  */
 export async function generateVoiceover(
   trace: SubtitledTrace,
@@ -65,31 +121,20 @@ export async function generateVoiceover(
   options: VoiceoverOptions | undefined,
   approachHolds: VoiceoverFreeze[] = [],
   outputFps: number,
+  started?: Speech,
 ): Promise<VoiceoveredTrace> {
-  fs.mkdirSync(tmpDir, { recursive: true })
   const normalizeConfig = resolveNormalize(options?.normalize)
-
-  if (!(await provider.isAvailable())) {
-    throw new Error(
-      `Voiceover provider "${provider.name}" is not available — ` +
-        `check credentials, peer-dependency installation, or runtime prerequisites.`,
-    )
+  const texts = speechTexts(trace)
+  let speech = started
+  if (speech && (speech.texts.length !== texts.length || speech.texts.some((t, i) => t !== texts[i]))) {
+    await speech.cancel()
+    speech = undefined
   }
-
-  const texts = trace.subtitles.map((s) => s.ttsText ?? s.text)
-  // Private: tmpDir is reused across runs, and a provider's file names must
-  // not collide with the track's. Files outside it (a cache) are the provider's.
-  const workDir = fs.mkdtempSync(path.join(tmpDir, 'recast-vo-'))
-  const ttsDir = path.join(workDir, 'tts')
-  fs.mkdirSync(ttsDir)
+  speech ??= startSpeech(provider, texts, tmpDir)
+  const workDir = speech.workDir
   const segPathFor = (si: number): string => path.join(workDir, `seg-${si}.wav`)
   try {
-    const audios = await provider.synthesize(texts, { workDir: ttsDir })
-    if (audios.length !== texts.length) {
-      throw new Error(
-        `Provider "${provider.name}" returned ${audios.length} segments for ${texts.length} texts`,
-      )
-    }
+    const audios = await speech.audios
     // Every segment becomes 16-bit PCM in one format, so the track is written
     // sample by sample and every duration is a sample count. Files are keyed
     // by position: SRT indexes can repeat.
@@ -229,7 +274,6 @@ export async function generateVoiceover(
       },
     }
   } finally {
-    // A locked file must not fail a finished voiceover
-    try { fs.rmSync(workDir, { recursive: true, force: true }) } catch { /* left behind */ }
+    removeWorkDir(workDir)
   }
 }

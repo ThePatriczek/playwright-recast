@@ -3,6 +3,9 @@
 Reads one JSON request from stdin, generates audio, and writes JSON lines to
 stdout: one `{"event": "wav", "index", "path"}` per clone WAV as it finishes,
 then the response. See README.md and ../qwen.ts for the protocol.
+
+`--preload '{"model", "device", "dtype"}'` loads that model before reading
+the request, so it loads while the caller is still preparing the texts.
 """
 import json
 import sys
@@ -41,13 +44,25 @@ try:
     import torch
     from qwen_tts import Qwen3TTSModel
 
+    preloaded = {}
+
     def load(name, device, dtype_name):
+        key = (name, device, dtype_name)
+        if key in preloaded:
+            return preloaded.pop(key)
         return Qwen3TTSModel.from_pretrained(
             name,
             device_map=device,
             dtype=getattr(torch, dtype_name),
             attn_implementation="flash_attention_2",
         )
+
+    if len(sys.argv) > 2 and sys.argv[1] == "--preload":
+        p = json.loads(sys.argv[2])
+        try:
+            preloaded[(p["model"], p["device"], p["dtype"])] = load(p["model"], p["device"], p["dtype"])
+        except Exception:  # noqa: BLE001 — the stage that needs it loads it again and reports the error
+            torch.cuda.empty_cache()
 
     req = json.loads(sys.stdin.read())
     work_dir = req["workDir"]
