@@ -9,5 +9,6 @@ def write(path, data, sample_rate):
     with wave.open(path, "wb") as w:
         w.setnchannels(1)
         w.setsampwidth(2)
-        w.setframerate(sample_rate)
-        w.writeframes(b"\x00\x00" * (sample_rate // 10))
+        # A real rate, whatever the stub model claims: ffmpeg reads this file
+        w.setframerate(24000)
+        w.writeframes(b"\x00\x00" * 2400)
