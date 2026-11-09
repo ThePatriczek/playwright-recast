@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixes
+
+- **Director: retiming no longer hangs on ffmpeg 8** - a segment with audio padded the sped-up sound with `apad`, which with `atempo` deadlocks ffmpeg 8 when the output limit ends the video. It now pads with a finite silence input.
+
 ## 0.23.0 (2026-10-04)
 
 ### Features
