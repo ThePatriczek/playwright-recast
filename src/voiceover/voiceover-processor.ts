@@ -77,6 +77,8 @@ export function startSpeech(provider: TtsProvider, texts: readonly string[], tmp
           `check credentials, peer-dependency installation, or runtime prerequisites.`,
       )
     }
+    // Cancelled while availability was checked
+    controller.signal.throwIfAborted()
     const out = await provider.synthesize([...texts], { workDir: ttsDir, signal: controller.signal })
     if (out.length !== texts.length) {
       throw new Error(`Provider "${provider.name}" returned ${out.length} segments for ${texts.length} texts`)

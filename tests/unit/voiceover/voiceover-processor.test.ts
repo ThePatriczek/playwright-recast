@@ -146,13 +146,28 @@ describe('generateVoiceover with a synthesis started ahead', () => {
     expect(fs.existsSync(speech.workDir)).toBe(false)
   })
 
+  it('does not synthesize when cancelled while availability is checked', async () => {
+    const calls: string[][] = []
+    let available!: (yes: boolean) => void
+    const provider: TtsProvider = {
+      ...countingProvider(calls),
+      isAvailable: () => new Promise((resolve) => { available = resolve }),
+    }
+    const speech = startSpeech(provider, ['line 1'], path.join(TMP_ROOT, 'started-cancelled'))
+    const cancelled = speech.cancel()
+    available(true)
+    await cancelled
+    expect(calls).toEqual([])
+  })
+
   it('replaces it when the texts changed since it started', async () => {
     const calls: string[][] = []
     const provider = countingProvider(calls)
     const tmp = path.join(TMP_ROOT, 'started-stale')
     const speech = startSpeech(provider, ['stale'], tmp)
     await generateVoiceover(makeTrace(2), provider, tmp, undefined, undefined, 25, speech)
-    expect(calls).toEqual([['stale'], ['line 1', 'line 2']])
+    // The stale one was cancelled before it reached the provider
+    expect(calls).toEqual([['line 1', 'line 2']])
     expect(fs.readdirSync(tmp).filter((f) => f.startsWith('recast-vo-'))).toEqual([])
   })
 })
