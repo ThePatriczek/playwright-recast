@@ -275,12 +275,17 @@ describe('QwenTtsProvider synthesize() — audio cache', () => {
       expect(batches[0].cap).toBe(Math.floor(12.5 * (2 + 18 / 6)) + 1)
     })
 
-    it('makes a text that ran to its cap again, alone', async () => {
-      const out = await run('runaway', path.join(TMP, 'cache-runaway'), undefined, 't4:2')
-      expect(out).toHaveLength(7)
+    it('makes a text that ran to its cap again, alone, under its own cap', async () => {
+      const inputs = ['t4', 'a much longer line']
+      const out = await run('runaway', path.join(TMP, 'cache-runaway'), undefined, 't4:2', inputs)
+      expect(out).toHaveLength(2)
       const entries = read(log('runaway'))
-      expect(entries.filter((e) => e.batch).map((e) => e.batch)).toEqual([['t0', 't1', 't2'], ['t3', 't4', 't5'], ['t4'], ['t4'], ['t6']])
-      expect(entries.filter((e) => e.write).map((e) => e.write)).toEqual(texts.map((t, i) => [`clone-${i}.wav`, t]))
+      const cap = (text: string) => Math.floor(12.5 * (2 + text.length / 6)) + 1
+      // The batch's cap is the longer text's; the retries use t4's own
+      expect(entries.filter((e) => e.batch).map((e) => [e.batch, e.cap])).toEqual([
+        [inputs, cap(inputs[1]!)], [['t4'], cap('t4')], [['t4'], cap('t4')],
+      ])
+      expect(entries.filter((e) => e.write).map((e) => e.write)).toEqual(inputs.map((t, i) => [`clone-${i}.wav`, t]))
     })
 
     it('gives up on a text that runs to its cap three times', async () => {
