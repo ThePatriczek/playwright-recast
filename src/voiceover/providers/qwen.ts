@@ -206,13 +206,21 @@ function ensureDir(dir: string): void {
 
 async function convertWavToMp3(wavPath: string, mp3Path: string): Promise<void> {
   ensureDir(path.dirname(mp3Path))
-  await runFfmpegAsync([
-    '-y', '-hide_banner', '-loglevel', 'error',
-    '-i', wavPath,
-    '-ac', '1',
-    '-c:a', 'libmp3lame', '-b:a', '192k',
-    mp3Path,
-  ])
+  // Renamed when complete: a concurrent synthesize() takes an existing cache file as a hit
+  const partial = `${mp3Path}.${crypto.randomUUID()}.partial`
+  try {
+    await runFfmpegAsync([
+      '-y', '-hide_banner', '-loglevel', 'error',
+      '-i', wavPath,
+      '-ac', '1',
+      '-c:a', 'libmp3lame', '-b:a', '192k',
+      '-f', 'mp3', partial,
+    ])
+    fs.renameSync(partial, mp3Path)
+  } catch (err) {
+    fs.rmSync(partial, { force: true })
+    throw err
+  }
 }
 
 export function QwenTtsProvider(config: QwenTtsProviderConfig): TtsProvider {
