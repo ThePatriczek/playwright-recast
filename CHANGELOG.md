@@ -4,7 +4,7 @@
 
 ### Features
 
-- **TTS runs beside the other stages** - the pipeline calls the new optional `TtsProvider.prewarm()` when it starts, and starts synthesis right after the last stage that writes the spoken texts (`subtitles*()`, `textProcessing()`), instead of inside `voiceover()`. `QwenTtsProvider` uses it to load its model while the trace is parsed and the pages are composited. `TtsOptions.signal` stops a synthesis when a later stage fails (Qwen honors it).
+- **TTS runs beside the other stages** - the pipeline calls the new optional `TtsProvider.prewarm()` when it starts, and starts synthesis right after the last stage that writes the spoken texts (`subtitles*()`, `textProcessing()`), instead of inside `voiceover()`. `QwenTtsProvider` uses it to load its model while the trace is parsed and the pages are composited. `TtsOptions.signal` stops a synthesis when a later stage fails (all built-in providers honor it).
 
 ### Fixes
 

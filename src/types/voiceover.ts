@@ -28,7 +28,11 @@ export interface TtsOptions {
   format?: 'mp3' | 'wav' | 'opus' | 'pcm'
   /** Directory the provider should write output files into. Caller owns cleanup. */
   workDir?: string
-  /** Aborts the synthesis, e.g. when the pipeline fails while it runs. Optional to honor. */
+  /**
+   * Aborts the synthesis, e.g. when the pipeline fails while it runs. A
+   * failing pipeline waits for `synthesize()` to settle, so a provider that
+   * ignores it delays the error until its requests finish.
+   */
   signal?: AbortSignal
 }
 

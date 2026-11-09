@@ -37,7 +37,7 @@ interface ElevenLabsStream {
 
 interface ElevenLabsClient {
   textToSpeech: {
-    convert(voiceId: string, params: Record<string, unknown>): Promise<ElevenLabsStream>
+    convert(voiceId: string, params: Record<string, unknown>, options?: { abortSignal?: AbortSignal }): Promise<ElevenLabsStream>
   }
 }
 
@@ -83,7 +83,7 @@ export function ElevenLabsProvider(config: ElevenLabsProviderConfig = {}): TtsPr
         }
         if (languageCode) params.languageCode = languageCode
         if (voiceSettings) params.voiceSettings = voiceSettings
-        const audio = await el.textToSpeech.convert(voice, params)
+        const audio = await el.textToSpeech.convert(voice, params, { abortSignal: options?.signal })
         const reader = audio.getReader()
         const chunks: Uint8Array[] = []
         while (true) {

@@ -32,7 +32,7 @@ interface PollyAudioStream {
   transformToByteArray(): Promise<Uint8Array>
 }
 interface PollyResponse { AudioStream?: PollyAudioStream }
-interface PollyClient { send(command: unknown): Promise<PollyResponse> }
+interface PollyClient { send(command: unknown, options?: { abortSignal?: AbortSignal }): Promise<PollyResponse> }
 interface PollyClientCtor { new (config: Record<string, unknown>): PollyClient }
 interface PollyCommandCtor { new (input: Record<string, unknown>): unknown }
 
@@ -104,7 +104,7 @@ export function PollyProvider(config: PollyProviderConfig = {}): TtsProvider {
         }
         if (languageCode) input.LanguageCode = languageCode
         const command = new Cmd(input)
-        const response = await polly.send(command)
+        const response = await polly.send(command, { abortSignal: options?.signal })
         if (!response.AudioStream) {
           throw new Error('Amazon Polly returned no audio stream')
         }
