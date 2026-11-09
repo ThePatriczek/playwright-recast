@@ -1,7 +1,8 @@
 """Qwen3-TTS sidecar.
 
-Reads one JSON request from stdin, generates audio, writes one JSON
-response to stdout. See README.md and ../qwen.ts for the protocol.
+Reads one JSON request from stdin, generates audio, and writes JSON lines to
+stdout: one `{"event": "wav", "index", "path"}` per clone WAV as it finishes,
+then the response. See README.md and ../qwen.ts for the protocol.
 """
 import json
 import sys
@@ -30,6 +31,9 @@ def ran_away(wav, sr, text):
     return len(wav) >= (frame_cap(text) - 1) * sr / FRAMES_PER_SECOND
 
 
+def emit(line):
+    print(json.dumps(line), flush=True)
+
 try:
     # Imports inside the try block so missing Python deps (ImportError) and
     # bad request JSON both surface via the structured 'init' error channel.
@@ -37,22 +41,24 @@ try:
     import torch
     from qwen_tts import Qwen3TTSModel
 
+    def load(name, device, dtype_name):
+        return Qwen3TTSModel.from_pretrained(
+            name,
+            device_map=device,
+            dtype=getattr(torch, dtype_name),
+            attn_implementation="flash_attention_2",
+        )
+
     req = json.loads(sys.stdin.read())
     work_dir = req["workDir"]
     device = req["device"]
     dtype_name = req["dtype"]
     language = req["language"]
-    torch_dtype = getattr(torch, dtype_name)
 
     if "design" in req:
         stage = "design"
         d = req["design"]
-        model = Qwen3TTSModel.from_pretrained(
-            d["designModel"],
-            device_map=device,
-            dtype=torch_dtype,
-            attn_implementation="flash_attention_2",
-        )
+        model = load(d["designModel"], device, dtype_name)
         wavs, sr = model.generate_voice_design(
             text=[d["refText"]],
             language=language,
@@ -68,12 +74,7 @@ try:
     if req.get("clone", {}).get("texts"):
         stage = "clone"
         c = req["clone"]
-        model = Qwen3TTSModel.from_pretrained(
-            req["cloneModel"],
-            device_map=device,
-            dtype=torch_dtype,
-            attn_implementation="flash_attention_2",
-        )
+        model = load(req["cloneModel"], device, dtype_name)
         # In batches: GPU memory grows with the texts per call, and one call
         # for every new line of a long screencast ran out of it.
         texts = c["texts"]
@@ -89,23 +90,23 @@ try:
                 max_new_tokens=max(frame_cap(t) for t in batch_texts),
             )
 
-        # Filled per batch, so a failure still reports the finished ones.
-        results["clone"] = []
-        for start in range(0, len(texts), batch_size):
-            batch = texts[start:start + batch_size]
-            wavs, sr = generate(batch)
-            for offset, wav in enumerate(wavs):
-                text = batch[offset]
+        # Shortest first: a batch takes as long as its longest text, so similar
+        # lengths pad less, and the first WAVs come back sooner.
+        order = sorted(range(len(texts)), key=lambda i: len(texts[i]))
+        for start in range(0, len(order), batch_size):
+            indices = order[start:start + batch_size]
+            wavs, sr = generate([texts[i] for i in indices])
+            for i, wav in zip(indices, wavs):
                 for _ in range(RUNAWAY_TRIES - 1):
-                    if not ran_away(wav, sr, text):
+                    if not ran_away(wav, sr, texts[i]):
                         break
                     # Sampling is random: alone, the same text usually ends
-                    wav = generate([text])[0][0]
-                if ran_away(wav, sr, text):
-                    raise RuntimeError(f"no end of speech in {RUNAWAY_TRIES} tries: {text!r}")
-                p = f"{work_dir}/clone-{start + offset}.wav"
+                    wav = generate([texts[i]])[0][0]
+                if ran_away(wav, sr, texts[i]):
+                    raise RuntimeError(f"no end of speech in {RUNAWAY_TRIES} tries: {texts[i]!r}")
+                p = f"{work_dir}/clone-{i}.wav"
                 sf.write(p, wav, sr)
-                results["clone"].append({"path": p})
+                emit({"event": "wav", "index": i, "path": p})
             del wavs
             torch.cuda.empty_cache()
 
@@ -117,6 +118,6 @@ except Exception as e:  # noqa: BLE001 — top-level catch is the design
         "error": str(e),
         "traceback": traceback.format_exc(),
         # What finished before the failure, for the caller to cache
-        **{k: results[k] for k in ("design", "clone") if k in results},
+        **{k: results[k] for k in ("design",) if k in results},
     }))
     sys.exit(1)

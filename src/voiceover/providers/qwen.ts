@@ -2,8 +2,8 @@ import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import * as crypto from 'node:crypto'
-import { spawnSync } from 'node:child_process'
-import { runFfmpeg } from '../../utils/ffmpeg.js'
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
+import { runFfmpegAsync } from '../../utils/ffmpeg.js'
 import { fileURLToPath } from 'node:url'
 import type { TtsProvider, TtsOptions, AudioSegment } from '../../types/voiceover.js'
 import { hashValues, hashFile } from './util/hash.js'
@@ -51,12 +51,12 @@ export class QwenSidecarError extends Error {
   readonly stage: 'init' | 'design' | 'clone'
   readonly pythonTraceback?: string
   /** What the sidecar finished before failing, e.g. the batches before one ran out of memory */
-  readonly partial: { design?: { path: string }; clone?: Array<{ path: string }> }
+  readonly partial: { design?: { path: string }; clone?: CloneWav[] }
   constructor(
     stage: 'init' | 'design' | 'clone',
     message: string,
     traceback?: string,
-    partial: { design?: { path: string }; clone?: Array<{ path: string }> } = {},
+    partial: { design?: { path: string }; clone?: CloneWav[] } = {},
   ) {
     super(`Qwen sidecar failed at stage '${stage}': ${message}`)
     this.name = 'QwenSidecarError'
@@ -64,6 +64,12 @@ export class QwenSidecarError extends Error {
     this.pythonTraceback = traceback
     this.partial = partial
   }
+}
+
+/** A finished clone WAV; `index` is its text's position in the request. */
+export interface CloneWav {
+  index: number
+  path: string
 }
 
 interface SidecarRequest {
@@ -88,7 +94,6 @@ interface SidecarRequest {
 interface SidecarResponseOk {
   ok: true
   design?: { path: string }
-  clone?: Array<{ path: string }>
 }
 
 interface SidecarResponseErr {
@@ -97,7 +102,6 @@ interface SidecarResponseErr {
   error: string
   traceback?: string
   design?: { path: string }
-  clone?: Array<{ path: string }>
 }
 
 type SidecarResponse = SidecarResponseOk | SidecarResponseErr
@@ -112,25 +116,71 @@ interface SynthesisPlan {
   duplicates: Array<{ index: number; canonicalIndex: number }>
 }
 
-function runSidecar(
-  pythonBin: string,
-  scriptOverride: string | undefined,
-  req: SidecarRequest,
-): SidecarResponseOk {
-  const scriptPath = scriptOverride
-    ?? path.join(path.dirname(fileURLToPath(import.meta.url)), 'qwen-sidecar', 'sidecar.py')
-  const r = spawnSync(pythonBin, [scriptPath], {
-    input: JSON.stringify(req),
-    encoding: 'utf8',
-    maxBuffer: 32 * 1024 * 1024,
+interface Sidecar {
+  child: ChildProcess
+  /** `stdout` holds the lines that are not WAV events: the response, or what crashed */
+  exited: Promise<{ status: number | null; stdout: string; stderr: string; error?: Error }>
+  /** Each clone WAV, as soon as the sidecar wrote it */
+  wavs: CloneWav[]
+  onWav?: (wav: CloneWav) => void
+}
+
+const sidecarScript = (override: string | undefined): string =>
+  override ?? path.join(path.dirname(fileURLToPath(import.meta.url)), 'qwen-sidecar', 'sidecar.py')
+
+/** Starts the sidecar; it waits for its request on stdin. */
+function startSidecar(pythonBin: string, script: string): Sidecar {
+  const child = spawn(pythonBin, [script], { stdio: ['pipe', 'pipe', 'pipe'] })
+  let stdout = ''
+  let partialLine = ''
+  let stderr = ''
+  const wavs: CloneWav[] = []
+  const takeLine = (line: string): void => {
+    let event: { event?: unknown; index?: unknown; path?: unknown } | undefined
+    try { event = JSON.parse(line) } catch { /* not an event */ }
+    if (event?.event === 'wav' && typeof event.index === 'number' && typeof event.path === 'string') {
+      const wav = { index: event.index, path: event.path }
+      wavs.push(wav)
+      sidecar.onWav?.(wav)
+    } else {
+      stdout += line + '\n'
+    }
+  }
+  child.stdout!.setEncoding('utf8').on('data', (d: string) => {
+    const lines = (partialLine + d).split('\n')
+    partialLine = lines.pop()!
+    lines.forEach(takeLine)
   })
+  // Only the tail: model loading logs progress bars here
+  child.stderr!.setEncoding('utf8').on('data', (d: string) => { stderr = (stderr + d).slice(-65536) })
+  // A sidecar that already exited closes stdin; its response says why
+  child.stdin!.on('error', () => {})
+  const flush = (): void => {
+    if (partialLine) takeLine(partialLine)
+    partialLine = ''
+  }
+  const exited = new Promise<Awaited<Sidecar['exited']>>((resolve) => {
+    child.on('error', (error) => { flush(); resolve({ status: null, stdout, stderr, error }) })
+    child.on('close', (status) => { flush(); resolve({ status, stdout, stderr }) })
+  })
+  const sidecar: Sidecar = { child, exited, wavs }
+  return sidecar
+}
+
+async function runSidecar(
+  sidecar: Sidecar,
+  pythonBin: string,
+  req: SidecarRequest,
+): Promise<SidecarResponseOk> {
+  sidecar.child.stdin!.end(JSON.stringify(req))
+  const r = await sidecar.exited
   if (r.error && (r.error as NodeJS.ErrnoException).code === 'ENOENT') {
     throw new Error(
       `QwenTtsProvider: could not spawn '${pythonBin}'. ` +
         `Install Python 3 or set pythonBin in config.`,
     )
   }
-  const stdout = (r.stdout ?? '').trim()
+  const stdout = r.stdout.trim()
   let parsed: SidecarResponse | undefined
   if (stdout) {
     try {
@@ -143,11 +193,10 @@ function runSidecar(
     return parsed
   }
   if (parsed && !parsed.ok) {
-    throw new QwenSidecarError(parsed.stage, parsed.error, parsed.traceback, { design: parsed.design, clone: parsed.clone })
+    throw new QwenSidecarError(parsed.stage, parsed.error, parsed.traceback, { design: parsed.design, clone: sidecar.wavs })
   }
-  const stderr = (r.stderr ?? '').trim()
   throw new Error(
-    `Qwen sidecar exited with status ${r.status}.\nstdout: ${stdout}\nstderr: ${stderr}`,
+    `Qwen sidecar exited with status ${r.status}.\nstdout: ${stdout}\nstderr: ${r.stderr.trim()}`,
   )
 }
 
@@ -155,9 +204,9 @@ function ensureDir(dir: string): void {
   fs.mkdirSync(dir, { recursive: true })
 }
 
-function convertWavToMp3(wavPath: string, mp3Path: string): void {
+async function convertWavToMp3(wavPath: string, mp3Path: string): Promise<void> {
   ensureDir(path.dirname(mp3Path))
-  runFfmpeg([
+  await runFfmpegAsync([
     '-y', '-hide_banner', '-loglevel', 'error',
     '-i', wavPath,
     '-ac', '1',
@@ -323,26 +372,21 @@ export function QwenTtsProvider(config: QwenTtsProviderConfig): TtsProvider {
     }
   }
 
-  /** Convert each clone WAV to MP3 and record its ephemeral path in the plan.
+  /** Convert a clone WAV to MP3 and record its ephemeral path in the plan.
    *  When caching, writes to the cache first and hands the processor a copy so
    *  a renameSync in the caller cannot destroy the cached file. */
-  function persistCloneWavs(
-    cloneWavs: ReadonlyArray<{ path: string }>,
-    plan: SynthesisPlan,
-    tmpDir: string,
-  ): void {
-    for (let k = 0; k < cloneWavs.length; k++) {
-      const targetIdx = plan.missIndices[k]!
-      const t = plan.targets[targetIdx]!
-      const ephemeral = path.join(tmpDir, `qwen-${t.hash}.mp3`)
-      if (cacheAudio) {
-        convertWavToMp3(cloneWavs[k]!.path, t.cachePath)
-        fs.copyFileSync(t.cachePath, ephemeral)
-      } else {
-        convertWavToMp3(cloneWavs[k]!.path, ephemeral)
-      }
-      plan.paths[targetIdx] = ephemeral
+  async function persistCloneWav(wav: CloneWav, plan: SynthesisPlan, tmpDir: string): Promise<void> {
+    const targetIdx = plan.missIndices[wav.index]
+    if (targetIdx === undefined) throw new Error(`Qwen sidecar returned a WAV for unknown text #${wav.index}`)
+    const t = plan.targets[targetIdx]!
+    const ephemeral = path.join(tmpDir, `qwen-${t.hash}.mp3`)
+    if (cacheAudio) {
+      await convertWavToMp3(wav.path, t.cachePath)
+      fs.copyFileSync(t.cachePath, ephemeral)
+    } else {
+      await convertWavToMp3(wav.path, ephemeral)
     }
+    plan.paths[targetIdx] = ephemeral
   }
 
   /** Each duplicate gets its own ephemeral copy so the processor can rename or
@@ -377,30 +421,35 @@ export function QwenTtsProvider(config: QwenTtsProviderConfig): TtsProvider {
         const plan = planSynthesis(texts, tmpDir)
         const { refAudio, scheduledDesign } = resolveRefAudio(sidecarDir)
         if (scheduledDesign || plan.missIndices.length > 0) {
+          const sidecar = startSidecar(pythonBin, sidecarScript(config.__pythonScriptPath__))
+          // Each WAV converts while the sidecar makes the next ones
+          const conversions: Array<Promise<void>> = []
+          sidecar.onWav = (wav) => {
+            const conversion = persistCloneWav(wav, plan, tmpDir)
+            // Awaited below: a failure until then must not count as unhandled
+            conversion.catch(() => {})
+            conversions.push(conversion)
+          }
           let resp: SidecarResponseOk
           try {
-            resp = runSidecar(
+            resp = await runSidecar(
+              sidecar,
               pythonBin,
-              config.__pythonScriptPath__,
               buildSidecarRequest(plan, sidecarDir, refAudio, scheduledDesign),
             )
           } catch (err) {
-            // Cache what finished before the failure, so a rerun only makes the rest.
-            // Best effort: a failure here must not hide the sidecar's error.
-            if (err instanceof QwenSidecarError) {
-              try {
-                if (err.partial.design) persistDesignWav(err.partial.design.path)
-                if (cacheAudio) {
-                  err.partial.clone?.forEach((wav, k) => {
-                    convertWavToMp3(wav.path, plan.targets[plan.missIndices[k]!]!.cachePath)
-                  })
-                }
-              } catch { /* keep the sidecar's error */ }
+            // The finished WAVs are in the cache by now, so a rerun only makes
+            // the rest; the per-run copies go. Best effort: a failure here must
+            // not hide the sidecar's error.
+            await Promise.allSettled(conversions)
+            for (const p of plan.paths) if (p) fs.rmSync(p, { force: true })
+            if (err instanceof QwenSidecarError && err.partial.design) {
+              try { persistDesignWav(err.partial.design.path) } catch { /* keep the sidecar's error */ }
             }
             throw err
           }
+          await Promise.all(conversions)
           if (resp.design) persistDesignWav(resp.design.path)
-          persistCloneWavs(resp.clone ?? [], plan, tmpDir)
         }
         fillDuplicates(plan, tmpDir)
         return buildResult(plan)
@@ -412,9 +461,7 @@ export function QwenTtsProvider(config: QwenTtsProviderConfig): TtsProvider {
     async isAvailable(): Promise<boolean> {
       const r = spawnSync(pythonBin, ['--version'], { stdio: 'ignore' })
       if (r.status !== 0) return false
-      const scriptPath = config.__pythonScriptPath__
-        ?? path.join(path.dirname(fileURLToPath(import.meta.url)), 'qwen-sidecar', 'sidecar.py')
-      return fs.existsSync(scriptPath)
+      return fs.existsSync(sidecarScript(config.__pythonScriptPath__))
     },
 
     async dispose(): Promise<void> {
