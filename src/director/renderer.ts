@@ -48,11 +48,18 @@ function retimeVideo(source: string, decisions: DirectorDecision[], workDir: str
     const frames = Math.round(decision.outputEndMs / 1000 * fps) - Math.round(decision.outputStartMs / 1000 * fps)
     if (frames <= 0) continue
     const outputDuration = frames / fps
-    const args = ['-v', 'error', '-y', '-ss', String(decision.sourceStartMs / 1000), '-t', String(sourceDuration), '-i', source, '-map', '0:v:0', '-vf', `setpts=(PTS-STARTPTS)/${decision.speed},fps=${fps},tpad=stop_mode=clone:stop_duration=${decision.holdMs / 1000}`, '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '18']
+    const args = ['-v', 'error', '-y', '-ss', String(decision.sourceStartMs / 1000), '-t', String(sourceDuration), '-i', source]
+    const videoFilter = `[0:v:0]setpts=(PTS-STARTPTS)/${decision.speed},fps=${fps},tpad=stop_mode=clone:stop_duration=${decision.holdMs / 1000}[v]`
     if (hasAudio) {
       const speed = decision.speed === 3 ? 'atempo=1.5,atempo=2' : `atempo=${decision.speed}`
-      args.push('-map', '0:a:0', '-af', `asetpts=PTS-STARTPTS,${speed},apad,atrim=duration=${outputDuration}`, '-c:a', 'pcm_s16le', '-ar', '48000', '-ac', '2')
+      // Pads with a finite silence input: atempo followed by apad deadlocks ffmpeg 8 once the output limit ends the video
+      args.push('-f', 'lavfi', '-t', String(outputDuration), '-i', 'anullsrc=r=48000:cl=stereo')
+      const audioFilter = `[0:a:0]asetpts=PTS-STARTPTS,${speed},aresample=48000,aformat=channel_layouts=stereo[tempo];[tempo][1:a]concat=n=2:v=0:a=1,atrim=duration=${outputDuration}[a]`
+      args.push('-filter_complex', `${videoFilter};${audioFilter}`, '-map', '[v]', '-map', '[a]', '-c:a', 'pcm_s16le', '-ar', '48000', '-ac', '2')
+    } else {
+      args.push('-filter_complex', videoFilter, '-map', '[v]')
     }
+    args.push('-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '18')
     args.push('-frames:v', String(frames), '-t', String(outputDuration), path.join(workDir, name))
     runFfmpeg(args)
     clips.push(`file '${name}'`)
