@@ -460,7 +460,10 @@ export function QwenTtsProvider(config: QwenTtsProviderConfig): TtsProvider {
           }
           // All settled before the finally removes the WAVs they read
           const failed = (await Promise.allSettled(conversions)).find((r) => r.status === 'rejected')
-          if (failed) throw failed.reason
+          if (failed) {
+            for (const p of plan.paths) if (p) fs.rmSync(p, { force: true })
+            throw failed.reason
+          }
           if (resp.design) persistDesignWav(resp.design.path)
         }
         fillDuplicates(plan, tmpDir)
