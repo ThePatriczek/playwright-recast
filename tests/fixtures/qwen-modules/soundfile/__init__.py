@@ -5,7 +5,7 @@ import wave
 
 def write(path, data, sample_rate):
     with open(os.environ["QWEN_STUB_LOG"], "a") as f:
-        f.write(json.dumps({"write": [os.path.basename(path), data]}) + "\n")
+        f.write(json.dumps({"write": [os.path.basename(path), data.rstrip()]}) + "\n")
     with wave.open(path, "wb") as w:
         w.setnchannels(1)
         w.setsampwidth(2)

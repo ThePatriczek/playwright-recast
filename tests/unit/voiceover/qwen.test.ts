@@ -243,17 +243,18 @@ describe('QwenTtsProvider synthesize() — audio cache', () => {
     const texts = ['t0', 't1', 't2', 't3', 't4', 't5', 't6']
     const log = (name: string) => path.join(TMP, `${name}.log`)
     const read = (file: string) => fs.readFileSync(file, 'utf8').trim().split('\n').map((l) => JSON.parse(l))
-    const run = (name: string, cacheDir: string, failBatch?: number) => {
+    const run = (name: string, cacheDir: string, failBatch?: number, runaway = '', inputs = texts) => {
       fs.rmSync(log(name), { force: true })
       vi.stubEnv('PYTHONPATH', MODULES)
       vi.stubEnv('PYTHONDONTWRITEBYTECODE', '1')
       vi.stubEnv('QWEN_STUB_LOG', log(name))
       vi.stubEnv('QWEN_STUB_FAIL_BATCH', failBatch === undefined ? '' : String(failBatch))
+      vi.stubEnv('QWEN_STUB_RUNAWAY', runaway)
       const workDir = path.join(TMP, `work-${name}`)
       fs.mkdirSync(workDir, { recursive: true })
       const voiceSample = makeVoiceSample(workDir)
       return QwenTtsProvider({ mode: 'clone', voiceSample, refText: 'Welcome', batchSize: 3, cacheDir, cacheAudio: true })
-        .synthesize(texts, { workDir })
+        .synthesize(inputs, { workDir })
     }
     afterAll(() => { vi.unstubAllEnvs() })
 
@@ -264,6 +265,35 @@ describe('QwenTtsProvider synthesize() — audio cache', () => {
       expect(entries.filter((e) => e.prompt)).toHaveLength(1)
       expect(entries.filter((e) => e.batch).map((e) => e.batch)).toEqual([['t0', 't1', 't2'], ['t3', 't4', 't5'], ['t6']])
       expect(entries.filter((e) => e.write).map((e) => e.write)).toEqual(texts.map((t, i) => [`clone-${i}.wav`, t]))
+    })
+
+    it('caps generation by the longest text in the batch', async () => {
+      const inputs = ['x', 'mid line', 'a much longer line']
+      expect(await run('cap', path.join(TMP, 'cache-cap'), undefined, undefined, inputs)).toHaveLength(3)
+      const batches = read(log('cap')).filter((e) => e.batch)
+      // 12.5 frames/s for 2 s plus 1 s per 6 characters
+      expect(batches[0].cap).toBe(Math.floor(12.5 * (2 + 18 / 6)) + 1)
+    })
+
+    it('makes a text that ran to its cap again, alone, under its own cap', async () => {
+      const inputs = ['t4', 'a much longer line']
+      const out = await run('runaway', path.join(TMP, 'cache-runaway'), undefined, 't4:2', inputs)
+      expect(out).toHaveLength(2)
+      const entries = read(log('runaway'))
+      const cap = (text: string) => Math.floor(12.5 * (2 + text.length / 6)) + 1
+      // The batch's cap is the longer text's; the retries use t4's own
+      expect(entries.filter((e) => e.batch).map((e) => [e.batch, e.cap])).toEqual([
+        [inputs, cap(inputs[1]!)], [['t4'], cap('t4')], [['t4'], cap('t4')],
+      ])
+      expect(entries.filter((e) => e.write).map((e) => e.write)).toEqual(inputs.map((t, i) => [`clone-${i}.wav`, t]))
+    })
+
+    it('gives up on a text that runs to its cap three times', async () => {
+      const err = await run('runaway-fail', path.join(TMP, 'cache-runaway-fail'), undefined, 't4:3').catch((e) => e)
+      expect(err.name).toBe('QwenSidecarError')
+      expect(err.message).toMatch(/no end of speech in 3 tries: 't4'/)
+      // t3 finished before t4 failed
+      expect(err.partial.clone).toHaveLength(4)
     })
 
     it('caches the batches finished before a failure, so a rerun makes only the rest', async () => {

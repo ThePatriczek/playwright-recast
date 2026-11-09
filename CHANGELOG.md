@@ -4,6 +4,7 @@
 
 ### Fixes
 
+- **Qwen: a line that misses its end of speech no longer stalls the voiceover** - generation was capped only by the model's default of 8192 frames (11 minutes of audio), so one babbling sample held its whole batch for minutes or ran out of GPU memory. The cap now grows with the text (2 s plus 1 s per 6 characters), and a line that reaches it is made again alone, up to three tries, before the sidecar fails naming it.
 - **Director: retiming no longer hangs on ffmpeg 8** - a segment with audio padded the sped-up sound with `apad`, which with `atempo` deadlocks ffmpeg 8 when the output limit ends the video. It now pads with a finite silence input.
 
 ## 0.23.0 (2026-10-04)
