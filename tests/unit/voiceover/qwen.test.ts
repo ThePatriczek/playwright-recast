@@ -232,8 +232,9 @@ describe('QwenTtsProvider synthesize() — audio cache', () => {
     const cacheDir = path.join(TMP, 'cache-convert-fail')
     const qwen = QwenTtsProvider({ mode: 'clone', voiceSample, refText: 'Welcome', cacheDir, cacheAudio: true, __pythonScriptPath__: stub })
     await expect(qwen.synthesize(['bad', 'good'], { workDir })).rejects.toThrow(/ffmpeg/i)
-    // The good line still made it into the cache
+    // The good line still made it into the cache, but not into the work dir
     expect(fs.readdirSync(path.join(cacheDir, 'audio'))).toHaveLength(1)
+    expect(fs.readdirSync(workDir).filter((f) => f.endsWith('.mp3'))).toEqual([])
   })
 
   it('names a cache file only once its conversion is complete', async () => {
