@@ -207,6 +207,35 @@ describe('QwenTtsProvider synthesize() — audio cache', () => {
     expect(fs.readFileSync(countFile, 'utf8')).toBe('2')  // only 'hello' + 'world' sent to sidecar
   })
 
+  it('fails with a conversion error after every conversion settled', async () => {
+    const workDir = path.join(TMP, 'work-convert-fail')
+    fs.mkdirSync(workDir, { recursive: true })
+    const voiceSample = makeVoiceSample(workDir)
+    // The first WAV is not audio; the second is long enough to still be
+    // converting when the first fails
+    const stub = path.join(TMP, 'convert-fail-stub.py')
+    fs.writeFileSync(stub, [
+      'import json, sys, struct, wave',
+      'req = json.loads(sys.stdin.read())',
+      'work = req["workDir"]',
+      'for i, _ in enumerate(req["clone"]["texts"]):',
+      '    p = f"{work}/clone-{i}.wav"',
+      '    if i == 0:',
+      '        open(p, "w").write("not a wav")',
+      '    else:',
+      '        with wave.open(p, "wb") as w:',
+      '            w.setnchannels(1); w.setsampwidth(2); w.setframerate(24000)',
+      '            w.writeframes(bytes(2 * 24000 * 120))',
+      '    print(json.dumps({"event": "wav", "index": i, "path": p}), flush=True)',
+      'print(json.dumps({"ok": True}))',
+    ].join('\n'))
+    const cacheDir = path.join(TMP, 'cache-convert-fail')
+    const qwen = QwenTtsProvider({ mode: 'clone', voiceSample, refText: 'Welcome', cacheDir, cacheAudio: true, __pythonScriptPath__: stub })
+    await expect(qwen.synthesize(['bad', 'good'], { workDir })).rejects.toThrow(/ffmpeg/i)
+    // The good line still made it into the cache
+    expect(fs.readdirSync(path.join(cacheDir, 'audio'))).toHaveLength(1)
+  })
+
   it('sends the batch size to the sidecar, 8 unless configured', async () => {
     const workDir = path.join(TMP, 'work-batch')
     fs.mkdirSync(workDir, { recursive: true })
