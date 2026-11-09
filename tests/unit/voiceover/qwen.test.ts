@@ -236,6 +236,34 @@ describe('QwenTtsProvider synthesize() — audio cache', () => {
     expect(fs.readdirSync(path.join(cacheDir, 'audio'))).toHaveLength(1)
   })
 
+  it('names a cache file only once its conversion is complete', async () => {
+    const workDir = path.join(TMP, 'work-cache-atomic')
+    fs.mkdirSync(workDir, { recursive: true })
+    const voiceSample = makeVoiceSample(workDir)
+    // Long enough to watch the conversion run
+    const stub = path.join(TMP, 'cache-atomic-stub.py')
+    fs.writeFileSync(stub, [
+      'import json, sys, wave',
+      'req = json.loads(sys.stdin.read())',
+      'p = f"{req[\'workDir\']}/clone-0.wav"',
+      'with wave.open(p, "wb") as w:',
+      '    w.setnchannels(1); w.setsampwidth(2); w.setframerate(24000)',
+      '    w.writeframes(bytes(2 * 24000 * 600))',
+      'print(json.dumps({"event": "wav", "index": 0, "path": p}), flush=True)',
+      'print(json.dumps({"ok": True}))',
+    ].join('\n'))
+    const audioDir = path.join(TMP, 'cache-atomic', 'audio')
+    const qwen = QwenTtsProvider({ mode: 'clone', voiceSample, refText: 'Welcome', cacheDir: path.join(TMP, 'cache-atomic'), cacheAudio: true, __pythonScriptPath__: stub })
+    const done = qwen.synthesize(['long'], { workDir })
+    const list = () => (fs.existsSync(audioDir) ? fs.readdirSync(audioDir) : [])
+    for (let i = 0; i < 400 && !list().some((f) => f.endsWith('.partial')); i++) await new Promise((r) => setTimeout(r, 5))
+    const during = list()
+    await done
+    expect(during.some((f) => f.endsWith('.partial'))).toBe(true)
+    expect(during.filter((f) => f.endsWith('.mp3'))).toEqual([])
+    expect(list().filter((f) => !f.endsWith('.mp3'))).toEqual([])
+  })
+
   it('sends the batch size to the sidecar, 8 unless configured', async () => {
     const workDir = path.join(TMP, 'work-batch')
     fs.mkdirSync(workDir, { recursive: true })
@@ -317,12 +345,17 @@ describe('QwenTtsProvider synthesize() — audio cache', () => {
       expect(batches[0].cap).toBe(Math.floor(12.5 * (2 + 18 / 6)) + 1)
     })
 
-    it('makes a text that ran to its cap again, alone', async () => {
-      const out = await run('runaway', path.join(TMP, 'cache-runaway'), undefined, 't4:2')
-      expect(out).toHaveLength(7)
+    it('makes a text that ran to its cap again, alone, under its own cap', async () => {
+      const inputs = ['t4', 'a much longer line']
+      const out = await run('runaway', path.join(TMP, 'cache-runaway'), undefined, 't4:2', inputs)
+      expect(out).toHaveLength(2)
       const entries = read(log('runaway'))
-      expect(entries.filter((e) => e.batch).map((e) => e.batch)).toEqual([['t0', 't1', 't2'], ['t3', 't4', 't5'], ['t4'], ['t4'], ['t6']])
-      expect(entries.filter((e) => e.write).map((e) => e.write)).toEqual(texts.map((t, i) => [`clone-${i}.wav`, t]))
+      const cap = (text: string) => Math.floor(12.5 * (2 + text.length / 6)) + 1
+      // The batch's cap is the longer text's; the retries use t4's own
+      expect(entries.filter((e) => e.batch).map((e) => [e.batch, e.cap])).toEqual([
+        [inputs, cap(inputs[1]!)], [['t4'], cap('t4')], [['t4'], cap('t4')],
+      ])
+      expect(entries.filter((e) => e.write).map((e) => e.write)).toEqual(inputs.map((t, i) => [`clone-${i}.wav`, t]))
     })
 
     it('gives up on a text that runs to its cap three times', async () => {
