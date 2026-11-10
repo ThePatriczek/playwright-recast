@@ -48,7 +48,7 @@ await zoom(sidebar, 1.6, { hold: true })
 await narrate('A click opens one.')
 ```
 
-The hold ends one transition before the next narration, so the camera arrives at that narration's zoom, or at full frame, as it starts.
+The hold ends one transition before the next narration, so the camera arrives at that narration's zoom, or at full frame, as it starts. With `autoZoom({ containInCue: true })` it ends as the next narration starts, after zooming out, since that mode keeps each zoom's transitions inside its own window.
 
 ## Zooming onto text
 

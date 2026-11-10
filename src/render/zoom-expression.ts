@@ -423,18 +423,20 @@ function buildSampledTransitionExpr(
 
 /**
  * Convert StepZoom (per-subtitle) data to ZoomKeyframe[]. A `hold` zoom stays
- * through the silence after its cue and ends `transitionMs` before the next
- * cue, so the camera reaches that cue's zoom, or full frame, as it starts.
+ * through the silence after its cue, so the camera reaches the next cue's
+ * zoom, or full frame, as it starts: it ends `transitionMs` before that cue,
+ * or at it with `containInCue`, whose zoom-out lies inside the window.
  */
 export function stepZoomsToKeyframes(
   subtitles: Array<{ zoom?: { x: number; y: number; level: number; startMs?: number; endMs?: number; hold?: boolean }; startMs: number; endMs: number }>,
-  transitionMs = 0,
+  config: Pick<ZoomExprConfig, 'transitionMs' | 'containInCue'> = { transitionMs: 0, containInCue: false },
 ): ZoomKeyframe[] {
+  const leadMs = config.containInCue ? 0 : config.transitionMs
   const starts = subtitles.map((s) => s.startMs).sort((a, b) => a - b)
   const endOf = (s: (typeof subtitles)[number]): number => {
     if (s.zoom!.endMs !== undefined) return s.zoom!.endMs
     const next = s.zoom!.hold ? starts.find((t) => t >= s.endMs) : undefined
-    return next === undefined ? s.endMs : Math.max(s.endMs, next - transitionMs)
+    return next === undefined ? s.endMs : Math.max(s.endMs, next - leadMs)
   }
   return subtitles
     .filter((s) => s.zoom && s.zoom.level > 1.0)
