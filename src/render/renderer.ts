@@ -808,7 +808,13 @@ export function shiftOverlaysForHolds(
     ce.videoTimeMs = shiftForFreezes(ce.videoTimeMs, holds, ce.traceMs)
   }
   for (const kf of trace.cursorKeyframes ?? []) {
-    kf.videoTimeSec = shiftForFreezes(kf.videoTimeSec * 1000, holds, kf.traceMs) / 1000
+    const end = shiftForFreezes(kf.videoTimeSec * 1000, holds, kf.traceMs)
+    // A hold inside a travel lengthens it: the cursor still leaves when the pointer did.
+    if (kf.travelSec !== undefined) {
+      const start = shiftForFreezes((kf.videoTimeSec - kf.travelSec) * 1000, holds, kf.travelTraceMs)
+      kf.travelSec = (end - start) / 1000
+    }
+    kf.videoTimeSec = end / 1000
   }
   if (trace.highlightEvents && !trace.highlightsOnFreezeClock) {
     trace.highlightEvents = shiftHighlightsForFreezes(trace.highlightEvents, holds)

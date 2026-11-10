@@ -44,4 +44,11 @@ export interface CursorKeyframe {
   approach?: boolean
   /** Raw trace time, to order the keyframe against holds like its click */
   traceMs?: number
+  /** Output seconds the pointer took to get here (a stepped `mouse.move()`):
+   *  the cursor travels at that pace, as the page draws a drag. */
+  travelSec?: number
+  /** Raw trace time the travel started, to place it against holds */
+  travelTraceMs?: number
+  /** A mouse button is down from here to the next keyframe: the cursor stays visible. */
+  held?: boolean
 }

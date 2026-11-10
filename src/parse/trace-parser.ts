@@ -29,6 +29,9 @@ import {
 /** A frame's image in the zip: a path (Playwright 1.63+) or a resource sha1. */
 const frameEntry = (key: string): string => (key.includes('/') ? key : `resources/${key}`)
 
+const definedOnly = <T extends object>(o: T): Partial<T> =>
+  Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as Partial<T>
+
 /**
  * Parse a Playwright trace zip into structured data.
  */
@@ -40,7 +43,11 @@ export async function parseTrace(tracePath: string): Promise<ParsedTrace> {
   const traceFiles = entries.filter((n) => n.endsWith('.trace'))
   const networkFiles = entries.filter((n) => n.endsWith('.network'))
 
-  const eventsByFile = traceFiles.map((f) => ({ file: f, events: parseJsonl(zip.readText(f)) }))
+  // The runner's `test.trace` repeats each API call under the library's callId
+  // with string params and its own clock: read it last, to fill gaps only.
+  const isRunner = (f: string): boolean => f === 'test.trace' || f.endsWith('/test.trace')
+  const eventsByFile = [...traceFiles.filter((f) => !isRunner(f)), ...traceFiles.filter(isRunner)]
+    .map((f) => ({ file: f, runner: isRunner(f), events: parseJsonl(zip.readText(f)) }))
   const traceEvents = eventsByFile.flatMap((f) => f.events)
   const networkEvents = networkFiles.flatMap((f) => parseJsonl(zip.readText(f)))
 
@@ -59,16 +66,22 @@ export async function parseTrace(tracePath: string): Promise<ParsedTrace> {
   // Playwright 1.63 dropped `pageId` from 'before': an action's snapshots still carry it
   const snapshotPages = new Map<string, string>()
 
-  for (const event of traceEvents) {
+  /** The library's event wins; the runner's only adds what it lacks (a title). */
+  const merge = <T extends object>(map: Map<string, T>, callId: string, e: T, runner: boolean): void => {
+    const known = map.get(callId)
+    map.set(callId, known && runner ? { ...e, ...definedOnly(known) } : e)
+  }
+
+  for (const { runner, events } of eventsByFile) for (const event of events) {
     switch (event.type) {
       case 'before': {
         const e = event as BeforeActionEvent
-        actionStarts.set(e.callId, e)
+        merge(actionStarts, e.callId, e, runner)
         break
       }
       case 'after': {
         const e = event as AfterActionEvent
-        actionEnds.set(e.callId, e)
+        merge(actionEnds, e.callId, e, runner)
         break
       }
       case 'input': {

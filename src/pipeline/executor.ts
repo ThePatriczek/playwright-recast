@@ -46,7 +46,7 @@ import type { ClickEvent } from '../types/click-effect.js'
 import { resolveClickEffectConfig } from '../click-effect/defaults.js'
 import type { CursorKeyframe } from '../types/cursor-overlay.js'
 import { resolveCursorOverlayConfig, type ResolvedCursorOverlayConfig } from '../cursor-overlay/defaults.js'
-import { buildTrajectory } from '../cursor-overlay/trajectory.js'
+import { buildTrajectory, type PointerAction } from '../cursor-overlay/trajectory.js'
 import type { HighlightEvent } from '../types/text-highlight.js'
 import { resolveTextHighlightConfig, type ResolvedTextHighlightConfig } from '../text-highlight/defaults.js'
 import type { IntroConfig, OutroConfig } from '../types/intro-outro.js'
@@ -916,7 +916,7 @@ export class PipelineExecutor {
           const cursorActions = cursorActionsAll.filter((a) => !consumedCallIds.has(a.callId))
 
           const keyframes = buildTrajectory({
-            actions: cursorActions as Array<{ point?: { x: number; y: number }; startTime: number; endTime?: number }>,
+            actions: cursorActions as PointerAction[],
             filter: stage.config.filter as ((a: { point?: { x: number; y: number }; startTime: number }) => boolean) | undefined,
             timeRemap: cursorTimeRemap,
             videoStartOffsetMs: cursorVideoStartOffset,

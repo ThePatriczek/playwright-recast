@@ -16,12 +16,21 @@ const MIN_LEAD = 0.15
 /** Keep ffmpeg interpolation denominators non-zero for coincident positions. */
 const MIN_MOVE_DURATION = 0.05
 
-interface TrajectoryPoint {
+/** One move of the cursor and how long it stays, in output seconds. */
+export interface CursorSegment {
+  /** Viewport-scaled target */
   x: number
   y: number
+  /** Arrival */
   t: number
-  lead: number
+  /** Movement start */
+  moveStart: number
+  /** Window end: hidden after this */
+  end: number
+  /** False: appear at the target, no glide */
   glide: boolean
+  /** Moves at the pointer's own (linear) pace */
+  linear: boolean
 }
 
 /**
@@ -36,9 +45,53 @@ function appearLead(autoWaitSec: number | undefined): number {
 }
 
 /**
+ * The cursor's segments: each recorded pointer position is reached at its
+ * trace timestamp. Movement starts at the previous position and lasts no
+ * longer than moveDurationMs, except a stepped move, which takes its own
+ * recorded time. A held button keeps the cursor up until the next segment.
+ */
+export function cursorSegments(
+  keyframes: CursorKeyframe[],
+  config: ResolvedCursorOverlayConfig,
+  scale: { x: number; y: number } = { x: 1, y: 1 },
+): CursorSegment[] {
+  const configuredDuration = Math.max(MIN_MOVE_DURATION, config.moveDurationMs / 1000)
+  const visibleAfter = Math.max(0, config.hideAfterMs / 1000)
+  const times = keyframes.map(kf => Number(kf.videoTimeSec.toFixed(4)))
+
+  const segments = keyframes.map((kf, i) => {
+    const t = times[i]!
+    const lead = appearLead(kf.autoWaitSec)
+    const glideDuration = Math.min(configuredDuration, lead)
+    const travel = kf.travelSec ?? 0
+    const linear = travel > glideDuration
+    let duration = linear ? travel : glideDuration
+    if (i > 0) duration = Math.min(duration, Math.max(MIN_MOVE_DURATION, t - times[i - 1]!))
+    return {
+      x: Math.max(0, Math.round(kf.x * scale.x)),
+      y: Math.max(0, Math.round(kf.y * scale.y)),
+      t,
+      moveStart: Number((t - duration).toFixed(4)),
+      end: t + visibleAfter,
+      // When the target only appeared after a wait (a page load), there is no
+      // stable context to glide across — a slide-in would travel over the
+      // still-loading screen. Drop the approach and let the cursor appear
+      // directly at the target instead.
+      glide: (kf.autoWaitSec ?? 0) <= APPEAR_BEFORE - MIN_LEAD,
+      linear,
+    }
+  })
+  // Window ends still grow in keyframe order: a held one ends no later than
+  // the next one starts moving.
+  segments.forEach((seg, i) => {
+    const next = segments[i + 1]
+    if (keyframes[i]!.held && next) seg.end = Math.max(seg.end, next.moveStart)
+  })
+  return segments
+}
+
+/**
  * Build ffmpeg overlay x/y expressions for animated cursor movement.
- * Each recorded pointer position is reached at its trace timestamp. Movement
- * starts at the previous position and lasts no longer than moveDurationMs.
  */
 export function buildOverlayExpressions(
   keyframes: CursorKeyframe[],
@@ -52,38 +105,12 @@ export function buildOverlayExpressions(
 
   const scaleX = srcRes.width / viewport.width
   const scaleY = srcRes.height / viewport.height
-
-  const points = keyframes.map(kf => {
-    const lead = appearLead(kf.autoWaitSec)
-    // When the target only appeared after a wait (a page load), there is no
-    // stable context to glide across — a slide-in would travel over the
-    // still-loading screen. Drop the approach and let the cursor appear
-    // directly at the target instead.
-    const glide = (kf.autoWaitSec ?? 0) <= APPEAR_BEFORE - MIN_LEAD
-    return {
-      x: Math.max(0, Math.round(kf.x * scaleX)),
-      y: Math.max(0, Math.round(kf.y * scaleY)),
-      t: Number(kf.videoTimeSec.toFixed(4)),
-      lead,
-      glide,
-    }
-  })
+  const segments = cursorSegments(keyframes, config, { x: scaleX, y: scaleY })
 
   return {
-    x: buildTrajectoryAxis(points, 'x', scaleX, config),
-    y: buildTrajectoryAxis(points, 'y', scaleY, config),
+    x: buildTrajectoryAxis(segments, 'x', scaleX, config),
+    y: buildTrajectoryAxis(segments, 'y', scaleY, config),
   }
-}
-
-function moveDuration(
-  points: Array<Pick<TrajectoryPoint, 't' | 'lead'>>,
-  index: number,
-  configuredDuration: number,
-): number {
-  const available = index === 0
-    ? configuredDuration
-    : Math.max(MIN_MOVE_DURATION, points[index]!.t - points[index - 1]!.t)
-  return Math.min(configuredDuration, points[index]!.lead, available)
 }
 
 function progressExpression(easing: ResolvedCursorOverlayConfig['easing']): string {
@@ -98,41 +125,35 @@ function progressExpression(easing: ResolvedCursorOverlayConfig['easing']): stri
   }
 }
 
+const windowExpr = (seg: CursorSegment): string =>
+  `between(t\\,${seg.moveStart.toFixed(4)}\\,${seg.end.toFixed(4)})`
+
 function buildTrajectoryAxis(
-  points: TrajectoryPoint[],
+  segments: CursorSegment[],
   axis: 'x' | 'y',
   scale: number,
   config: ResolvedCursorOverlayConfig,
 ): string {
-  if (points.length === 0) return '0'
-
-  const configuredDuration = Math.max(MIN_MOVE_DURATION, config.moveDurationMs / 1000)
-  const visibleAfter = Math.max(0, config.hideAfterMs / 1000)
   const initialOffset = Math.round(INITIAL_OFFSET * scale)
-  const easedProgress = progressExpression(config.easing)
-  const branches: Branch[] = []
-
-  for (let i = 0; i < points.length; i++) {
-    const point = points[i]!
-    const target = point[axis]
-    const previous = i === 0 ? target - initialOffset : points[i - 1]![axis]
+  const branches: Branch[] = segments.map((seg, i) => {
+    const target = seg[axis]
+    const previous = i === 0 ? target - initialOffset : segments[i - 1]![axis]
     // A target that appeared only after a long auto-wait has no stable page
     // context to glide across, so retain the existing appear-at-target guard.
-    const start = point.glide ? previous : target
-    const duration = moveDuration(points, i, configuredDuration)
-    const moveStart = point.t - duration
+    const start = seg.glide ? previous : target
+    const duration = seg.t - seg.moveStart
+    const progress = progressExpression(seg.linear ? 'linear' : config.easing)
+    const moveStart = seg.moveStart.toFixed(4)
     const segment =
-      `if(between(t\\,${moveStart.toFixed(4)}\\,${point.t.toFixed(4)})\\,` +
-      `st(0\\,(t-${moveStart.toFixed(4)})/${duration.toFixed(4)})\\;` +
-      `${start}+(${target - start})*${easedProgress}\\,` +
+      `if(between(t\\,${moveStart}\\,${seg.t.toFixed(4)})\\,` +
+      `st(0\\,(t-${moveStart})/${duration.toFixed(4)})\\;` +
+      `${start}+(${target - start})*${progress}\\,` +
       `${target})`
-
-    branches.push({
-      before: `lt(t\\,${moveStart.toFixed(4)})`,
-      expr:
-        `if(between(t\\,${moveStart.toFixed(4)}\\,${(point.t + visibleAfter).toFixed(4)})\\,${segment}\\,0)`,
-    })
-  }
+    return {
+      before: `lt(t\\,${moveStart})`,
+      expr: `if(${windowExpr(seg)}\\,${segment}\\,0)`,
+    }
+  })
 
   // Equivalent to a chain of one if() per keyframe because movement starts
   // and window ends both grow in keyframe order: the last branch that has
@@ -143,28 +164,14 @@ function buildTrajectoryAxis(
 
 /**
  * Cursor is visible while travelling to each position and until hideAfterMs
- * after it arrives.
+ * after it arrives, or while a button is held.
  */
 export function buildEnableExpression(
   keyframes: CursorKeyframe[],
   config: ResolvedCursorOverlayConfig,
 ): string {
   if (keyframes.length === 0) return '0'
-
-  const configuredDuration = Math.max(MIN_MOVE_DURATION, config.moveDurationMs / 1000)
-  const visibleAfter = Math.max(0, config.hideAfterMs / 1000)
-  const points = keyframes.map(kf => ({
-    t: Number(kf.videoTimeSec.toFixed(4)),
-    lead: appearLead(kf.autoWaitSec),
-  }))
-  const windows = points.map((point, index) => {
-    const duration = moveDuration(points, index, configuredDuration)
-    const start = (point.t - duration).toFixed(4)
-    const end = (point.t + visibleAfter).toFixed(4)
-    return `between(t\\,${start}\\,${end})`
-  })
-
-  return windows.join('+')
+  return cursorSegments(keyframes, config).map(windowExpr).join('+')
 }
 
 // Keep for backwards compat with tests

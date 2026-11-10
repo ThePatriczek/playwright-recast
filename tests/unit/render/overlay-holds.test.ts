@@ -32,3 +32,17 @@ describe('shiftOverlaysForHolds()', () => {
     expect(trace.cursorKeyframes[0]!.videoTimeSec).toBe(0.5)
   })
 })
+
+describe('shiftOverlaysForHolds() on a cursor travel', () => {
+  it('lengthens a travel a hold lands inside, and moves one after it', () => {
+    const trace = {
+      cursorKeyframes: [
+        { x: 0, y: 0, videoTimeSec: 3, traceMs: 3000, travelSec: 2, travelTraceMs: 1000 },
+        { x: 0, y: 0, videoTimeSec: 8, traceMs: 8000, travelSec: 1, travelTraceMs: 7000 },
+      ],
+    }
+    shiftOverlaysForHolds(trace, [{ atVideoMs: 2000, durationMs: 500, sourceMs: 2000, sourceTraceMs: 2000 }])
+    expect(trace.cursorKeyframes[0]).toMatchObject({ videoTimeSec: 3.5, travelSec: 2.5 })
+    expect(trace.cursorKeyframes[1]).toMatchObject({ videoTimeSec: 8.5, travelSec: 1 })
+  })
+})

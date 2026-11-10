@@ -26,13 +26,18 @@ export function getEasingFn(type: 'linear' | 'ease-in-out' | 'ease-out'): Easing
   }
 }
 
+/** A trace action as the trajectory reads it. */
+export interface PointerAction {
+  point?: { x: number; y: number }
+  startTime: number
+  endTime?: number
+  method?: string
+  params?: Record<string, unknown>
+}
+
 export interface TrajectoryInput {
   /** Actions with point data, sorted by startTime */
-  actions: ReadonlyArray<{
-    point?: { x: number; y: number }
-    startTime: number
-    endTime?: number
-  }>
+  actions: ReadonlyArray<PointerAction>
   /** Optional filter for which actions to include */
   filter?: (action: { point?: { x: number; y: number }; startTime: number }) => boolean
   /** Time remap function (trace monotonic → output video ms) */
@@ -41,41 +46,52 @@ export interface TrajectoryInput {
   videoStartOffsetMs: number
 }
 
+/** `mouse.move()` never auto-waits: its span is the pointer walking there, linearly over its steps. */
+const isPointerMove = (a: PointerAction): boolean => a.method === 'mouseMove'
+
 /**
  * Build a trajectory of cursor keyframes from trace actions.
  * Extracts actions with cursor positions and converts to video-time keyframes.
+ * A wheel turn, which has no point of its own, shows at the last pointer position.
  */
 export function buildTrajectory(input: TrajectoryInput): CursorKeyframe[] {
-  let actions = input.actions.filter(a => a.point)
+  const remap = input.timeRemap ?? ((t: number) => t)
+  const sorted = [...input.actions].sort((a, b) => a.startTime - b.startTime)
+  const keyframes: CursorKeyframe[] = []
+  let last: { x: number; y: number } | undefined
+  const down = new Set<string>()
 
-  if (input.filter) {
-    actions = actions.filter(input.filter)
-  }
+  for (const action of sorted) {
+    const point = action.point ?? (action.method === 'mouseWheel' ? last : undefined)
+    if (action.method === 'mouseDown') down.add(String(action.params?.button ?? 'left'))
+    if (action.method === 'mouseUp') down.delete(String(action.params?.button ?? 'left'))
+    if (!point) continue
+    last = point
+    if (input.filter && !input.filter({ ...action, point })) continue
 
-  const keyframes: CursorKeyframe[] = actions.map(action => {
     // Use the action's END time: with Playwright auto-wait, an action that
     // targets an element still loading completes (and the cursor visually
     // lands) at endTime, which can be seconds after startTime. Positioning
     // the cursor at startTime makes it arrive before the target is visible.
     const actionTime = action.endTime ?? action.startTime
-    const remap = input.timeRemap ?? ((t: number) => t)
     const videoTimeMs = remap(actionTime) - input.videoStartOffsetMs
-    // The auto-wait span (in output video time) tells us how long the target
-    // was unavailable before this action landed — used to trim the cursor's
-    // pre-click approach so it doesn't appear during the wait.
-    const autoWaitMs = Math.max(0, remap(actionTime) - remap(action.startTime))
+    const spanMs = Math.max(0, remap(actionTime) - remap(action.startTime))
+    const stepped = isPointerMove(action)
 
-    return {
-      x: action.point!.x,
-      y: action.point!.y,
+    keyframes.push({
+      x: point.x,
+      y: point.y,
       videoTimeSec: Math.max(0, videoTimeMs / 1000),
-      autoWaitSec: autoWaitMs / 1000,
+      // A pointer move's span is the pointer travelling, visible on the page
+      // (a drag draws as it goes). Any other span is auto-wait: the target was
+      // unavailable, so the cursor's pre-click approach is trimmed by it.
+      autoWaitSec: stepped ? 0 : spanMs / 1000,
       traceMs: actionTime,
-    }
-  })
+      ...(stepped ? { travelSec: spanMs / 1000, travelTraceMs: action.startTime } : {}),
+      ...(down.size > 0 ? { held: true } : {}),
+    })
+  }
 
-  // Sort by time and deduplicate near-identical timestamps (within 50ms)
   keyframes.sort((a, b) => a.videoTimeSec - b.videoTimeSec)
-
   return keyframes
 }

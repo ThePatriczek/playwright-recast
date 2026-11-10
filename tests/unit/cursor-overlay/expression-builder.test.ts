@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildOverlayExpressions, buildEnableExpression } from '../../../src/cursor-overlay/expression-builder'
+import { buildOverlayExpressions, buildEnableExpression, cursorSegments } from '../../../src/cursor-overlay/expression-builder'
 import { resolveCursorOverlayConfig } from '../../../src/cursor-overlay/defaults'
 
 const defaultConfig = resolveCursorOverlayConfig({})
@@ -215,5 +215,28 @@ describe('buildEnableExpression', () => {
     expect(enable).toBe('between(t\\,4.6500\\,5.6000)')
     expect(position.x).toContain(enable)
     expect(position.y).toContain(enable)
+  })
+})
+
+describe('cursorSegments', () => {
+  it('glides with the configured easing to a target the pointer reached faster than a glide', () => {
+    const [seg] = cursorSegments([{ x: 1, y: 1, videoTimeSec: 5, travelSec: 0.004 }], defaultConfig)
+    expect(seg).toMatchObject({ moveStart: 4.75, linear: false })
+  })
+
+  it('travels linearly over a slower pointer move, bounded by the previous keyframe', () => {
+    const segs = cursorSegments([
+      { x: 1, y: 1, videoTimeSec: 1 },
+      { x: 9, y: 1, videoTimeSec: 4, travelSec: 5 },
+    ], defaultConfig)
+    expect(segs[1]).toMatchObject({ moveStart: 1, linear: true })
+  })
+
+  it('keeps a held keyframe visible until the next one starts moving', () => {
+    const segs = cursorSegments([
+      { x: 1, y: 1, videoTimeSec: 1, held: true },
+      { x: 1, y: 1, videoTimeSec: 9 },
+    ], defaultConfig)
+    expect(segs[0]!.end).toBeCloseTo(8.75, 6)
   })
 })
