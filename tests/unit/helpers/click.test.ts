@@ -142,6 +142,19 @@ describe('click()', () => {
     expect(env.calls).not.toContain('hover')
   })
 
+  it('marks and hovers the clicked position, not the element center, when one is given', async () => {
+    setupRecast(env.fakeTest, { clickSettleMs: 0, hoverDwellMs: 1 })
+    const sink: { clickOptions?: unknown; hoverOptions?: unknown } = {}
+    const loc = makeLocator({ x: 100, y: 200, width: 400, height: 300 }, env.calls, sink)
+
+    await click(loc, { position: { x: 30, y: 250 } })
+
+    // One ripple where the click lands: a center marker would not pair with it and render a second.
+    expect(env.steps.map((s) => s.title)).toEqual([`${CLICK_TITLE_PREFIX}${JSON.stringify({ x: 130, y: 450 })}`])
+    expect(sink.hoverOptions).toEqual({ timeout: 1000, position: { x: 30, y: 250 } })
+    expect(sink.clickOptions).toEqual({ position: { x: 30, y: 250 } })
+  })
+
   it('skips the settle wait when clickSettleMs is 0', async () => {
     setupRecast(env.fakeTest, { clickSettleMs: 0 })
     const sink: { clickOptions?: unknown; hoverOptions?: unknown } = {}

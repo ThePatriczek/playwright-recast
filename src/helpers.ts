@@ -530,17 +530,19 @@ export async function waitForNarration(): Promise<void> {
 }
 
 /**
- * Write a click marker into the trace at the element's center. Records a
- * marker-prefixed `test.step` (like `highlight()`/`zoom()`); performs no real
- * click and no wait. The pipeline prefers these markers over auto-detected
- * clicks and gives them a held cursor approach in the rendered video.
+ * Write a click marker into the trace at the element's center, or at
+ * `opts.position` (relative to the element's top-left, as in
+ * `locator.click({ position })`). Records a marker-prefixed `test.step` (like
+ * `highlight()`/`zoom()`); performs no real click and no wait. The pipeline
+ * prefers these markers over auto-detected clicks and gives them a held
+ * cursor approach in the rendered video.
  */
-export async function markClick(locator: Locator): Promise<void> {
+export async function markClick(locator: Locator, opts?: { position?: { x: number; y: number } }): Promise<void> {
   if (!_step) return
   const box = await locator.boundingBox()
   if (!box) return
-  const x = box.x + box.width / 2
-  const y = box.y + box.height / 2
+  const x = box.x + (opts?.position ? opts.position.x : box.width / 2)
+  const y = box.y + (opts?.position ? opts.position.y : box.height / 2)
   await _step(`${CLICK_TITLE_PREFIX}${JSON.stringify({ x, y, ...pageIdOf(() => locator.page()) })}`, async () => {})
 }
 
@@ -581,12 +583,13 @@ export async function click(
     // hover that does not land is obstructed and no hover state will appear —
     // dwelling on it would only add latency ahead of the real click, which
     // runs its own actionability checks.
-    const hovered = await locator.hover({ timeout: HOVER_TIMEOUT_MS }).then(() => true, () => false)
+    const at = options?.position ? { position: options.position } : {}
+    const hovered = await locator.hover({ timeout: HOVER_TIMEOUT_MS, ...at }).then(() => true, () => false)
     if (hovered) await sleep(_hoverDwellMs)
   }
   // After the dwell: resolveClickMarkers() only pairs a marker with a click
   // inside a short window, and an unpaired marker renders a second click.
-  await markClick(locator)
+  await markClick(locator, options?.position ? { position: options.position } : undefined)
   await locator.click(options)
 }
 
