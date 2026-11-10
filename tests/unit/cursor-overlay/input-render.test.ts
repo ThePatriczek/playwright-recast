@@ -11,7 +11,9 @@ import { getVideoDuration } from '../../../src/render/renderer'
 
 // A real recording: a drag whose 30 steps take seconds (the page works on
 // every mousemove, like a canvas redrawing a selection frame), a right-button
-// press and Ctrl+Z. Skipped where Chromium is not installed.
+// press and Ctrl+Z. Skipped where Chromium is not installed. The textured
+// band keeps the renderer from trimming the start as blank lead-in; at 60px
+// ffmpeg 6.1's probe PNG stayed under the blank threshold.
 const available = fs.existsSync(chromium.executablePath())
 const BG = [255, 233, 199]
 let dir: string
@@ -21,7 +23,7 @@ let drag: { start: number; end: number }
 let rightPress: number
 let undo: number
 
-const BAND = '<div style="height:60px;background:repeating-linear-gradient(45deg,#000 0 3px,#fff 3px 6px)"></div>'
+const BAND = '<div style="height:150px;background:repeating-linear-gradient(45deg,#000 0 3px,#fff 3px 6px)"></div>'
 const PAGE = `<!doctype html><body style="margin:0;height:100vh;background:#ffe9c7">${BAND}
 <script>addEventListener('mousemove', () => { const t = performance.now(); while (performance.now() - t < 40); })</script></body>`
 
