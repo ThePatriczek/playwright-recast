@@ -370,10 +370,16 @@ describe('parse(): review round 4, sizes from the trace\'s frames', () => {
   })
 })
 
-describe('render(): urlBar() font check', () => {
+describe('render(): drawtext font check', () => {
   it('checks the last urlBar(), the one that renders', async () => {
     const out = recording('font-check', [pageEvent(MAIN, 0), frame(MAIN, 100), frame(MAIN, 1000)], { 'video.webm': 1 })
     const pipeline = Recast.from(out).parse().urlBar().urlBar({ fontFile: '/missing/font.ttf' })
-    await expect(pipeline.toFile(path.join(out, 'out', 'demo.mp4'))).rejects.toThrow(/no such file: \/missing\/font.ttf/)
+    await expect(pipeline.toFile(path.join(out, 'out', 'demo.mp4'))).rejects.toThrow(/^urlBar\(\{ fontFile \}\): no such file: \/missing\/font.ttf/)
+  })
+
+  it('names keyOverlay() for its own font', async () => {
+    const out = recording('key-font-check', [pageEvent(MAIN, 0), frame(MAIN, 100), frame(MAIN, 1000)], { 'video.webm': 1 })
+    const pipeline = Recast.from(out).parse().keyOverlay({ fontFile: '/missing/font.ttf' })
+    await expect(pipeline.toFile(path.join(out, 'out', 'demo.mp4'))).rejects.toThrow(/^keyOverlay\(\{ fontFile \}\): no such file/)
   })
 })

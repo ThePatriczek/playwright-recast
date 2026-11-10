@@ -179,7 +179,7 @@ export class PipelineExecutor {
     const urlBarStage = findLast(this.stages, (st) => st.type === 'urlBar')
     if (urlBarStage?.type === 'urlBar') assertCanDrawText(urlBarStage.config.fontFile)
     const keyOverlayStage = findLast(this.stages, (st) => st.type === 'keyOverlay')
-    if (keyOverlayStage?.type === 'keyOverlay') assertCanDrawText(keyOverlayStage.config.fontFile)
+    if (keyOverlayStage?.type === 'keyOverlay') assertCanDrawText(keyOverlayStage.config.fontFile, 'keyOverlay')
     const state = await this.runStages()
     const outputDir = path.dirname(outputPath)
     const tmpDir = path.join(outputDir, '.recast-tmp')

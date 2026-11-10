@@ -34,19 +34,20 @@ function drawText(textFile: string, style: Pick<PillStyle, 'fontSize' | 'fontFil
 
 /**
  * Fail early when ffmpeg cannot draw text: drawtext needs libfreetype, and a
- * font from fontconfig unless `fontFile` names one.
+ * font from fontconfig unless `fontFile` names one. `stage` names the stage
+ * whose option to fix.
  */
-export function assertCanDrawText(fontFile?: string): void {
+export function assertCanDrawText(fontFile?: string, stage: 'urlBar' | 'keyOverlay' = 'urlBar'): void {
   // drawtext falls back to a default font for a missing fontfile, silently
-  if (fontFile && !fs.existsSync(fontFile)) throw new Error(`urlBar({ fontFile }): no such file: ${fontFile}`)
+  if (fontFile && !fs.existsSync(fontFile)) throw new Error(`${stage}({ fontFile }): no such file: ${fontFile}`)
   const res = spawnSync('ffmpeg', [
     '-v', 'error', '-f', 'lavfi', '-i', 'color=black:s=64x32:d=0.04',
     '-vf', `drawtext=${fontFile ? `fontfile=${filterGraphPath(fontFile)}:` : ''}text=x`, '-frames:v', '1', '-f', 'null', '-',
   ], { encoding: 'utf8' })
   if (res.status !== 0) {
     throw new Error(
-      'urlBar() needs ffmpeg with the drawtext filter (libfreetype) and a font: ' +
-      `install fontconfig fonts or pass urlBar({ fontFile }). ffmpeg said: ${(res.stderr ?? '').trim().split('\n').pop()}`,
+      `${stage}() needs ffmpeg with the drawtext filter (libfreetype) and a font: ` +
+      `install fontconfig fonts or pass ${stage}({ fontFile }). ffmpeg said: ${(res.stderr ?? '').trim().split('\n').pop()}`,
     )
   }
 }
