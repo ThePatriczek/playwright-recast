@@ -1301,6 +1301,8 @@ For each click action detected in the trace:
 2. Later positions travel from the preceding pointer position with the configured easing
 3. The cursor reaches the target at the click timestamp and hides after `hideAfterMs`
 
+Mouse input follows the pointer, too: a `mouse.move()` travels at its recorded pace (linearly, as `steps` walk it), so a drag's cursor stays on the selection frame or node it pulls; while a button is down, the cursor stays visible until the release; and a `mouse.wheel()` shows the cursor where the pointer is.
+
 The animation uses ffmpeg `movie` + `overlay` filters with per-position `enable` expressions and easing calculated via `st()/ld()` temp variables. Long Playwright auto-waits retain the appear-at-target safeguard so the cursor does not glide over a loading screen.
 
 ## CLI equivalent

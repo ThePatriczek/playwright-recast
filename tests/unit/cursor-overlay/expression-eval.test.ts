@@ -3,7 +3,7 @@ import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { buildOverlayExpressions } from '../../../src/cursor-overlay/expression-builder'
+import { buildOverlayExpressions, buildEnableExpression } from '../../../src/cursor-overlay/expression-builder'
 import { resolveCursorOverlayConfig } from '../../../src/cursor-overlay/defaults'
 import type { CursorKeyframe } from '../../../src/types/cursor-overlay'
 
@@ -100,5 +100,27 @@ describe('overlay expressions evaluated by ffmpeg', () => {
     expect(at(vx, 451)).toBe(0)
     const vy = evaluate(y, 452)
     expect(at(vy, 449)).toBeCloseTo(349, 3)
+  })
+
+  it('follows a stepped move at the page pace during a drag, held visible until release', () => {
+    // mouse.down at 1s, a 30-step move to x=500 over 2s, mouse.up 2s later.
+    const keyframes: CursorKeyframe[] = [
+      { x: 100, y: 100, videoTimeSec: 1, held: true },
+      { x: 500, y: 100, videoTimeSec: 3, travelSec: 2, autoWaitSec: 0, held: true },
+      { x: 500, y: 100, videoTimeSec: 5 },
+    ]
+    const config = resolveCursorOverlayConfig({})
+    const { x } = buildOverlayExpressions(keyframes, config, viewport, srcRes)
+    const v = evaluate(x, 6)
+    const visible = evaluate(buildEnableExpression(keyframes, config), 6)
+
+    expect(at(v, 1.0)).toBeCloseTo(100, 3)
+    expect(at(v, 1.5)).toBeCloseTo(200, 3)  // a quarter of the way, as the page draws it
+    expect(at(v, 2.0)).toBeCloseTo(300, 3)
+    expect(at(v, 3.0)).toBeCloseTo(500, 3)
+    expect(at(v, 4.0)).toBeCloseTo(500, 3)  // past hideAfterMs, button still down
+    expect(at(visible, 4.0)).toBeGreaterThan(0)
+    expect(at(v, 5.4)).toBeCloseTo(500, 3)
+    expect(at(visible, 5.6)).toBe(0)
   })
 })

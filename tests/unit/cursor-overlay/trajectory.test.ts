@@ -135,3 +135,65 @@ describe('buildTrajectory', () => {
     expect(result[1]!.videoTimeSec).toBeLessThan(result[2]!.videoTimeSec)
   })
 })
+
+describe('buildTrajectory from mouse.down/move/up', () => {
+  // The shape of a box-select drag in a real trace: a 30-step move took 2s.
+  const drag = [
+    { point: { x: 100, y: 100 }, startTime: 900, endTime: 1000, method: 'mouseMove', params: { x: 100, y: 100, steps: 8 } },
+    { point: { x: 100, y: 100 }, startTime: 1000, endTime: 1005, method: 'mouseDown', params: { button: 'left' } },
+    { point: { x: 400, y: 100 }, startTime: 1010, endTime: 3010, method: 'mouseMove', params: { x: 400, y: 100, steps: 30 } },
+    { point: { x: 400, y: 100 }, startTime: 4000, endTime: 4005, method: 'mouseUp', params: { button: 'left' } },
+  ]
+
+  it('travels a stepped move over its own duration instead of reading it as an auto-wait', () => {
+    const kf = buildTrajectory({ actions: drag, videoStartOffsetMs: 0 })
+    expect(kf[2]).toMatchObject({ x: 400, videoTimeSec: 3.01, autoWaitSec: 0, travelSec: 2, travelTraceMs: 1010 })
+    expect(kf[0]).toMatchObject({ travelSec: 0.1 })
+  })
+
+  it('remaps the travel span through the time remap', () => {
+    const kf = buildTrajectory({ actions: drag, videoStartOffsetMs: 0, timeRemap: (t) => t * 2 })
+    expect(kf[2]!.travelSec).toBe(4)
+  })
+
+  it('marks the keyframes a button is held after, through the release', () => {
+    const kf = buildTrajectory({ actions: drag, videoStartOffsetMs: 0 })
+    expect(kf.map((k) => k.held ?? false)).toEqual([false, true, true, false])
+  })
+
+  it('travels a move without steps too: its trace span is never an auto-wait', () => {
+    const kf = buildTrajectory({
+      actions: [{ point: { x: 5, y: 5 }, startTime: 1000, endTime: 1004, method: 'mouseMove', params: { x: '5', y: '5' } }],
+      videoStartOffsetMs: 0,
+    })
+    expect(kf[0]).toMatchObject({ autoWaitSec: 0, travelSec: 0.004 })
+  })
+
+  it('leaves a click as it was', () => {
+    const kf = buildTrajectory({
+      actions: [{ point: { x: 5, y: 5 }, startTime: 1000, endTime: 1400, method: 'click', params: {} }],
+      videoStartOffsetMs: 0,
+    })
+    expect(kf[0]).toEqual({ x: 5, y: 5, videoTimeSec: 1.4, autoWaitSec: 0.4, traceMs: 1400 })
+  })
+
+  it('shows a wheel turn at the last pointer position', () => {
+    const kf = buildTrajectory({
+      actions: [
+        { point: { x: 7, y: 8 }, startTime: 1000, method: 'mouseMove', params: {} },
+        { startTime: 2000, endTime: 2010, method: 'mouseWheel', params: { deltaX: 0, deltaY: -120 } },
+      ],
+      videoStartOffsetMs: 0,
+    })
+    expect(kf).toHaveLength(2)
+    expect(kf[1]).toMatchObject({ x: 7, y: 8, videoTimeSec: 2.01 })
+  })
+
+  it('skips a wheel turn before any pointer position', () => {
+    const kf = buildTrajectory({
+      actions: [{ startTime: 2000, method: 'mouseWheel', params: { deltaY: 120 } }],
+      videoStartOffsetMs: 0,
+    })
+    expect(kf).toEqual([])
+  })
+})
