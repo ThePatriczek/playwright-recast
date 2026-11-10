@@ -1504,6 +1504,7 @@ Across [pages](/docs/pipeline/pages), the URL follows the page on screen: a popu
 | `show` | `'host-change' \| 'always' \| 'marked'` | `'host-change'` | When the bar shows |
 | `durationMs` | `number` | `3000` | How long it stays, in output ms (`host-change`, `marked`) |
 | `stripQuery` | `boolean` | `true` | Drop the query string, also inside a hash route, and a fragment that is not a route (`#/...`, `#!/...`), such as OAuth's `#access_token=...` |
+| `rewrite` | `Array<{ match: string \| RegExp; with: string }>` | `[]` | Replacements applied in order, each to the previous result, after `stripQuery` and before `redact`. Strings match literally, every occurrence (an empty one is skipped); a RegExp replaces like `String.replace()` (`$1` in `with`, every match only with `g`). |
 | `redact` | `Array<string \| RegExp>` | `[]` | Parts to mask. Strings match literally; give a RegExp the `g` flag to mask every match. |
 | `redactWith` | `string` | `'***'` | Replacement for redacted parts |
 | `position` | `'bottom' \| 'top'` | `'bottom'` | Edge of the frame |
@@ -1515,6 +1516,16 @@ Across [pages](/docs/pipeline/pages), the URL follows the page on screen: a popu
 
 - Drawn on the output frame after zoom, so zooming leaves it alone. Burned-in subtitles draw on top; with subtitles at the bottom, use `position: 'top'`.
 - Page-level blur does not reach the bar: mask account names, IDs and tokens with `redact`.
+- Show a production-looking address instead of a local test server's, one rule per origin:
+
+```typescript
+.urlBar({
+  rewrite: [
+    { match: 'http://127.0.0.1:8110', with: 'https://app.example.com' },
+    { match: /^http:\/\/127\.0\.0\.1:\d+/, with: 'https://devops.example.com' },
+  ],
+})
+```
 - Needs ffmpeg's `drawtext` (libfreetype) and a font (fontconfig or `fontFile`); the render stops with an error otherwise.
 - Not with [`direct()`](/docs/pipeline/direct) yet: it crops the rendered video and would zoom the bar.
 
@@ -1522,7 +1533,7 @@ Across [pages](/docs/pipeline/pages), the URL follows the page on screen: a popu
 
 ## showUrl
 
-`showUrl(page)` records a marker with `page.url()`. With [`.urlBar({ show: 'marked' })`](/docs/pipeline/url-bar), the bar shows that URL from here, through the stage's `stripQuery` and `redact`.
+`showUrl(page)` records a marker with `page.url()`. With [`.urlBar({ show: 'marked' })`](/docs/pipeline/url-bar), the bar shows that URL from here, through the stage's `stripQuery`, `rewrite` and `redact`.
 
 ```typescript
 import { showUrl } from 'playwright-recast'
@@ -2672,7 +2683,7 @@ interface UrlBarEvent {
 }
 ```
 
-The exported `formatUrl(url, options)` utility applies the same query stripping and redaction outside a pipeline. Its options are `stripQuery`, `redact` and `redactWith` from `UrlBarConfig`; URL credentials are always removed.
+The exported `formatUrl(url, options)` utility applies the same query stripping and redaction outside a pipeline. Its options are `stripQuery`, `rewrite`, `redact` and `redactWith` from `UrlBarConfig`; URL credentials are always removed.
 
 ---
 

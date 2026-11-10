@@ -31,6 +31,29 @@ describe('formatUrl', () => {
     expect(formatUrl('https://acme-1.example.com/acme-1/x', { redact: ['acme-1'] })).toBe('https://***.example.com/***/x')
     expect(formatUrl('https://a.com/u/123/v/456', { redact: [/\d+/g], redactWith: '#' })).toBe('https://a.com/u/#/v/#')
   })
+
+  it('rewrites in order, each rule on the previous result', () => {
+    const rewrite = [
+      { match: 'http://127.0.0.1:8110', with: 'https://app.example.test' },
+      { match: /^http:\/\/127\.0\.0\.1:\d+\/(\w+)/, with: 'https://$1.example.test' },
+      { match: 'example.test/', with: 'example.test/app/' },
+    ]
+    expect(formatUrl('http://127.0.0.1:8110/branches/main?x=1', { rewrite }))
+      .toBe('https://app.example.test/app/branches/main')
+    expect(formatUrl('http://127.0.0.1:8120/devops/pr/1', { rewrite }))
+      .toBe('https://devops.example.test/app/pr/1')
+  })
+
+  it('rewrites every literal occurrence', () => {
+    expect(formatUrl('https://a.com/a.com', { rewrite: [{ match: 'a.com', with: 'b.org' }] })).toBe('https://b.org/b.org')
+  })
+
+  it('rewrites before redacting', () => {
+    expect(formatUrl('http://localhost:3000/u/42', {
+      rewrite: [{ match: 'http://localhost:3000', with: 'https://app.example.test' }],
+      redact: [/\d+/g],
+    })).toBe('https://app.example.test/u/***')
+  })
 })
 
 describe('urlAt', () => {
@@ -97,5 +120,11 @@ describe('buildUrlBarCues', () => {
   it('marked: never shows an about: page, also when the marker names it', () => {
     const cues = buildUrlBarCues({ ...base, config: { show: 'marked' }, markers: [{ startMs: 500, url: 'about:blank' }] })
     expect(cues).toEqual([])
+  })
+})
+
+describe('formatUrl() rewrite edge cases', () => {
+  it('skips an empty literal match', () => {
+    expect(formatUrl('https://a.com/x', { rewrite: [{ match: '', with: '!' }] })).toBe('https://a.com/x')
   })
 })

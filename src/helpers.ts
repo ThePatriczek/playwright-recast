@@ -547,7 +547,7 @@ export async function markClick(locator: Locator): Promise<void> {
 /**
  * Show the page's URL in the rendered video, with `.urlBar({ show: 'marked' })`.
  * Records a marker step; the bar shows `page.url()` as it is now, through the
- * stage's `stripQuery` and `redact`.
+ * stage's `stripQuery`, `rewrite` and `redact`.
  *
  * @param opts.durationMs How long the bar stays, in output ms (default: the stage's `durationMs`)
  */

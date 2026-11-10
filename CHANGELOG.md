@@ -6,6 +6,8 @@
 
 - **TTS runs beside the other stages** - the pipeline calls the new optional `TtsProvider.prewarm()` when it starts, and starts synthesis right after the last stage that writes the spoken texts (`subtitles*()`, `textProcessing()`), instead of inside `voiceover()`. `QwenTtsProvider` uses it to load its model while the trace is parsed and the pages are composited. `TtsOptions.signal` stops a synthesis when a later stage fails (all built-in providers honor it).
 
+- **`urlBar({ rewrite })`** - ordered `{ match, with }` replacements on the shown URL, applied after `stripQuery` and before `redact` (an empty string match is skipped), e.g. a local test server's origin to the production one. A string matches literally, every occurrence; a RegExp replaces like `String.replace()`.
+
 ### Fixes
 
 - **Cursor stuck at a drag's start** - a `mouse.move({ steps })` that took seconds (a drag the page redraws per step) counted as an auto-wait, so the cursor stayed at the start and appeared at the end only once the move was done. A pointer move now travels at its recorded pace, linearly; the cursor stays visible while a button is down; a `mouse.wheel()` shows it at the pointer.
