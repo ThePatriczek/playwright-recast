@@ -614,6 +614,12 @@ A zoom belongs to the narration whose audio is playing when it is set, else the 
 await zoom(page.locator('.summary'), 1.6, { text: 'Total revenue', align: 'start' })
 ```
 
+A zoom ends with its narration. `hold: true` keeps it through the silence that follows, until the next narration starts, so a pause stays on its target and consecutive lines about one area hold the camera instead of zooming out and back in:
+
+```typescript
+await zoom(sidebar, 1.6, { hold: true })
+```
+
 `render({ zoom: { panStabilizationThreshold } })` keeps the camera still between nearby targets at the same zoom level. For sharp zoomed text, record at a higher device scale with `recastVideo({ viewport, scale })` from `playwright-recast/config`; the renderer warns when the tightest zoom upscales the source by more than 1.25x.
 
 ### Zoom coordinates

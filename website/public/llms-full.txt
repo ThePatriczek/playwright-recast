@@ -1141,6 +1141,8 @@ When('the user opens the sidebar', async ({ page }) => {
 
 The helper records the element's bounding box as a Playwright annotation. Apply these coordinates with `.enrichZoomFromReport()`.
 
+A zoom ends with its narration. `zoom(locator, level, { hold: true })` keeps it through the silence after that narration, until the next narration starts, so a pause stays on its target and consecutive lines about one area do not zoom out and back in.
+
 ## Zoom coordinates
 
 All zoom coordinates use viewport-relative fractions (0.0-1.0):

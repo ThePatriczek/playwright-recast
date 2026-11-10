@@ -64,6 +64,14 @@ describe('zoom() — marker contract', () => {
     expect(markerPayload).toEqual({ x: 0.2, y: 0.2, level: 1.5 })
   })
 
+  it('marks a held zoom, and only a held one', async () => {
+    await zoom(makeFakeLocator({ x: 128, y: 72, width: 256, height: 144 }), 2, { hold: true })
+    await zoom(makeFakeLocator({ x: 128, y: 72, width: 256, height: 144 }), 2, { hold: false })
+
+    const payloads = env.steps.map((s) => JSON.parse(s.title.slice(ZOOM_TITLE_PREFIX.length)))
+    expect(payloads).toEqual([{ x: 0.2, y: 0.2, level: 2, hold: true }, { x: 0.2, y: 0.2, level: 2 }])
+  })
+
   it('uses default level 1.5 when omitted', async () => {
     const locator = makeFakeLocator({ x: 0, y: 0, width: 100, height: 100 })
 

@@ -9,6 +9,7 @@
 - **Mouse indicator** - `cursorOverlay({ mouseIndicator })` shows a small mouse icon beside the cursor for a pressed button (left, right, middle, from `mouse.down()` to `up()`, or a `locator.click()` / `page.mouse.click()` `button`) and a wheel turn's direction. Opt-in; `true` shows the right and middle button and the wheel. `inputs`, `size`, colors, `offset`, `minShowMs` configure it.
 - **`.keyOverlay()`** - shows key presses as a keycap at the bottom center: shortcuts (`Ctrl + Z`), named keys (`Esc`, `Enter`) and modifiers held over a mouse action (`Alt + drag`, `Shift + click`) by default, never typed text. `inputs`, `labels`, `separator`, `minShowMs`, `position` and the keycap style configure it; above a URL bar on the same edge, at the top with burned-in subtitles.
 - **`withMouseIndicator(inputs, body)` / `withKeyOverlay(inputs, body)`** helpers - choose for the interactions in `body` which inputs show (`true`, `false` or a list), over the stage's `inputs`.
+- **`zoom(locator, level, { hold: true })`** - keeps a zoom through the silence after its narration, until the next narration starts: a pause stays on the target, and consecutive lines about one area no longer zoom out and back in between them.
 - **`urlBar({ rewrite })`** - ordered `{ match, with }` replacements on the shown URL, applied after `stripQuery` and before `redact` (an empty string match is skipped), e.g. a local test server's origin to the production one. A string matches literally, every occurrence; a RegExp replaces like `String.replace()`.
 
 ### Fixes
