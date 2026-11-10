@@ -276,6 +276,7 @@ Show the URL of the page on screen as a pill. See [URL Bar](/docs/pipeline/url-b
 | `show` | `'host-change' \| 'always' \| 'marked'` | `'host-change'` | On host changes, always, or at `showUrl()` markers |
 | `durationMs` | `number` | `3000` | Display time in output ms |
 | `stripQuery` | `boolean` | `true` | Drop the query string |
+| `rewrite` | `Array<{ match: string \| RegExp; with: string }>` | `[]` | Ordered replacements, before `redact` |
 | `redact` | `Array<string \| RegExp>` | `[]` | Parts to mask |
 | `redactWith` | `string` | `'***'` | Mask text |
 | `position` | `'bottom' \| 'top'` | `'bottom'` | Edge of the frame |

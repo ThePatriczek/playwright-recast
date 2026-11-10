@@ -3,7 +3,7 @@ title: showUrl
 description: Show the page's URL in the rendered video at this point.
 ---
 
-`showUrl(page)` records a marker with `page.url()`. With [`.urlBar({ show: 'marked' })`](/docs/pipeline/url-bar), the bar shows that URL from here, through the stage's `stripQuery` and `redact`.
+`showUrl(page)` records a marker with `page.url()`. With [`.urlBar({ show: 'marked' })`](/docs/pipeline/url-bar), the bar shows that URL from here, through the stage's `stripQuery`, `rewrite` and `redact`.
 
 ```typescript
 import { showUrl } from 'playwright-recast'

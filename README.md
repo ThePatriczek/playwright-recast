@@ -693,7 +693,7 @@ Clicks, cursor, `autoZoom()` and the `highlight()` / `zoom()` / `click()` marker
 
 Pages that never appear in the video leave no click, cursor, zoom or highlight effects, including when only the primary page's video is used. If a background page closes while a popup or overlaid tab stays visible, its last frame remains behind the overlay until the next page takes over.
 
-`.urlBar()` shows the URL of the page on screen as a pill: `show: 'host-change'` (default), `'always'`, or `'marked'` at `showUrl(page)` calls. `stripQuery` (default `true`) and `redact` keep tokens and account names off screen. Needs ffmpeg's `drawtext`; not with `direct()` yet. See the [Multi-Page](https://thepatriczek.github.io/playwright-recast/docs/pipeline/pages) and [URL Bar](https://thepatriczek.github.io/playwright-recast/docs/pipeline/url-bar) docs.
+`.urlBar()` shows the URL of the page on screen as a pill: `show: 'host-change'` (default), `'always'`, or `'marked'` at `showUrl(page)` calls. `stripQuery` (default `true`) and `redact` keep tokens and account names off screen; `rewrite` (ordered `{ match, with }` replacements, applied before `redact`) shows a local test server as its production address. Needs ffmpeg's `drawtext`; not with `direct()` yet. See the [Multi-Page](https://thepatriczek.github.io/playwright-recast/docs/pipeline/pages) and [URL Bar](https://thepatriczek.github.io/playwright-recast/docs/pipeline/url-bar) docs.
 
 ---
 

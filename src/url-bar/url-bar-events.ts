@@ -21,12 +21,12 @@ const escapeRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\
 /**
  * Display text for a URL: query stripped, also inside a hash route, and a
  * fragment that is not a route (`#/...`, `#!/...`) dropped, since OAuth's
- * implicit flow returns `#access_token=...`; then redacted. Credentials in
- * the authority (`user:pass@`) never show.
+ * implicit flow returns `#access_token=...`; then rewritten, then redacted.
+ * Credentials in the authority (`user:pass@`) never show.
  */
 export function formatUrl(
   url: string,
-  opts: Pick<UrlBarConfig, 'stripQuery' | 'redact' | 'redactWith'> = {},
+  opts: Pick<UrlBarConfig, 'stripQuery' | 'rewrite' | 'redact' | 'redactWith'> = {},
 ): string {
   // Up to the authority's last '@': a password may contain '@' itself
   let text = url.replace(/^([a-z][a-z\d+.-]*:\/\/)[^/?#]*@/i, '$1')
@@ -35,6 +35,11 @@ export function formatUrl(
     const [base, fragment] = hash >= 0 ? [text.slice(0, hash), text.slice(hash)] : [text, '']
     const route = /^#!?\//.test(fragment) ? fragment.replace(/\?.*$/, '') : ''
     text = base.replace(/\?.*$/, '') + route
+  }
+  for (const { match, with: replacement } of opts.rewrite ?? []) {
+    // A literal replacement is literal too: no `$&` patterns
+    if (match === '') continue
+    text = typeof match === 'string' ? text.split(match).join(replacement) : text.replace(match, replacement)
   }
   const mask = opts.redactWith ?? '***'
   for (const r of opts.redact ?? []) {

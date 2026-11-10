@@ -6,6 +6,8 @@
 
 - **TTS runs beside the other stages** - the pipeline calls the new optional `TtsProvider.prewarm()` when it starts, and starts synthesis right after the last stage that writes the spoken texts (`subtitles*()`, `textProcessing()`), instead of inside `voiceover()`. `QwenTtsProvider` uses it to load its model while the trace is parsed and the pages are composited. `TtsOptions.signal` stops a synthesis when a later stage fails (all built-in providers honor it).
 
+- **`urlBar({ rewrite })`** - ordered `{ match, with }` replacements on the shown URL, applied after `stripQuery` and before `redact` (an empty string match is skipped), e.g. a local test server's origin to the production one. A string matches literally, every occurrence; a RegExp replaces like `String.replace()`.
+
 ### Fixes
 
 - **Qwen: a line that misses its end of speech no longer stalls the voiceover** - generation was capped only by the model's default of 8192 frames (11 minutes of audio), so one babbling sample held its whole batch for minutes or ran out of GPU memory. The cap now grows with the text (2 s plus 1 s per 6 characters), and a line that reaches it is made again alone, up to three tries, before the sidecar fails naming it.

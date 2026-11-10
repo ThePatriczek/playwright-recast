@@ -18,6 +18,13 @@ export interface UrlBarConfig {
    * Default: true
    */
   stripQuery?: boolean
+  /**
+   * Replacements applied in order, each to the previous result, after
+   * `stripQuery` and before `redact`: e.g. a local test server's origin to the
+   * production one. A string matches literally, every occurrence; a RegExp
+   * replaces as `String.replace()` does (`$1` in `with`; global only with `g`).
+   */
+  rewrite?: Array<{ match: RegExp | string; with: string }>
   /** Parts of the URL to mask: a string matches literally, a RegExp should be global to mask every match. */
   redact?: Array<RegExp | string>
   /** Replacement for redacted parts. Default: `'***'` */
