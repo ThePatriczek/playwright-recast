@@ -121,7 +121,7 @@ export class Pipeline {
    * Each report step may have a `zoom: { x, y, level }` from the `zoom()` helper.
    */
   enrichZoomFromReport(
-    steps: Array<{ zoom?: { x: number; y: number; level: number } | null }>,
+    steps: Array<{ zoom?: { x: number; y: number; level: number; hold?: boolean } | null }>,
   ): Pipeline {
     return this.addStage({ type: 'enrichZoomFromReport', steps })
   }

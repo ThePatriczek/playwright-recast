@@ -232,7 +232,7 @@ function buildZoomStage(
     containInCue: zoomConfig?.containInCue ?? false,
   }
 
-  const keyframes = stabilizePan(stepZoomsToKeyframes(subtitles), panStabilizationThreshold, config)
+  const keyframes = stabilizePan(stepZoomsToKeyframes(subtitles, config), panStabilizationThreshold, config)
   if (keyframes.length === 0) return null
 
   const filter = buildZoomFilter(keyframes, srcRes, targetRes, config)

@@ -733,7 +733,7 @@ export class PipelineExecutor {
               if (!action.title.startsWith(ZOOM_TITLE_PREFIX)) continue
               try {
                 const data = JSON.parse(action.title.slice(ZOOM_TITLE_PREFIX.length)) as {
-                  x: number; y: number; level: number
+                  x: number; y: number; level: number; hold?: boolean
                 }
                 // Cues start on whole ms; unrounded, a marker in the same ms as its narrate() misses it.
                 const tMs = Math.round(toVideoMs(action.startTime as number))
@@ -750,6 +750,7 @@ export class PipelineExecutor {
                     y: data.y,
                     level: data.level,
                     startMs: Math.max(tMs, sub.startMs),
+                    ...(data.hold ? { hold: true } : {}),
                     ...(sceneId ? { sceneId } : {}),
                   }
                 } else if (hasVisibleNarrate) {
@@ -779,7 +780,7 @@ export class PipelineExecutor {
           for (let i = 0; i < Math.min(state.subtitled.subtitles.length, reportSteps.length); i++) {
             const z = reportSteps[i]?.zoom
             if (z) {
-              state.subtitled.subtitles[i]!.zoom = { x: z.x, y: z.y, level: z.level }
+              state.subtitled.subtitles[i]!.zoom = { x: z.x, y: z.y, level: z.level, ...(z.hold ? { hold: true } : {}) }
             }
           }
           break

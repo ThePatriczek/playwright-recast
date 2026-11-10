@@ -19,7 +19,11 @@ const step = (callId: string, title: string, startTime: number, parentId?: strin
 }
 const zoom = `${ZOOM_TITLE_PREFIX}{"x":0.8,"y":0.5,"level":1.3}`
 
-async function subtitlesOf(name: string, events: object[]): Promise<SubtitleEntry[]> {
+async function subtitlesOf(
+  name: string,
+  events: object[],
+  report?: Parameters<ReturnType<typeof Recast.from>['enrichZoomFromReport']>[0],
+): Promise<SubtitleEntry[]> {
   const out = path.join(dir, name)
   fs.mkdirSync(out)
   fs.writeFileSync(path.join(out, 'video.webm'), '')
@@ -27,7 +31,8 @@ async function subtitlesOf(name: string, events: object[]): Promise<SubtitleEntr
     'test.trace': strToU8(events.map((e) => JSON.stringify(e)).join('\n')),
     '0-trace.trace': strToU8(JSON.stringify({ type: 'screencast-frame', pageId: 'page@1', sha1: 'f', width: 1280, height: 720, timestamp: 0 })),
   }))
-  const stages = Recast.from(out).parse().subtitlesFromTrace().getStages()
+  const subtitled = Recast.from(out).parse().subtitlesFromTrace()
+  const stages = (report ? subtitled.enrichZoomFromReport(report) : subtitled).getStages()
   const state = await new PipelineExecutor(out, stages).runStages()
   state.parsed?.frameReader.dispose()
   return state.subtitled!.subtitles
@@ -99,5 +104,15 @@ describe('subtitlesFromTrace(): zoom stays in its scene', () => {
     ])
     expect(subs.map((s) => [s.text, s.zoom?.level])).toEqual([['We publish it.', undefined], ['Now we connect.', 1.3]])
     expect(subs[1]!.zoom?.sceneId).toBeUndefined()
+  })
+})
+
+describe('enrichZoomFromReport()', () => {
+  it('keeps a report zoom\'s hold', async () => {
+    const subs = await subtitlesOf('report-hold', [
+      ...step('test.step@1', `${NARRATE_TITLE_PREFIX}First.`, 1000),
+      ...step('test.step@2', `${NARRATE_TITLE_PREFIX}Second.`, 3000),
+    ], [{ zoom: { x: 0.8, y: 0.5, level: 1.3, hold: true } }, { zoom: null }])
+    expect(subs.map((s) => s.zoom)).toEqual([{ x: 0.8, y: 0.5, level: 1.3, hold: true }, undefined])
   })
 })

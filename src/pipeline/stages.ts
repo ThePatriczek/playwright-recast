@@ -31,7 +31,7 @@ export type StageDescriptor =
   | { type: 'textProcessing'; config: TextProcessingConfig }
   | { type: 'autoZoom'; config: AutoZoomConfig }
   | { type: 'direct'; provider: DirectorProvider; options: DirectorOptions }
-  | { type: 'enrichZoomFromReport'; steps: Array<{ zoom?: { x: number; y: number; level: number } | null }> }
+  | { type: 'enrichZoomFromReport'; steps: Array<{ zoom?: { x: number; y: number; level: number; hold?: boolean } | null }> }
   | { type: 'cursorOverlay'; config: CursorOverlayConfig }
   | { type: 'clickEffect'; config: ClickEffectConfig }
   | { type: 'textHighlight'; config: TextHighlightConfig }

@@ -14,6 +14,8 @@ export interface StepZoom {
   endMs?: number
   /** Scene of the `zoom()` call, see sceneOf() */
   sceneId?: string
+  /** Keep the zoom through the silence after the cue, until the next cue starts (`zoom({ hold })`). */
+  hold?: boolean
 }
 
 /** A single subtitle entry */

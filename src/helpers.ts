@@ -387,11 +387,14 @@ async function measureBox(locator: Locator, text?: string | true): Promise<Box |
  *   editor, its text does not)
  * @param opts.align `'start'` keeps the start of a target wider than the zoomed
  *   frame in view instead of centring it (default: `'center'`)
+ * @param opts.hold Keep the zoom through the silence after its narration, until
+ *   the next narration starts: a pause stays on the target, and consecutive
+ *   lines on one target hold the camera instead of zooming out and back in
  */
 export async function zoom(
   locator: Locator,
   level: number = 1.5,
-  opts?: { text?: string | true; align?: 'center' | 'start' },
+  opts?: { text?: string | true; align?: 'center' | 'start'; hold?: boolean },
 ): Promise<void> {
   const page = locator.page()
   const viewport = page.viewportSize()
@@ -407,7 +410,7 @@ export async function zoom(
     ? (box.x + frameWidth * 0.45) / viewport.width
     : (box.x + box.width / 2) / viewport.width
   const y = (box.y + box.height / 2) / viewport.height
-  const payload = { x, y, level, ...pageIdOf(() => page) }
+  const payload = { x, y, level, ...(opts?.hold ? { hold: true } : {}), ...pageIdOf(() => page) }
 
   _getTestInfo().annotations.push({
     type: 'zoom',
