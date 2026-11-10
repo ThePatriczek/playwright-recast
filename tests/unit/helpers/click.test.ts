@@ -25,9 +25,11 @@ function makeLocator(
   box: { x: number; y: number; width: number; height: number } | null,
   calls: string[],
   sink: { clickOptions?: unknown; hoverOptions?: unknown },
+  border = { left: 0, top: 0 },
 ): Locator {
   return {
     async boundingBox() { calls.push('boundingBox'); return box },
+    async evaluate() { return border },
     async waitFor(opts: { state?: string }) { calls.push(`waitFor:${opts?.state}`) },
     async hover(options?: unknown) { calls.push('hover'); sink.hoverOptions = options },
     async click(options?: unknown) { calls.push('click'); sink.clickOptions = options },
@@ -140,6 +142,28 @@ describe('click()', () => {
     await click(loc)
 
     expect(env.calls).not.toContain('hover')
+  })
+
+  it('marks and hovers the clicked position, not the element center, when one is given', async () => {
+    setupRecast(env.fakeTest, { clickSettleMs: 0, hoverDwellMs: 1 })
+    const sink: { clickOptions?: unknown; hoverOptions?: unknown } = {}
+    const loc = makeLocator({ x: 100, y: 200, width: 400, height: 300 }, env.calls, sink)
+
+    await click(loc, { position: { x: 30, y: 250 } })
+
+    // One ripple where the click lands: a center marker would not pair with it and render a second.
+    expect(env.steps.map((s) => s.title)).toEqual([`${CLICK_TITLE_PREFIX}${JSON.stringify({ x: 130, y: 450 })}`])
+    expect(sink.hoverOptions).toEqual({ timeout: 1000, position: { x: 30, y: 250 } })
+    expect(sink.clickOptions).toEqual({ position: { x: 30, y: 250 } })
+  })
+
+  it('adds the border to the position, as Playwright does', async () => {
+    setupRecast(env.fakeTest, { clickSettleMs: 0 })
+    const loc = makeLocator({ x: 100, y: 200, width: 400, height: 300 }, env.calls, {}, { left: 2, top: 3 })
+
+    await click(loc, { position: { x: 30, y: 250 } })
+
+    expect(env.steps.map((s) => s.title)).toEqual([`${CLICK_TITLE_PREFIX}${JSON.stringify({ x: 132, y: 453 })}`])
   })
 
   it('skips the settle wait when clickSettleMs is 0', async () => {

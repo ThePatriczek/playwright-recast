@@ -10,6 +10,7 @@
 
 ### Fixes
 
+- **Two ripples for a `click()` with `position`** - the marker and the hover used the element's center while the click landed at `position`, so the marker paired with nothing and rendered a second ripple. Both now use `position`; `markClick()` takes it too.
 - **Cursor stuck at a drag's start** - a `mouse.move({ steps })` that took seconds (a drag the page redraws per step) counted as an auto-wait, so the cursor stayed at the start and appeared at the end only once the move was done. A pointer move now travels at its recorded pace, linearly; the cursor stays visible while a button is down; a `mouse.wheel()` shows it at the pointer.
 - **API calls of Playwright Test traces** - the runner's `test.trace` repeats each call under the library's callId; whichever file the zip listed last won, sometimes dropping a call's real method and params (`steps`). The library's event now wins and the runner's adds only its title.
 - **Qwen: a line that misses its end of speech no longer stalls the voiceover** - generation was capped only by the model's default of 8192 frames (11 minutes of audio), so one babbling sample held its whole batch for minutes or ran out of GPU memory. The cap now grows with the text (2 s plus 1 s per 6 characters), and a line that reaches it is made again alone, up to three tries, before the sidecar fails naming it.

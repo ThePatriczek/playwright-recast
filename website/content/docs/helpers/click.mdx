@@ -5,11 +5,11 @@ description: Mark a click in the trace so the rendered video plays a polished, h
 
 ## What it does
 
-`click(locator)` performs a real Playwright click **and** records a click marker into the trace zip at the element's center. During video generation the renderer prefers these markers over auto-detected clicks and gives them a **held cursor approach** — it freezes the painted frame at the click and lets the cursor glide all the way in over it, then fires the ripple.
+`click(locator)` performs a real Playwright click **and** records a click marker into the trace zip where the click lands: the element's center, or `options.position`. During video generation the renderer prefers these markers over auto-detected clicks and gives them a **held cursor approach** — it freezes the painted frame at the click and lets the cursor glide all the way in over it, then fires the ripple.
 
 This fixes the "the mouse moves before there's anything to click on" problem. For clicks that wait on a page load, the screencast lags Playwright's "actionable" moment, so an auto-detected cursor approach can glide over a still-loading screen. `click()` settles briefly so the recorder captures a painted frame of the target, marks that point, and the renderer synthesises the full approach in post over the real target.
 
-`markClick(locator)` is the low-level half: it writes the marker only — no real click, no wait. Use it when you already drive the click yourself (e.g. `page.mouse`, keyboard activation) but still want the polished approach.
+`markClick(locator, { position })` is the low-level half, `position` being relative to the element like `locator.click({ position })`: it writes the marker only — no real click, no wait. Use it when you already drive the click yourself (e.g. `page.mouse`, keyboard activation) but still want the polished approach.
 
 Both helpers need `setupRecast(test)` to record markers and a pipeline that renders clicks — [`.cursorOverlay()`](/docs/pipeline/cursor-overlay) and/or [`.clickEffect()`](/docs/pipeline/click-effect). If setup is missing, `markClick()` no-ops and `click()` falls back to a plain `locator.click(options)` without settle/marker work. Without either render stage the marker is recorded but nothing draws it.
 
@@ -40,18 +40,19 @@ Order of operations:
 1. `await locator.waitFor({ state: 'visible' })` — the target must be on screen before the settle (the real click comes last, so its auto-wait can't be relied on here).
 2. Wait the **settle** (`clickSettleMs`, default 150 ms) so the recorder captures a painted frame.
 3. When enabled, hover the locator and wait the **dwell** (`hoverDwellMs`, default 0 ms) so the app paints its own hover state. The hover is best effort and capped at one second; failure skips the dwell.
-4. `markClick(locator)` — write the marker at the element center after the dwell, keeping it close enough to pair with the real click.
+4. `markClick(locator)` — write the marker at the element center (or at `options.position`, where the click lands) after the dwell, keeping it close enough to pair with the real click.
 5. `await locator.click(options)` — the real click.
 
 The settle is the only real-time cost added by default. Tune or disable it globally with [`setupRecast(test, { clickSettleMs })`](/docs/helpers/setup-recast#clicksettlems--the-click-settle). To record hover-only UI, opt into [`setupRecast(test, { hoverDwellMs })`](/docs/helpers/setup-recast#hoverdwellms--capture-the-hover-state). Pass `0` to disable either wait.
 
-## `markClick(locator)`
+## `markClick(locator, opts?)`
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `locator` | `Locator` | (required) | Playwright Locator whose center is marked |
+| `locator` | `Locator` | (required) | Playwright Locator to mark |
+| `opts.position` | `{ x: number; y: number }` | element center | Point to mark, relative to the element's padding box like `locator.click({ position })` |
 
-Reads the element center via `locator.boundingBox()` and writes one `__recast_click__` marker step (JSON `{ x, y }` in viewport pixels, exactly like [`highlight()`](/docs/helpers/highlight) / [`zoom()`](/docs/helpers/zoom)). It performs **no** real click and **no** settle — standalone callers own their timing. If the element is not visible (`boundingBox()` is `null`), it no-ops.
+Reads the element's box via `locator.boundingBox()` and writes one `__recast_click__` marker step (JSON `{ x, y }` in viewport pixels, exactly like [`highlight()`](/docs/helpers/highlight) / [`zoom()`](/docs/helpers/zoom)). It performs **no** real click and **no** settle — standalone callers own their timing. If the element is not visible (`boundingBox()` is `null`), it no-ops.
 
 ## How the approach is rendered
 
