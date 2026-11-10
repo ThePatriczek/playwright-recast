@@ -33,6 +33,8 @@ export interface PointerAction {
   endTime?: number
   method?: string
   params?: Record<string, unknown>
+  /** Moves the pointer here without a keyframe of its own (a click a marker stands in for) */
+  positionOnly?: boolean
 }
 
 export interface TrajectoryInput {
@@ -44,10 +46,16 @@ export interface TrajectoryInput {
   timeRemap?: (traceTimeMs: number) => number
   /** Video start offset in ms (subtracted from remapped time) */
   videoStartOffsetMs: number
+  /** Trace ranges cut from the video: a button pressed before one is not held past it */
+  hiddenRanges?: ReadonlyArray<{ start: number; end: number }>
 }
 
-/** `mouse.move()` never auto-waits: its span is the pointer walking there, linearly over its steps. */
-const isPointerMove = (a: PointerAction): boolean => a.method === 'mouseMove'
+/**
+ * `mouse.move()` never auto-waits: its span is the pointer walking there,
+ * linearly over its steps. A stepped `mouse.click()` walks there first too.
+ */
+const isPointerMove = (a: PointerAction): boolean =>
+  a.method === 'mouseMove' || (a.method === 'mouseClick' && Number(a.params?.steps ?? 1) > 1)
 
 /**
  * Build a trajectory of cursor keyframes from trace actions.
@@ -60,13 +68,20 @@ export function buildTrajectory(input: TrajectoryInput): CursorKeyframe[] {
   const keyframes: CursorKeyframe[] = []
   let last: { x: number; y: number } | undefined
   const down = new Set<string>()
+  let downSince = 0
 
   for (const action of sorted) {
+    // Its release may have been cut with the range: do not hold the cursor up for good.
+    if (down.size > 0 && input.hiddenRanges?.some((r) => r.start >= downSince && r.end <= action.startTime)) down.clear()
     const point = action.point ?? (action.method === 'mouseWheel' ? last : undefined)
-    if (action.method === 'mouseDown') down.add(String(action.params?.button ?? 'left'))
+    if (action.method === 'mouseDown') {
+      if (down.size === 0) downSince = action.startTime
+      down.add(String(action.params?.button ?? 'left'))
+    }
     if (action.method === 'mouseUp') down.delete(String(action.params?.button ?? 'left'))
     if (!point) continue
     last = point
+    if (action.positionOnly) continue
     if (input.filter && !input.filter({ ...action, point })) continue
 
     // Use the action's END time: with Playwright auto-wait, an action that

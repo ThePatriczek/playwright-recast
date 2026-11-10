@@ -10,6 +10,8 @@ export interface PillStyle {
   color: string
   background: string
   backgroundOpacity: number
+  /** Corner radius in px. Default: half the height, a stadium */
+  radius?: number
 }
 
 const FADE_MS = 150
@@ -32,19 +34,20 @@ function drawText(textFile: string, style: Pick<PillStyle, 'fontSize' | 'fontFil
 
 /**
  * Fail early when ffmpeg cannot draw text: drawtext needs libfreetype, and a
- * font from fontconfig unless `fontFile` names one.
+ * font from fontconfig unless `fontFile` names one. `stage` names the stage
+ * whose option to fix.
  */
-export function assertCanDrawText(fontFile?: string): void {
+export function assertCanDrawText(fontFile?: string, stage: 'urlBar' | 'keyOverlay' = 'urlBar'): void {
   // drawtext falls back to a default font for a missing fontfile, silently
-  if (fontFile && !fs.existsSync(fontFile)) throw new Error(`urlBar({ fontFile }): no such file: ${fontFile}`)
+  if (fontFile && !fs.existsSync(fontFile)) throw new Error(`${stage}({ fontFile }): no such file: ${fontFile}`)
   const res = spawnSync('ffmpeg', [
     '-v', 'error', '-f', 'lavfi', '-i', 'color=black:s=64x32:d=0.04',
     '-vf', `drawtext=${fontFile ? `fontfile=${filterGraphPath(fontFile)}:` : ''}text=x`, '-frames:v', '1', '-f', 'null', '-',
   ], { encoding: 'utf8' })
   if (res.status !== 0) {
     throw new Error(
-      'urlBar() needs ffmpeg with the drawtext filter (libfreetype) and a font: ' +
-      `install fontconfig fonts or pass urlBar({ fontFile }). ffmpeg said: ${(res.stderr ?? '').trim().split('\n').pop()}`,
+      `${stage}() needs ffmpeg with the drawtext filter (libfreetype) and a font: ` +
+      `install fontconfig fonts or pass ${stage}({ fontFile }). ffmpeg said: ${(res.stderr ?? '').trim().split('\n').pop()}`,
     )
   }
 }
@@ -87,11 +90,11 @@ function drawPill(fullText: string, style: PillStyle, maxWidth: number, stillPat
 
   const [r, g, b] = hexToRgb(style.background)
   const alpha = Math.round(style.backgroundOpacity * 255)
-  const radius = height / 2
+  const radius = Math.max(0, Math.min(height / 2, style.radius ?? height / 2))
   const e = '\\,' // escaped comma inside geq expressions
-  // Stadium: a rectangle with half circles at both ends.
-  const inside = `if(lt(X${e}${radius})${e}lte(hypot(X-${radius}${e}Y-${radius})${e}${radius})${e}` +
-    `if(gt(X${e}${width - radius})${e}lte(hypot(X-${width - radius}${e}Y-${radius})${e}${radius})${e}1))`
+  // A rounded rectangle: the distance past the inner rectangle stays within the radius.
+  const past = (v: string, size: number): string => `max(max(${radius}-${v}${e}0)${e}${v}-${size - radius})`
+  const inside = `lte(hypot(${past('X', width)}${e}${past('Y', height)})${e}${radius})`
   runFfmpeg([
     '-y', '-f', 'lavfi', '-i', `color=c=black@0:s=${width}x${height}:d=0.04,format=rgba`,
     '-vf', [

@@ -47,6 +47,10 @@ import { resolveClickEffectConfig } from '../click-effect/defaults.js'
 import type { CursorKeyframe } from '../types/cursor-overlay.js'
 import { resolveCursorOverlayConfig, type ResolvedCursorOverlayConfig } from '../cursor-overlay/defaults.js'
 import { buildTrajectory, type PointerAction } from '../cursor-overlay/trajectory.js'
+import { cursorClock } from '../cursor-overlay/clock.js'
+import type { KeyOverlayConfig, KeyOverlayEvent, MouseInputEvent } from '../types/input-overlay.js'
+import { buildKeyOverlayEvents, buildMouseInputEvents } from '../input-overlay/events.js'
+import { resolveMouseIndicatorConfig } from '../input-overlay/defaults.js'
 import type { HighlightEvent } from '../types/text-highlight.js'
 import { resolveTextHighlightConfig, type ResolvedTextHighlightConfig } from '../text-highlight/defaults.js'
 import type { IntroConfig, OutroConfig } from '../types/intro-outro.js'
@@ -106,6 +110,9 @@ export type PipelineState = {
   pageTimeline?: PageSegment[]
   urlBarConfig?: UrlBarConfig
   urlBarEvents?: UrlBarEvent[]
+  mouseInputEvents?: MouseInputEvent[]
+  keyOverlayConfig?: KeyOverlayConfig
+  keyOverlayEvents?: KeyOverlayEvent[]
 }
 
 /** Stages that write the texts voiceover() speaks. */
@@ -164,12 +171,15 @@ export class PipelineExecutor {
     if (directors.length && this.stages.some(stage => stage.type === 'autoZoom' || stage.type === 'enrichZoomFromReport')) throw new Error('direct() owns the camera; remove autoZoom() and enrichZoomFromReport()')
     // The director crops the rendered video, so a URL bar drawn into it would be zoomed with it.
     if (directors.length && this.stages.some(stage => stage.type === 'urlBar')) throw new Error('urlBar() is not supported with direct() yet; remove one of them')
+    if (directors.length && this.stages.some(stage => stage.type === 'keyOverlay')) throw new Error('keyOverlay() is not supported with direct() yet; remove one of them')
     for (const director of directors) validateDirectorOptions(director.options)
     assertFfmpegAvailable()
     // Before TTS and encoding, which a missing font would waste.
     // The last urlBar() is the one runStages() applies
     const urlBarStage = findLast(this.stages, (st) => st.type === 'urlBar')
     if (urlBarStage?.type === 'urlBar') assertCanDrawText(urlBarStage.config.fontFile)
+    const keyOverlayStage = findLast(this.stages, (st) => st.type === 'keyOverlay')
+    if (keyOverlayStage?.type === 'keyOverlay') assertCanDrawText(keyOverlayStage.config.fontFile, 'keyOverlay')
     const state = await this.runStages()
     const outputDir = path.dirname(outputPath)
     const tmpDir = path.join(outputDir, '.recast-tmp')
@@ -191,6 +201,23 @@ export class PipelineExecutor {
       state.urlBarEvents = this.buildUrlBarEvents(state, state.urlBarConfig)
       console.log(`  urlBar: ${state.urlBarEvents.length} appearance(s) (${state.urlBarConfig.show ?? 'host-change'})`)
     }
+    if (state.cursorOverlayConfig || state.keyOverlayConfig) {
+      // Inputs of the recording context, hidden steps dropped, on the click and cursor clock
+      const startMs = this.recordingStartMs(state.parsed!)
+      const inputActions = (state.filtered?.actions ?? state.parsed!.actions).filter((a) => (a.startTime as number) >= startMs) as PointerAction[]
+      const toVideo = this.traceToVideoMs(state)
+      if (state.cursorOverlayConfig) {
+        const indicator = resolveMouseIndicatorConfig(state.cursorOverlayConfig.mouseIndicator)
+        // On the cursor's clock: the icon rides the cursor's position expressions.
+        const cursorToVideo = cursorClock(state.parsed!.frames, state.parsed!.metadata.startTime as number, state.speedMapped)
+        state.mouseInputEvents = buildMouseInputEvents(inputActions, indicator, cursorToVideo)
+        if (state.mouseInputEvents.length > 0) console.log(`  mouseIndicator: ${state.mouseInputEvents.length} input(s)`)
+      }
+      if (state.keyOverlayConfig) {
+        state.keyOverlayEvents = buildKeyOverlayEvents(inputActions, state.keyOverlayConfig, toVideo)
+        console.log(`  keyOverlay: ${state.keyOverlayEvents.length} press(es)`)
+      }
+    }
 
     // Compensate click events, cursor keyframes, and highlight events for
     // blank lead-in. The renderer trims blank frames from the start of the
@@ -202,7 +229,7 @@ export class PipelineExecutor {
     if (
       state.sourceVideoPath &&
       !state.director &&
-      (state.clickEvents || state.cursorKeyframes || state.highlightEvents || state.urlBarEvents)
+      (state.clickEvents || state.cursorKeyframes || state.highlightEvents || state.urlBarEvents || state.mouseInputEvents || state.keyOverlayEvents)
     ) {
       const blankTmpDir = path.join(outputDir, '.recast-blank-probe')
       const offsetMs = resolveBlankLeadInMs(
@@ -229,7 +256,7 @@ export class PipelineExecutor {
             kf.videoTimeSec = Math.max(0, kf.videoTimeSec - offsetMs / 1000)
           }
         }
-        for (const ev of state.urlBarEvents ?? []) {
+        for (const ev of [...state.urlBarEvents ?? [], ...state.mouseInputEvents ?? [], ...state.keyOverlayEvents ?? []]) {
           ev.videoTimeMs = Math.max(0, Math.round(ev.videoTimeMs - offsetMs))
           if (ev.endTimeMs !== undefined) ev.endTimeMs = Math.max(0, Math.round(ev.endTimeMs - offsetMs))
         }
@@ -256,6 +283,9 @@ export class PipelineExecutor {
       highlightsOnFreezeClock: state.highlightsOnFreezeClock,
       urlBarEvents: state.urlBarEvents,
       urlBarConfig: state.urlBarConfig,
+      mouseInputEvents: state.mouseInputEvents,
+      keyOverlayEvents: state.keyOverlayEvents,
+      keyOverlayConfig: state.keyOverlayConfig,
     }
 
     // Render final video
@@ -913,10 +943,12 @@ export class PipelineExecutor {
               endTime: a.endTime as number,
             }))
           const { resolved: resolvedCursorClicks, consumedCallIds } = resolveClickMarkers(autoClicksForCursor, cursorMarkers)
-          const cursorActions = cursorActionsAll.filter((a) => !consumedCallIds.has(a.callId))
+          // A click a marker stands in for still moves the pointer: a later wheel turn shows there.
+          const cursorActions = cursorActionsAll.map((a) => (consumedCallIds.has(a.callId) ? { ...a, positionOnly: true } : a))
 
           const keyframes = buildTrajectory({
             actions: cursorActions as PointerAction[],
+            hiddenRanges: (state.filtered?.hiddenRanges ?? []).map((r) => ({ start: r.start as number, end: r.end as number })),
             filter: stage.config.filter as ((a: { point?: { x: number; y: number }; startTime: number }) => boolean) | undefined,
             timeRemap: cursorTimeRemap,
             videoStartOffsetMs: cursorVideoStartOffset,
@@ -1097,6 +1129,12 @@ export class PipelineExecutor {
         case 'urlBar': {
           if (!state.parsed) throw new Error('urlBar() requires parse() first')
           state.urlBarConfig = stage.config
+          break
+        }
+
+        case 'keyOverlay': {
+          if (!state.parsed) throw new Error('keyOverlay() requires parse() first')
+          state.keyOverlayConfig = stage.config
           break
         }
 

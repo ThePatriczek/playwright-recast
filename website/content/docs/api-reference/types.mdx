@@ -505,6 +505,7 @@ interface CursorOverlayConfig {
   shadow?: boolean                          // Default: true
   approachMs?: number                       // Default: 500
   filter?: (action: TraceAction) => boolean
+  mouseIndicator?: boolean | MouseIndicatorConfig  // Default: off
 }
 ```
 
@@ -515,8 +516,43 @@ interface CursorKeyframe {
   x: number              // Viewport pixels
   y: number              // Viewport pixels
   videoTimeSec: number   // After speed remapping
+  travelSec?: number     // Pointer travel time to here (mouse.move)
+  held?: boolean         // A button is down until the next keyframe
 }
 ```
+
+## Mouse Indicator and Key Overlay Types
+
+```typescript
+type MouseIndicatorInput = 'left' | 'right' | 'middle' | 'wheel'
+
+interface MouseIndicatorConfig {
+  inputs?: MouseIndicatorInput[]            // Default: ['right', 'middle', 'wheel']
+  size?: number                             // Default: 36 (px at 1080p)
+  color?: string                            // Default: '#FFFFFF'
+  outlineColor?: string                     // Default: '#1F2328'
+  accentColor?: string                      // Default: '#2563EB'
+  offset?: { x: number; y: number }         // Default: beside the cursor image
+  minShowMs?: number                        // Default: 400
+}
+
+type KeyOverlayInput = 'combos' | 'special' | 'mouse-modifiers' | 'keys'
+
+interface KeyOverlayConfig {
+  inputs?: KeyOverlayInput[]                // Default: ['combos', 'special', 'mouse-modifiers']
+  labels?: Record<string, string>           // Over 'Ctrl', 'Esc', 'Del', ...
+  separator?: string                        // Default: ' + '
+  minShowMs?: number                        // Default: 1200
+  position?: 'bottom' | 'top'               // Default: 'bottom' ('top' with burned-in subtitles)
+  fontSize?: number                         // Default: 32
+  fontFile?: string
+  color?: string                            // Default: '#FFFFFF'
+  background?: string                       // Default: '#1F2328'
+  backgroundOpacity?: number                // Default: 0.85
+}
+```
+
+`MouseInputEvent` and `KeyOverlayEvent` are the inputs on the output timeline, with the trace times that keep them aligned with narration holds. See [Cursor Overlay](/docs/pipeline/cursor-overlay#mouse-indicator), [Key Overlay](/docs/pipeline/key-overlay) and [`withMouseIndicator()` / `withKeyOverlay()`](/docs/helpers/input-overrides).
 
 ---
 

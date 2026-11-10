@@ -6,6 +6,9 @@ import {
   setupRecast,
   HIGHLIGHT_TITLE_PREFIX,
   ZOOM_TITLE_PREFIX,
+  INPUT_TITLE_PREFIX,
+  withMouseIndicator,
+  withKeyOverlay,
 } from '../../../src/helpers'
 
 type StepRecord = { title: string }
@@ -114,5 +117,18 @@ describe('highlight() — marker contract', () => {
 
     expect(env.annotations).toHaveLength(0)
     expect(env.steps).toHaveLength(0)
+  })
+})
+
+describe('withMouseIndicator() / withKeyOverlay()', () => {
+  it('wrap the body in an input marker step and return its result', async () => {
+    const env = makeFakeTest()
+    setupRecast(env.fakeTest)
+    expect(await withMouseIndicator(['left'], () => 7)).toBe(7)
+    expect(await withKeyOverlay(false, async () => 'done')).toBe('done')
+    expect(env.steps.map((s) => s.title)).toEqual([
+      `${INPUT_TITLE_PREFIX}{"mouse":["left"]}`,
+      `${INPUT_TITLE_PREFIX}{"keys":false}`,
+    ])
   })
 })

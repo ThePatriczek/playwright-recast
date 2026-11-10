@@ -1,0 +1,57 @@
+---
+title: Key Overlay
+description: Show shortcuts and held modifiers as a keycap on the video.
+---
+
+`.keyOverlay()` shows key presses from the trace as a keycap at the bottom center of the frame: `Ctrl + Z`, `Esc`, `Shift + Tab`, or `Alt + drag` for a modifier held over a mouse action.
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .cursorOverlay()
+  .keyOverlay()
+  .render()
+  .toFile('demo.mp4')
+```
+
+Presses come from `keyboard.press()`, `keyboard.down()` / `up()`, `locator.press()`, and a click's `modifiers` option. Text from `fill()`, `type()`, `pressSequentially()` and `keyboard.type()` never shows.
+
+## What shows
+
+| `inputs` entry | Shows | Default |
+|---|---|---|
+| `'combos'` | A key with Ctrl, Alt or Meta, or Shift with a named key: `Ctrl + Z`, `Shift + Tab` | yes |
+| `'special'` | A named key alone: `Esc`, `Enter`, `Del`, `Backspace`, arrows, F-keys | yes |
+| `'mouse-modifiers'` | A modifier held over a click, drag or wheel turn: `Alt + drag`, `Shift + click` | yes |
+| `'keys'` | Any other single key: `A`, `Shift + A` | no |
+
+Override it for one interaction from the test with [`withKeyOverlay()`](/docs/helpers/input-overrides).
+
+## Options
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `inputs` | `KeyOverlayInput[]` | `['combos', 'special', 'mouse-modifiers']` | Presses that show |
+| `labels` | `Record<string, string>` | see below | Labels by Playwright key name, merged over the defaults; also `click`, `drag`, `wheel` |
+| `separator` | `string` | `' + '` | Between keys |
+| `minShowMs` | `number` | `1200` | Shortest time a press shows, in output ms; a held key shows until released. The next press replaces it. |
+| `position` | `'bottom' \| 'top'` | `'bottom'`; `'top'` with burned-in subtitles | Edge of the frame; above a [URL bar](/docs/pipeline/url-bar) on the same edge |
+| `fontSize` | `number` | `32` | Text size at 1080p, scaled with the output |
+| `fontFile` | `string` | fontconfig default | Font file for the text |
+| `color` | `string` | `'#FFFFFF'` | Text color |
+| `background` | `string` | `'#1F2328'` | Keycap color |
+| `backgroundOpacity` | `number` | `0.85` | Keycap opacity |
+
+Default labels are platform-neutral: `Control` and `ControlOrMeta` show as `Ctrl`, `Escape` as `Esc`, `Delete` as `Del`, arrows as `Up` / `Down` / `Left` / `Right`, `PageUp` / `PageDown` as `PgUp` / `PgDn`, single characters upper-case.
+
+```typescript
+.keyOverlay({
+  inputs: ['combos', 'mouse-modifiers'],
+  labels: { Control: 'Strg', drag: 'Ziehen' },
+})
+```
+
+- Drawn on the output frame after zoom, like the URL bar. Needs ffmpeg's `drawtext`; not with [`direct()`](/docs/pipeline/direct) yet.
+- Presses inside [hidden steps](/docs/pipeline/hide-steps) do not show.
+- Burned-in subtitles draw on top of the bottom edge, so with `render({ burnSubtitles: true })` the keycap defaults to the top.

@@ -1281,6 +1281,7 @@ await Recast
 | `moveDurationMs` | `number` | `250` | Maximum time spent travelling to the next position |
 | `hideAfterMs` | `number` | `500` | Time the cursor remains visible after reaching a position |
 | `approachMs` | `number` | `500` | Hold duration for marker-driven clicks |
+| `mouseIndicator` | `boolean \| MouseIndicatorConfig` | — | Mouse icon showing pressed buttons and wheel turns |
 
 ### Custom cursor image
 
@@ -1293,6 +1294,30 @@ await Recast
 
 The bundled default is a 30x44 arrow cursor PNG. Provide your own image for branded or stylized cursors.
 
+## Mouse indicator
+
+`mouseIndicator` adds a small mouse icon beside the cursor that shows the pressed button (left, right, middle) and the wheel's direction, also through a drag. Opt-in: `true` shows the right and middle button and the wheel, since a left click is what a viewer assumes.
+
+```typescript
+.cursorOverlay({ mouseIndicator: true })
+
+.cursorOverlay({
+  mouseIndicator: { inputs: ['left', 'right', 'middle', 'wheel'], size: 44, accentColor: '#E11D48' },
+})
+```
+
+| `mouseIndicator` option | Type | Default | Description |
+|---|---|---|---|
+| `inputs` | `Array<'left' \| 'right' \| 'middle' \| 'wheel'>` | `['right', 'middle', 'wheel']` | Inputs that show the icon |
+| `size` | `number` | `36` | Icon height at 1080p, scaled with the video |
+| `color` | `string` | `'#FFFFFF'` | Body color |
+| `outlineColor` | `string` | `'#1F2328'` | Outline and idle wheel color |
+| `accentColor` | `string` | `'#2563EB'` | Pressed button, wheel and direction arrow |
+| `offset` | `{ x: number; y: number }` | beside the cursor image | Icon's top-left corner from the pointer tip, px at 1080p |
+| `minShowMs` | `number` | `400` | Shortest time the icon shows, for a click or one wheel notch |
+
+A press shows from `mouse.down()` to `mouse.up()`; a click (`locator.click()`, `page.mouse.click()`, their `dblclick()`, with their `button` option) for `minShowMs`; a `mouse.wheel()` notch as an arrow up, down, left or right. `locator.dragTo()` records no pointer input and shows nothing. The icon only shows while the cursor does, at a fixed offset right of and below the pointer, so near the right or bottom edge it is cut off. To choose for one interaction, wrap it in [`withMouseIndicator()`](/docs/helpers/input-overrides), which also works without `mouseIndicator`. Held modifiers and shortcuts show with [`keyOverlay()`](/docs/pipeline/key-overlay).
+
 ## How it works
 
 For each click action detected in the trace:
@@ -1301,7 +1326,7 @@ For each click action detected in the trace:
 2. Later positions travel from the preceding pointer position with the configured easing
 3. The cursor reaches the target at the click timestamp and hides after `hideAfterMs`
 
-Mouse input follows the pointer, too: a `mouse.move()` travels at its recorded pace (linearly, as `steps` walk it), so a drag's cursor stays on the selection frame or node it pulls; while a button is down, the cursor stays visible until the release; and a `mouse.wheel()` shows the cursor where the pointer is.
+Mouse input follows the pointer, too: a `mouse.move()`, or a `mouse.click()` with `steps`, travels at its recorded pace (linearly, as `steps` walk it), so a drag's cursor stays on the selection frame or node it pulls; while a button is down, the cursor stays visible until the release; and a `mouse.wheel()` shows the cursor where the pointer is.
 
 The animation uses ffmpeg `movie` + `overlay` filters with per-position `enable` expressions and easing calculated via `st()/ld()` temp variables. Long Playwright auto-waits retain the appear-at-target safeguard so the cursor does not glide over a loading screen.
 
@@ -1529,6 +1554,64 @@ Across [pages](/docs/pipeline/pages), the URL follows the page on screen: a popu
 - Needs ffmpeg's `drawtext` (libfreetype) and a font (fontconfig or `fontFile`); the render stops with an error otherwise.
 - Not with [`direct()`](/docs/pipeline/direct) yet: it crops the rendered video and would zoom the bar.
 
+
+---
+
+## Key Overlay
+
+`.keyOverlay()` shows key presses from the trace as a keycap at the bottom center of the frame: `Ctrl + Z`, `Esc`, `Shift + Tab`, or `Alt + drag` for a modifier held over a mouse action.
+
+```typescript
+await Recast
+  .from('./traces')
+  .parse()
+  .cursorOverlay()
+  .keyOverlay()
+  .render()
+  .toFile('demo.mp4')
+```
+
+Presses come from `keyboard.press()`, `keyboard.down()` / `up()`, `locator.press()`, and a click's `modifiers` option. Text from `fill()`, `type()`, `pressSequentially()` and `keyboard.type()` never shows.
+
+## What shows
+
+| `inputs` entry | Shows | Default |
+|---|---|---|
+| `'combos'` | A key with Ctrl, Alt or Meta, or Shift with a named key: `Ctrl + Z`, `Shift + Tab` | yes |
+| `'special'` | A named key alone: `Esc`, `Enter`, `Del`, `Backspace`, arrows, F-keys | yes |
+| `'mouse-modifiers'` | A modifier held over a click, drag or wheel turn: `Alt + drag`, `Shift + click` | yes |
+| `'keys'` | Any other single key: `A`, `Shift + A` | no |
+
+Override it for one interaction from the test with [`withKeyOverlay()`](/docs/helpers/input-overrides).
+
+## Options
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `inputs` | `KeyOverlayInput[]` | `['combos', 'special', 'mouse-modifiers']` | Presses that show |
+| `labels` | `Record<string, string>` | see below | Labels by Playwright key name, merged over the defaults; also `click`, `drag`, `wheel` |
+| `separator` | `string` | `' + '` | Between keys |
+| `minShowMs` | `number` | `1200` | Shortest time a press shows, in output ms; a held key shows until released. The next press replaces it. |
+| `position` | `'bottom' \| 'top'` | `'bottom'`; `'top'` with burned-in subtitles | Edge of the frame; above a [URL bar](/docs/pipeline/url-bar) on the same edge |
+| `fontSize` | `number` | `32` | Text size at 1080p, scaled with the output |
+| `fontFile` | `string` | fontconfig default | Font file for the text |
+| `color` | `string` | `'#FFFFFF'` | Text color |
+| `background` | `string` | `'#1F2328'` | Keycap color |
+| `backgroundOpacity` | `number` | `0.85` | Keycap opacity |
+
+Default labels are platform-neutral: `Control` and `ControlOrMeta` show as `Ctrl`, `Escape` as `Esc`, `Delete` as `Del`, arrows as `Up` / `Down` / `Left` / `Right`, `PageUp` / `PageDown` as `PgUp` / `PgDn`, single characters upper-case.
+
+```typescript
+.keyOverlay({
+  inputs: ['combos', 'mouse-modifiers'],
+  labels: { Control: 'Strg', drag: 'Ziehen' },
+})
+```
+
+- Drawn on the output frame after zoom, like the URL bar. Needs ffmpeg's `drawtext`; not with [`direct()`](/docs/pipeline/direct) yet.
+- Presses inside [hidden steps](/docs/pipeline/hide-steps) do not show.
+- Burned-in subtitles draw on top of the bottom edge, so with `render({ burnSubtitles: true })` the keycap defaults to the top.
+
 ---
 
 ## showUrl
@@ -1548,6 +1631,41 @@ await showUrl(page, { durationMs: 5000 })  // this call only
 | `durationMs` | `number` | stage `durationMs` | How long the bar stays, in output ms |
 
 No-op without `setupRecast(test)`. A marker inside a [hidden step](/docs/pipeline/hide-steps) shows nothing.
+
+
+---
+
+## withMouseIndicator / withKeyOverlay
+
+The [mouse indicator](/docs/pipeline/cursor-overlay#mouse-indicator) and the [key overlay](/docs/pipeline/key-overlay) show the inputs their stage's `inputs` name. Wrap an interaction in `withMouseIndicator()` or `withKeyOverlay()` to choose for it alone: `true` shows every input, `false` none, a list just those. The helper runs `body` inside a marker step and returns its result.
+
+```typescript
+import { withMouseIndicator, withKeyOverlay } from 'playwright-recast'
+
+// The narration is about this left-button drag: show the pressed button.
+await withMouseIndicator(['left'], async () => {
+  await page.mouse.move(200, 300)
+  await page.mouse.down()
+  await page.mouse.move(400, 300, { steps: 20 })
+  await page.mouse.up()
+})
+
+// Clearing a field: no need to show Ctrl + A and Backspace.
+await withKeyOverlay(false, async () => {
+  await page.keyboard.press('ControlOrMeta+A')
+  await page.keyboard.press('Backspace')
+})
+```
+
+| Helper | `inputs` |
+|---|---|
+| `withMouseIndicator(inputs, body)` | `boolean \| Array<'left' \| 'right' \| 'middle' \| 'wheel'>` |
+| `withKeyOverlay(inputs, body)` | `boolean \| Array<'combos' \| 'special' \| 'mouse-modifiers' \| 'keys'>` |
+
+- An input counts as inside when it starts inside: a press when the button or key goes down.
+- Nested calls: the innermost one decides.
+- `withMouseIndicator()` also shows icons when the stage sets no `mouseIndicator`; the cursor overlay must still be on.
+- Without `setupRecast(test)` the helpers only run `body`.
 
 ---
 

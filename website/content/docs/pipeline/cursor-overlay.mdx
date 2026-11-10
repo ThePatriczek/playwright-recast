@@ -30,6 +30,7 @@ await Recast
 | `shadow` | `boolean` | `true` | Show a drop shadow on the default cursor |
 | `approachMs` | `number` | `500` | Hold (freeze) duration for marker-driven clicks — see [Held cursor approach](#approachms--held-cursor-approach) |
 | `filter` | `(action) => boolean` | — | Select which actions generate cursor positions |
+| `mouseIndicator` | `boolean \| MouseIndicatorConfig` | — | Mouse icon showing pressed buttons and wheel turns — see [Mouse indicator](#mouse-indicator) |
 
 ```typescript
 .cursorOverlay({
@@ -64,6 +65,30 @@ The [`click()` / `markClick()`](/docs/helpers/click) test helpers fix this by wr
 
 `approachMs` only affects marker-driven clicks; plain auto-detected clicks are unaffected. With a [`.voiceover()`](/docs/pipeline/voiceover) stage, the hold also extends the audio and subtitles in lockstep so narration stays in sync.
 
+## Mouse indicator
+
+`mouseIndicator` adds a small mouse icon beside the cursor that shows the pressed button (left, right, middle) and the wheel's direction, also through a drag. Opt-in: `true` shows the right and middle button and the wheel, since a left click is what a viewer assumes.
+
+```typescript
+.cursorOverlay({ mouseIndicator: true })
+
+.cursorOverlay({
+  mouseIndicator: { inputs: ['left', 'right', 'middle', 'wheel'], size: 44, accentColor: '#E11D48' },
+})
+```
+
+| `mouseIndicator` option | Type | Default | Description |
+|---|---|---|---|
+| `inputs` | `Array<'left' \| 'right' \| 'middle' \| 'wheel'>` | `['right', 'middle', 'wheel']` | Inputs that show the icon |
+| `size` | `number` | `36` | Icon height at 1080p, scaled with the video |
+| `color` | `string` | `'#FFFFFF'` | Body color |
+| `outlineColor` | `string` | `'#1F2328'` | Outline and idle wheel color |
+| `accentColor` | `string` | `'#2563EB'` | Pressed button, wheel and direction arrow |
+| `offset` | `{ x: number; y: number }` | beside the cursor image | Icon's top-left corner from the pointer tip, px at 1080p |
+| `minShowMs` | `number` | `400` | Shortest time the icon shows, for a click or one wheel notch |
+
+A press shows from `mouse.down()` to `mouse.up()`; a click (`locator.click()`, `page.mouse.click()`, their `dblclick()`, with their `button` option) for `minShowMs`; a `mouse.wheel()` notch as an arrow up, down, left or right. `locator.dragTo()` records no pointer input and shows nothing. The icon only shows while the cursor does, at a fixed offset right of and below the pointer, so near the right or bottom edge it is cut off. To choose for one interaction, wrap it in [`withMouseIndicator()`](/docs/helpers/input-overrides), which also works without `mouseIndicator`. Held modifiers and shortcuts show with [`keyOverlay()`](/docs/pipeline/key-overlay).
+
 ## How it works
 
 For each click action detected in the trace:
@@ -72,7 +97,7 @@ For each click action detected in the trace:
 2. Later positions travel from the preceding pointer position with the configured easing
 3. The cursor reaches the target at the click timestamp and hides after `hideAfterMs`
 
-Mouse input follows the pointer, too: a `mouse.move()` travels at its recorded pace (linearly, as `steps` walk it), so a drag's cursor stays on the selection frame or node it pulls; while a button is down, the cursor stays visible until the release; and a `mouse.wheel()` shows the cursor where the pointer is.
+Mouse input follows the pointer, too: a `mouse.move()`, or a `mouse.click()` with `steps`, travels at its recorded pace (linearly, as `steps` walk it), so a drag's cursor stays on the selection frame or node it pulls; while a button is down, the cursor stays visible until the release; and a `mouse.wheel()` shows the cursor where the pointer is.
 
 The animation uses ffmpeg `movie` + `overlay` filters with per-position `enable` expressions and easing calculated via `st()/ld()` temp variables. If Playwright spent a long time auto-waiting for a target to appear, the cursor appears directly at that target instead of gliding over the loading screen.
 

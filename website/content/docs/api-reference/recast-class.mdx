@@ -223,6 +223,7 @@ Render an animated cursor that moves between action positions.
 | `shadow` | `boolean` | `true` | Drop shadow on cursor |
 | `approachMs` | `number` | `500` | Hold duration for marker-driven clicks ([`click()`](/docs/helpers/click)) — the cursor glides over the held, painted target |
 | `filter` | `(action: TraceAction) => boolean` | — | Filter which actions generate cursor positions |
+| `mouseIndicator` | `boolean \| MouseIndicatorConfig` | — | Mouse icon beside the cursor for pressed buttons and wheel turns ([details](/docs/pipeline/cursor-overlay#mouse-indicator)) |
 
 ---
 
@@ -282,6 +283,26 @@ Show the URL of the page on screen as a pill. See [URL Bar](/docs/pipeline/url-b
 | `position` | `'bottom' \| 'top'` | `'bottom'` | Edge of the frame |
 | `fontFile` | `string` | fontconfig default | Font file for the text |
 | `fontSize` / `color` / `background` / `backgroundOpacity` | | `28` / `'#FFFFFF'` / `'#1F2328'` / `0.8` | Pill style |
+
+---
+
+### `.keyOverlay(config?)`
+
+Show shortcuts, named keys and modifiers held over mouse actions as a keycap. See [Key Overlay](/docs/pipeline/key-overlay).
+
+```typescript
+.keyOverlay({ inputs: ['combos', 'mouse-modifiers'] })
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `inputs` | `KeyOverlayInput[]` | `['combos', 'special', 'mouse-modifiers']` | Presses that show |
+| `labels` | `Record<string, string>` | `Ctrl`, `Esc`, ... | Labels by key name |
+| `separator` | `string` | `' + '` | Between keys |
+| `minShowMs` | `number` | `1200` | Shortest display time in output ms |
+| `position` | `'bottom' \| 'top'` | `'bottom'` (`'top'` with burned-in subtitles) | Edge of the frame |
+| `fontFile` | `string` | fontconfig default | Font file for the text |
+| `fontSize` / `color` / `background` / `backgroundOpacity` | | `32` / `'#FFFFFF'` / `'#1F2328'` / `0.85` | Keycap style |
 
 ---
 
