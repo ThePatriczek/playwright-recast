@@ -182,7 +182,7 @@ Apply zoom coordinates from external data (e.g., demo report with per-step zoom)
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `steps` | `Array<{ zoom?: { x: number; y: number; level: number } \| null }>` | Zoom data per step |
+| `steps` | `Array<{ zoom?: { x: number; y: number; level: number; hold?: boolean } \| null }>` | Zoom data per step; `hold` as in [`zoom()`](/docs/helpers/zoom#holding-a-zoom-through-a-pause) |
 
 ---
 

@@ -780,7 +780,7 @@ export class PipelineExecutor {
           for (let i = 0; i < Math.min(state.subtitled.subtitles.length, reportSteps.length); i++) {
             const z = reportSteps[i]?.zoom
             if (z) {
-              state.subtitled.subtitles[i]!.zoom = { x: z.x, y: z.y, level: z.level }
+              state.subtitled.subtitles[i]!.zoom = { x: z.x, y: z.y, level: z.level, ...(z.hold ? { hold: true } : {}) }
             }
           }
           break
