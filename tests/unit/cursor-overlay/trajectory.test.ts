@@ -197,3 +197,42 @@ describe('buildTrajectory from mouse.down/move/up', () => {
     expect(kf).toEqual([])
   })
 })
+
+describe('buildTrajectory: pointer bookkeeping', () => {
+  it('places a wheel turn at a position-only action, without a keyframe for it', () => {
+    const kf = buildTrajectory({
+      actions: [
+        { point: { x: 1, y: 1 }, startTime: 1000, method: 'mouseMove', params: {} },
+        { point: { x: 50, y: 60 }, startTime: 2000, method: 'click', params: {}, positionOnly: true },
+        { startTime: 3000, method: 'mouseWheel', params: { deltaY: 100 } },
+      ],
+      videoStartOffsetMs: 0,
+    })
+    expect(kf.map((k) => [k.x, k.y])).toEqual([[1, 1], [50, 60]])
+    expect(kf[1]!.videoTimeSec).toBe(3)
+  })
+
+  it('stops holding a button released inside a hidden range', () => {
+    const kf = buildTrajectory({
+      actions: [
+        { point: { x: 1, y: 1 }, startTime: 1000, method: 'mouseDown', params: {} },
+        { point: { x: 2, y: 2 }, startTime: 5000, method: 'click', params: {} },
+      ],
+      hiddenRanges: [{ start: 2000, end: 3000 }],
+      videoStartOffsetMs: 0,
+    })
+    expect(kf.map((k) => k.held ?? false)).toEqual([true, false])
+  })
+
+  it('travels a stepped mouse.click() like a move', () => {
+    const kf = buildTrajectory({
+      actions: [
+        { point: { x: 9, y: 9 }, startTime: 1000, endTime: 3000, method: 'mouseClick', params: { x: 9, y: 9, steps: 20 } },
+        { point: { x: 9, y: 9 }, startTime: 4000, endTime: 4500, method: 'mouseClick', params: { x: 9, y: 9 } },
+      ],
+      videoStartOffsetMs: 0,
+    })
+    expect(kf[0]).toMatchObject({ autoWaitSec: 0, travelSec: 2 })
+    expect(kf[1]!.travelSec).toBeUndefined()
+  })
+})

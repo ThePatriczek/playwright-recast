@@ -23,7 +23,7 @@ export type {
 } from './types/director.js'
 
 // Step helpers
-export { setupRecast, narrate, zoom, pace, typeText, highlight, waitForNarration, markClick, click, showUrl, recastPageVideos } from './helpers.js'
+export { setupRecast, narrate, zoom, pace, typeText, highlight, waitForNarration, markClick, click, showUrl, recastPageVideos, withMouseIndicator, withKeyOverlay } from './helpers.js'
 export type { SetupRecastOptions, TypeTextOptions } from './helpers.js'
 
 // Suite orchestration
@@ -124,6 +124,17 @@ export type { ClickEffectConfig, ClickEvent } from './types/click-effect.js'
 
 // Cursor overlay
 export type { CursorOverlayConfig, CursorKeyframe } from './types/cursor-overlay.js'
+
+// Mouse indicator and key overlay
+export type {
+  MouseIndicatorConfig,
+  MouseIndicatorInput,
+  MouseInputEvent,
+  WheelDirection,
+  KeyOverlayConfig,
+  KeyOverlayInput,
+  KeyOverlayEvent,
+} from './types/input-overlay.js'
 
 // Easing
 export type { EasingSpec, EasingPreset } from './types/easing.js'

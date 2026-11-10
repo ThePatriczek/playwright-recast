@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { shiftOverlaysForHolds } from '../../../src/render/renderer'
+import { shiftOverlaysForHolds, mouseIndicatorSpans, keyOverlayPosition } from '../../../src/render/renderer'
 import { approachHold } from '../../../src/voiceover/frame-align'
 
 describe('approachHold()', () => {
@@ -44,5 +44,39 @@ describe('shiftOverlaysForHolds() on a cursor travel', () => {
     shiftOverlaysForHolds(trace, [{ atVideoMs: 2000, durationMs: 500, sourceMs: 2000, sourceTraceMs: 2000 }])
     expect(trace.cursorKeyframes[0]).toMatchObject({ videoTimeSec: 3.5, travelSec: 2.5 })
     expect(trace.cursorKeyframes[1]).toMatchObject({ videoTimeSec: 8.5, travelSec: 1 })
+  })
+})
+
+describe('shiftOverlaysForHolds() on input events', () => {
+  it('moves mouse and key inputs by their trace times', () => {
+    const trace = {
+      mouseInputEvents: [{ input: 'right' as const, videoTimeMs: 1000, endTimeMs: 3000, traceMs: 1000, endTraceMs: 3000 }],
+      keyOverlayEvents: [{ text: 'Esc', input: 'special' as const, videoTimeMs: 4000, endTimeMs: 4000, traceMs: 4000, endTraceMs: 4000 }],
+    }
+    shiftOverlaysForHolds(trace, [{ atVideoMs: 2000, durationMs: 500, sourceMs: 2000, sourceTraceMs: 2000 }])
+    expect(trace.mouseInputEvents[0]).toMatchObject({ videoTimeMs: 1000, endTimeMs: 3500 })
+    expect(trace.keyOverlayEvents[0]).toMatchObject({ videoTimeMs: 4500, endTimeMs: 4500 })
+  })
+})
+
+describe('mouseIndicatorSpans()', () => {
+  it('shows each input for at least minShowMs, only while the cursor is visible, by icon', () => {
+    const spans = mouseIndicatorSpans([
+      { input: 'wheel', direction: 'up', videoTimeMs: 1000, endTimeMs: 1000 },
+      { input: 'wheel', direction: 'up', videoTimeMs: 1200, endTimeMs: 1200 },
+      { input: 'right', videoTimeMs: 2000, endTimeMs: 5000 },
+      { input: 'middle', videoTimeMs: 9000, endTimeMs: 9000 },
+    ], [[0.5, 4]], 400)
+    expect([...spans.keys()]).toEqual(['wheel-up', 'right'])
+    expect(spans.get('wheel-up')).toEqual([[1, 1.4], [1.2, 1.6]])
+    expect(spans.get('right')).toEqual([[2, 4]])
+  })
+})
+
+describe('keyOverlayPosition()', () => {
+  it('moves the keycap to the top when subtitles are burned in at the bottom, unless set', () => {
+    expect(keyOverlayPosition({}, false)).toBe('bottom')
+    expect(keyOverlayPosition({}, true)).toBe('top')
+    expect(keyOverlayPosition({ position: 'bottom' }, true)).toBe('bottom')
   })
 })

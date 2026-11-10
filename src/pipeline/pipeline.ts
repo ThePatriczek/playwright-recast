@@ -14,6 +14,7 @@ import type { StageDescriptor, AutoZoomConfig } from './stages.js'
 import { PipelineExecutor } from './executor.js'
 import type { DirectorOptions, DirectorProvider } from '../types/director.js'
 import type { UrlBarConfig } from '../types/url-bar.js'
+import type { KeyOverlayConfig } from '../types/input-overlay.js'
 import type { PagesConfig } from '../types/pages.js'
 
 /**
@@ -169,6 +170,16 @@ export class Pipeline {
    */
   urlBar(config: UrlBarConfig = {}): Pipeline {
     return this.addStage({ type: 'urlBar', config })
+  }
+
+  /**
+   * Show key presses as a keycap at the bottom of the frame: shortcuts
+   * (`Ctrl + Z`), named keys (`Esc`) and modifiers held over a mouse action
+   * (`Alt + drag`) by default; never typed text. `withKeyOverlay()` overrides
+   * the choice for the interactions it wraps.
+   */
+  keyOverlay(config: KeyOverlayConfig = {}): Pipeline {
+    return this.addStage({ type: 'keyOverlay', config })
   }
 
   /** Prepend an intro video with a crossfade transition into the main content */

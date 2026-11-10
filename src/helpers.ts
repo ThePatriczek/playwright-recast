@@ -1,4 +1,5 @@
 import type { BrowserContext, Page, Locator, TestInfo } from '@playwright/test'
+import type { KeyOverlayInput, MouseIndicatorInput } from './types/input-overlay.js'
 
 type StepFn = <T>(title: string, body: () => T | Promise<T>) => Promise<T>
 type RecastTest = { info: () => TestInfo; step: StepFn }
@@ -89,6 +90,10 @@ export const CLICK_TITLE_PREFIX = '__recast_click__: '
 /** Title prefix written to a trace step by `showUrl()`. JSON payload carries
  *  the page's URL, its pageId and an optional duration. */
 export const URL_TITLE_PREFIX = '__recast_url__: '
+
+/** Title prefix of the step `withMouseIndicator()` / `withKeyOverlay()` wrap
+ *  an interaction in. JSON payload carries `{ mouse?, keys? }`. */
+export const INPUT_TITLE_PREFIX = '__recast_input__: '
 
 /** Title prefix of the step `recastPageVideos` writes: a JSON array of trace
  *  page ids (null if unknown), one per Playwright Test video in its order. */
@@ -567,6 +572,45 @@ export async function showUrl(page: Page, opts?: { durationMs?: number }): Promi
   if (!_step) return
   const payload = { url: page.url(), ...pageIdOf(() => page), ...(opts?.durationMs !== undefined ? { durationMs: opts.durationMs } : {}) }
   await _step(`${URL_TITLE_PREFIX}${JSON.stringify(payload)}`, async () => {})
+}
+
+/**
+ * Choose which mouse inputs show the `cursorOverlay({ mouseIndicator })` icon
+ * while `body` runs, over the stage's `inputs`: `true` all, `false` none, or a
+ * list. Wraps `body` in a marker step and returns its result.
+ *
+ * ```typescript
+ * // The narration is about this left-button drag: show the pressed button.
+ * await withMouseIndicator(['left'], () => dragNode(page))
+ * ```
+ */
+export async function withMouseIndicator<T>(
+  inputs: boolean | MouseIndicatorInput[],
+  body: () => T | Promise<T>,
+): Promise<T> {
+  if (!_step) return body()
+  return _step(`${INPUT_TITLE_PREFIX}${JSON.stringify({ mouse: inputs })}`, body)
+}
+
+/**
+ * Choose which key presses the `.keyOverlay()` shows while `body` runs, over
+ * the stage's `inputs`: `true` all, `false` none, or a list. Wraps `body` in a
+ * marker step and returns its result.
+ *
+ * ```typescript
+ * // Clearing a field: no need to show Ctrl + A and Backspace.
+ * await withKeyOverlay(false, async () => {
+ *   await page.keyboard.press('ControlOrMeta+A')
+ *   await page.keyboard.press('Backspace')
+ * })
+ * ```
+ */
+export async function withKeyOverlay<T>(
+  inputs: boolean | KeyOverlayInput[],
+  body: () => T | Promise<T>,
+): Promise<T> {
+  if (!_step) return body()
+  return _step(`${INPUT_TITLE_PREFIX}${JSON.stringify({ keys: inputs })}`, body)
 }
 
 /**

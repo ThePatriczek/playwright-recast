@@ -67,9 +67,10 @@ await Recast
 - **Animated zoom with easing** — Auto-zoom uses customizable easing functions (ease-in-out, ease-out, cubic-bezier, or custom JS functions) with smooth zoom-to-zoom panning.
 - **Visual direction with Jev** — `.direct(JevDirector(), { goal })` watches the rendered recording (pixel changes + local OCR) and picks camera moves, emphasis and pacing from bounded candidates. No manual `zoom()` or `highlight()` calls needed.
 - **Multi-page recordings** - Popups (`window.open`, OAuth consent) and new tabs are cut into one video from Playwright's per-page videos: popups over the darkened page behind, tabs as a hard switch, configurable with `.pages()`. Clicks, cursor, zoom and highlights follow the page.
+- **Mouse and keyboard input** - `cursorOverlay({ mouseIndicator })` puts a small mouse icon beside the cursor for pressed buttons and wheel turns; `.keyOverlay()` shows shortcuts and held modifiers as a keycap. Both choose inputs globally and per interaction with `withMouseIndicator()` / `withKeyOverlay()`.
 - **URL bar** - `.urlBar()` shows the URL of the page on screen as a pill: on host changes, always, or at `showUrl()` markers, with query stripping and redaction.
 - **Frame interpolation** — Smooth out choppy browser recordings with ffmpeg minterpolate. Blend, duplicate, or motion-compensated modes with multi-pass support.
-- **Step helpers** — `narrate()`, `highlight()`, `zoom()`, `pace()`, `typeText()`, `click()`, `markClick()`, `waitForNarration()`, `showUrl()` — importable helpers for Playwright step definitions. `typeText()` replaces instant fills with visible, naturally varied keystrokes; `click()` can dwell on the target to record the app's hover state; marker helpers write directly into the trace zip so the pipeline picks them up automatically via `subtitlesFromTrace()`.
+- **Step helpers** — `narrate()`, `highlight()`, `zoom()`, `pace()`, `typeText()`, `click()`, `markClick()`, `waitForNarration()`, `showUrl()`, `withMouseIndicator()`, `withKeyOverlay()` — importable helpers for Playwright step definitions. `typeText()` replaces instant fills with visible, naturally varied keystrokes; `click()` can dwell on the target to record the app's hover state; marker helpers write directly into the trace zip so the pipeline picks them up automatically via `subtitlesFromTrace()`.
 - **Polished click markers** — `click()` / `markClick()` mark a click in the trace; the renderer prefers these over auto-detected clicks and plays a deliberate, held cursor approach over the painted target (configurable via `cursorOverlay({ approachMs })`) — no more "the mouse moves before there's anything to click on."
 - **Voiceover-driven freezes** — When a TTS narration is longer than its visual window, the renderer holds the current frame until the audio finishes; overlays freeze with it, click sounds shift to match. `waitForNarration()` marks an explicit beat to hold on until a line is fully spoken — so with TTS you can skip `autoWait` entirely and run the test at full speed while the rendered video stays in sync.
 - **Soft (embedded) subtitle track** — `render({ embedSubtitles: true })` muxes a toggleable subtitle track into the container (`mov_text` for mp4, `webvtt` for webm).
@@ -245,10 +246,11 @@ Every stage is optional and composable:
 | `.direct(provider, options)` | Direct camera, emphasis and tempo from sampled video evidence with Jev |
 | `.autoZoom(config)` | Auto-zoom to user actions with customizable easing transitions |
 | `.enrichZoomFromReport(steps)` | Apply zoom coordinates from external report data |
-| `.cursorOverlay(config)` | Animated cursor at click positions (appears, moves, disappears) |
+| `.cursorOverlay(config)` | Animated cursor at click positions (appears, moves, disappears); follows drags; `mouseIndicator` shows pressed buttons and wheel turns |
 | `.clickEffect(config)` | Add visual ripple + optional click sound at click positions |
 | `.textHighlight(config)` | Animated marker overlay on text (swipe-in reveal, auto-positioned from report) |
 | `.urlBar(config)` | Show the URL of the page on screen (host changes, always, or `showUrl()` markers), with redaction |
+| `.keyOverlay(config)` | Show shortcuts (`Ctrl + Z`), named keys and modifiers held over mouse actions (`Alt + drag`) as a keycap |
 | `.backgroundMusic({ path, volume?, ... })` | Add background music with auto-ducking, loop, fade-out |
 | `.intro({ path, fadeDuration? })` | Prepend intro video with crossfade transition |
 | `.outro({ path, fadeDuration? })` | Append outro video with crossfade transition |
@@ -666,6 +668,30 @@ npx playwright-recast -i ./traces --click-effect
 npx playwright-recast -i ./traces --click-effect --click-sound click.mp3
 npx playwright-recast -i ./traces --click-effect-config config.json
 ```
+
+---
+
+## Mouse and Keyboard Input
+
+The cursor follows `mouse.down()` / `move()` / `up()` at the recorded pace, so it stays on what a drag pulls. Two opt-in overlays show the input itself:
+
+```typescript
+import { withMouseIndicator, withKeyOverlay } from 'playwright-recast'
+
+await Recast
+  .from('./traces')
+  .parse()
+  .cursorOverlay({ mouseIndicator: true })   // right/middle button and wheel; a left click goes without saying
+  .keyOverlay()                              // Ctrl + Z, Esc, Alt + drag; never typed text
+  .render()
+  .toFile('demo.mp4')
+
+// In the test: show the left button for this drag, hide the keys while clearing a field
+await withMouseIndicator(['left'], () => dragNode(page))
+await withKeyOverlay(false, () => page.keyboard.press('ControlOrMeta+A'))
+```
+
+`mouseIndicator: { inputs, size, color, outlineColor, accentColor, offset, minShowMs }` and `keyOverlay({ inputs, labels, separator, minShowMs, position, ... })` configure them. See the [Cursor Overlay](https://thepatriczek.github.io/playwright-recast/docs/pipeline/cursor-overlay#mouse-indicator), [Key Overlay](https://thepatriczek.github.io/playwright-recast/docs/pipeline/key-overlay) and [input override](https://thepatriczek.github.io/playwright-recast/docs/helpers/input-overrides) docs.
 
 ---
 

@@ -1,0 +1,34 @@
+---
+title: withMouseIndicator / withKeyOverlay
+description: Choose per interaction which mouse and key inputs show.
+---
+
+The [mouse indicator](/docs/pipeline/cursor-overlay#mouse-indicator) and the [key overlay](/docs/pipeline/key-overlay) show the inputs their stage's `inputs` name. Wrap an interaction in `withMouseIndicator()` or `withKeyOverlay()` to choose for it alone: `true` shows every input, `false` none, a list just those. The helper runs `body` inside a marker step and returns its result.
+
+```typescript
+import { withMouseIndicator, withKeyOverlay } from 'playwright-recast'
+
+// The narration is about this left-button drag: show the pressed button.
+await withMouseIndicator(['left'], async () => {
+  await page.mouse.move(200, 300)
+  await page.mouse.down()
+  await page.mouse.move(400, 300, { steps: 20 })
+  await page.mouse.up()
+})
+
+// Clearing a field: no need to show Ctrl + A and Backspace.
+await withKeyOverlay(false, async () => {
+  await page.keyboard.press('ControlOrMeta+A')
+  await page.keyboard.press('Backspace')
+})
+```
+
+| Helper | `inputs` |
+|---|---|
+| `withMouseIndicator(inputs, body)` | `boolean \| Array<'left' \| 'right' \| 'middle' \| 'wheel'>` |
+| `withKeyOverlay(inputs, body)` | `boolean \| Array<'combos' \| 'special' \| 'mouse-modifiers' \| 'keys'>` |
+
+- An input counts as inside when it starts inside: a press when the button or key goes down.
+- Nested calls: the innermost one decides.
+- `withMouseIndicator()` also shows icons when the stage sets no `mouseIndicator`; the cursor overlay must still be on.
+- Without `setupRecast(test)` the helpers only run `body`.

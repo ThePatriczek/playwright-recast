@@ -10,6 +10,8 @@ export interface PillStyle {
   color: string
   background: string
   backgroundOpacity: number
+  /** Corner radius in px. Default: half the height, a stadium */
+  radius?: number
 }
 
 const FADE_MS = 150
@@ -87,11 +89,11 @@ function drawPill(fullText: string, style: PillStyle, maxWidth: number, stillPat
 
   const [r, g, b] = hexToRgb(style.background)
   const alpha = Math.round(style.backgroundOpacity * 255)
-  const radius = height / 2
+  const radius = Math.max(0, Math.min(height / 2, style.radius ?? height / 2))
   const e = '\\,' // escaped comma inside geq expressions
-  // Stadium: a rectangle with half circles at both ends.
-  const inside = `if(lt(X${e}${radius})${e}lte(hypot(X-${radius}${e}Y-${radius})${e}${radius})${e}` +
-    `if(gt(X${e}${width - radius})${e}lte(hypot(X-${width - radius}${e}Y-${radius})${e}${radius})${e}1))`
+  // A rounded rectangle: the distance past the inner rectangle stays within the radius.
+  const past = (v: string, size: number): string => `max(max(${radius}-${v}${e}0)${e}${v}-${size - radius})`
+  const inside = `lte(hypot(${past('X', width)}${e}${past('Y', height)})${e}${radius})`
   runFfmpeg([
     '-y', '-f', 'lavfi', '-i', `color=c=black@0:s=${width}x${height}:d=0.04,format=rgba`,
     '-vf', [

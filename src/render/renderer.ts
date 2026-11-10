@@ -13,7 +13,7 @@ import type { ClickEvent } from '../types/click-effect.js'
 import type { CursorKeyframe } from '../types/cursor-overlay.js'
 import type { ResolvedCursorOverlayConfig } from '../cursor-overlay/defaults.js'
 import { writeDefaultCursorImage } from '../cursor-overlay/defaults.js'
-import { buildOverlayExpressions, buildEnableExpression } from '../cursor-overlay/expression-builder.js'
+import { buildOverlayExpressions, buildEnableExpression, cursorSegments } from '../cursor-overlay/expression-builder.js'
 import { buildZoomFilter, stabilizePan, stepZoomsToKeyframes, type ZoomExprConfig } from './zoom-expression.js'
 import { generateRippleClip } from '../click-effect/ripple-generator.js'
 import type { HighlightEvent } from '../types/text-highlight.js'
@@ -35,7 +35,10 @@ import { alignFreezeToFrame, approachHold, isAfterHold } from '../voiceover/fram
 import { filterGraphPath, runFfmpeg } from '../utils/ffmpeg.js'
 import { recordingFrame } from '../parse/recording-frame.js'
 import type { UrlBarConfig, UrlBarEvent } from '../types/url-bar.js'
-import { generatePillClip, type PillCache } from '../url-bar/pill.js'
+import { generatePillClip, type PillCache, type PillStyle } from '../url-bar/pill.js'
+import type { KeyOverlayConfig, KeyOverlayEvent, MouseInputEvent } from '../types/input-overlay.js'
+import { resolveMouseIndicatorConfig } from '../input-overlay/defaults.js'
+import { writeMouseIcon, type MouseIconState } from '../input-overlay/mouse-icon.js'
 
 /**
  * Detect blank/white frames at the start of a video and return the timestamp
@@ -107,6 +110,10 @@ export interface RenderableTrace extends ParsedTrace {
   highlightConfig?: import('../text-highlight/defaults.js').ResolvedTextHighlightConfig
   urlBarEvents?: UrlBarEvent[]
   urlBarConfig?: UrlBarConfig
+  /** Shown beside the cursor; styled by `cursorOverlayConfig.mouseIndicator` */
+  mouseInputEvents?: MouseInputEvent[]
+  keyOverlayEvents?: KeyOverlayEvent[]
+  keyOverlayConfig?: KeyOverlayConfig
 }
 
 export function ffmpeg(args: string[]): void {
@@ -239,6 +246,96 @@ function buildZoomStage(
 }
 
 /**
+ * Pre-render a PNG into a short transparent video clip for reliable looping.
+ * ffmpeg 7.x PNG decoder can't re-read the same packet (inflate error on loop).
+ * Workaround: create a transparent canvas via lavfi, overlay the PNG once
+ * (eof_action=repeat holds the last frame), producing a loopable .mov clip.
+ */
+function loopableClip(pngPath: string, clipPath: string): string {
+  const res = probeResolution(pngPath)
+  ffmpeg([
+    '-y',
+    '-f', 'lavfi', '-i', `color=c=black@0:s=${res.width}x${res.height}:d=1:r=30,format=rgba`,
+    '-i', pngPath,
+    '-filter_complex', '[0:v][1:v]overlay=0:0:eof_action=repeat:format=yuv420[out]',
+    '-map', '[out]',
+    '-c:v', 'qtrle', '-pix_fmt', 'argb',
+    clipPath,
+  ])
+  return clipPath
+}
+
+/** Overlap of two sorted lists of [start, end] spans. */
+export function intersectSpans(a: Array<[number, number]>, b: Array<[number, number]>): Array<[number, number]> {
+  const out: Array<[number, number]> = []
+  for (const [s1, e1] of a) {
+    for (const [s2, e2] of b) {
+      const s = Math.max(s1, s2)
+      const e = Math.min(e1, e2)
+      if (e > s) out.push([s, e])
+    }
+  }
+  return out
+}
+
+/** Each shown input's span, in seconds, by the icon it shows. */
+export function mouseIndicatorSpans(
+  events: MouseInputEvent[],
+  cursorVisible: Array<[number, number]>,
+  minShowMs: number,
+): Map<MouseIconState, Array<[number, number]>> {
+  const byState = new Map<MouseIconState, Array<[number, number]>>()
+  for (const ev of events) {
+    const state: MouseIconState = ev.input === 'wheel' ? `wheel-${ev.direction ?? 'down'}` : ev.input
+    const span: [number, number] = [ev.videoTimeMs / 1000, Math.max(ev.endTimeMs, ev.videoTimeMs + minShowMs) / 1000]
+    // Only beside a visible cursor: elsewhere its position expression is 0.
+    const shown = intersectSpans([span], cursorVisible)
+    if (shown.length > 0) byState.set(state, [...byState.get(state) ?? [], ...shown])
+  }
+  return byState
+}
+
+/**
+ * Mouse indicator: per pressed button or wheel direction, an icon that rides
+ * at an offset from the cursor while that input is active.
+ */
+function buildMouseIndicatorStage(
+  inLabel: string,
+  events: MouseInputEvent[],
+  keyframes: CursorKeyframe[],
+  config: ResolvedCursorOverlayConfig,
+  viewport: { width: number; height: number },
+  srcRes: { width: number; height: number },
+  tmpDir: string,
+): GraphStage | null {
+  const indicator = resolveMouseIndicatorConfig(config.mouseIndicator)
+  const scale = srcRes.height / 1080
+  const visible = cursorSegments(keyframes, config).map((s): [number, number] => [s.moveStart, s.end])
+  const spans = mouseIndicatorSpans(events, visible, indicator.minShowMs)
+  if (spans.size === 0) return null
+
+  const { x, y } = buildOverlayExpressions(keyframes, config, viewport, srcRes)
+  // The cursor image is drawn unscaled: by default clear most of it, so the arrow stays readable.
+  const cursorImage = probeResolution(config.image ?? writeDefaultCursorImage(tmpDir))
+  const offX = indicator.offset ? Math.round(indicator.offset.x * scale) : Math.round(cursorImage.width * 0.8)
+  const offY = indicator.offset ? Math.round(indicator.offset.y * scale) : Math.round(cursorImage.height * 0.6)
+  const style = { height: indicator.size * scale, color: indicator.color, outlineColor: indicator.outlineColor, accentColor: indicator.accentColor }
+  const statements: string[] = []
+  let label = inLabel
+  let i = 0
+  for (const [state, stateSpans] of spans) {
+    const clip = loopableClip(writeMouseIcon(state, style, tmpDir), path.join(tmpDir, `mouse-${state}.mov`))
+    const enable = stateSpans.map(([s, e]) => `between(t\\,${s.toFixed(4)}\\,${e.toFixed(4)})`).join('+')
+    statements.push(`movie=${filterGraphPath(clip)}:loop=0,setpts=N/30/TB,format=rgba[mouseSrc${i}]`)
+    statements.push(`[${label}][mouseSrc${i}]overlay=x='(${x})+${offX}':y='(${y})+${offY}':enable='${enable}':eof_action=pass:format=yuv420[mouseOut${i}]`)
+    label = `mouseOut${i}`
+    i++
+  }
+  console.log(`  Mouse indicator: ${events.length} input(s), ${spans.size} icon(s)`)
+  return { statements, outLabel: label }
+}
+
+/**
  * Animated cursor overlay: a cursor image that smoothly moves between action
  * positions, driven by time-based overlay expressions.
  */
@@ -255,21 +352,7 @@ function buildCursorStage(
   // Use custom image or bundled default arrow cursor
   const cursorPngPath = config.image ?? writeDefaultCursorImage(tmpDir)
 
-  // Pre-render cursor PNG into a short transparent video clip for reliable looping.
-  // ffmpeg 7.x PNG decoder can't re-read the same packet (inflate error on loop).
-  // Workaround: create a transparent canvas via lavfi, overlay the PNG once
-  // (eof_action=repeat holds the last frame), producing a loopable .mov clip.
-  const cursorClipPath = path.join(tmpDir, 'cursor-clip.mov')
-  const cursorRes = probeResolution(cursorPngPath)
-  ffmpeg([
-    '-y',
-    '-f', 'lavfi', '-i', `color=c=black@0:s=${cursorRes.width}x${cursorRes.height}:d=1:r=30,format=rgba`,
-    '-i', cursorPngPath,
-    '-filter_complex', '[0:v][1:v]overlay=0:0:eof_action=repeat:format=yuv420[out]',
-    '-map', '[out]',
-    '-c:v', 'qtrle', '-pix_fmt', 'argb',
-    cursorClipPath,
-  ])
+  const cursorClipPath = loopableClip(cursorPngPath, path.join(tmpDir, 'cursor-clip.mov'))
 
   // Build per-click position and visibility expressions
   const { x: xExpr, y: yExpr } = buildOverlayExpressions(keyframes, config, viewport, srcRes)
@@ -413,6 +496,69 @@ function buildHighlightStage(
   return { statements, outLabel: prevLabel }
 }
 
+/** Scaled pill style for text at `fontSize` px at 1080p. */
+function pillStyle(
+  config: { fontSize?: number; fontFile?: string; color?: string; background?: string; backgroundOpacity?: number },
+  defaults: { fontSize: number; backgroundOpacity: number },
+  outRes: { height: number },
+): PillStyle {
+  return {
+    fontSize: Math.max(10, Math.round((config.fontSize ?? defaults.fontSize) * outRes.height / 1080)),
+    ...(config.fontFile ? { fontFile: config.fontFile } : {}),
+    color: config.color ?? '#FFFFFF',
+    background: config.background ?? '#1F2328',
+    backgroundOpacity: config.backgroundOpacity ?? defaults.backgroundOpacity,
+  }
+}
+
+/** A pill's height for a style, as drawPill() sizes it. */
+const pillHeight = (style: PillStyle): number => 2 * Math.round(style.fontSize * 0.9)
+
+/**
+ * Text pills centered at the top or bottom edge of the output-resolution
+ * video, so zoom leaves them alone: one clip per item, each ending where the
+ * next begins. `inset` moves them further from the edge.
+ */
+function buildPillTrack(
+  name: string,
+  inLabel: string,
+  items: Array<{ text: string; startMs: number; endMs: number }>,
+  style: PillStyle,
+  position: 'top' | 'bottom',
+  inset: number,
+  outRes: { width: number; height: number },
+  videoEndMs: number,
+  tmpDir: string,
+): { stage: GraphStage; count: number } | null {
+  const sorted = [...items].sort((a, b) => a.startMs - b.startMs)
+  const cache: PillCache = new Map()
+  const margin = Math.round(outRes.height * 0.04)
+  const statements: string[] = []
+  let prevLabel = inLabel
+  let count = 0
+  sorted.forEach((item, i) => {
+    const next = sorted[i + 1]
+    const end = Math.min(item.endMs, next?.startMs ?? Infinity, videoEndMs)
+    if (end - item.startMs < 40) return
+    const clipPath = path.join(tmpDir, `${name}_${i}.mov`)
+    const { height } = generatePillClip({
+      text: item.text,
+      style,
+      maxWidth: outRes.width - 2 * margin,
+      durationMs: end - item.startMs,
+      outputPath: clipPath,
+      cache,
+    })
+    const y = position === 'top' ? margin + inset : outRes.height - height - margin - inset
+    const escapedPath = filterGraphPath(clipPath)
+    statements.push(`movie=${escapedPath},setpts=PTS+${(item.startMs / 1000).toFixed(3)}/TB,format=rgba[${name}Src${i}]`)
+    statements.push(`[${prevLabel}][${name}Src${i}]overlay=(W-w)/2:${y}:eof_action=pass:format=yuv420[${name}Out${i}]`)
+    prevLabel = `${name}Out${i}`
+    count++
+  })
+  return count === 0 ? null : { stage: { statements, outLabel: prevLabel }, count }
+}
+
 /**
  * URL bar: a pill clip per appearance, overlaid on the output-resolution
  * video so zoom leaves it alone. Each ends where the next begins.
@@ -425,42 +571,45 @@ function buildUrlBarStage(
   videoEndMs: number,
   tmpDir: string,
 ): GraphStage | null {
-  const sorted = [...events].sort((a, b) => a.videoTimeMs - b.videoTimeMs)
-  const cache: PillCache = new Map()
-  const style = {
-    fontSize: Math.max(10, Math.round((config.fontSize ?? 28) * outRes.height / 1080)),
-    ...(config.fontFile ? { fontFile: config.fontFile } : {}),
-    color: config.color ?? '#FFFFFF',
-    background: config.background ?? '#1F2328',
-    backgroundOpacity: config.backgroundOpacity ?? 0.8,
-  }
-  const margin = Math.round(outRes.height * 0.04)
-  const statements: string[] = []
-  let prevLabel = inLabel
-  let count = 0
-  sorted.forEach((ev, i) => {
-    const next = sorted[i + 1]
-    const end = Math.min(ev.endTimeMs ?? videoEndMs, next?.videoTimeMs ?? Infinity, videoEndMs)
-    if (end - ev.videoTimeMs < 40) return
-    const clipPath = path.join(tmpDir, `urlbar_${i}.mov`)
-    const { height } = generatePillClip({
-      text: ev.text,
-      style,
-      maxWidth: outRes.width - 2 * margin,
-      durationMs: end - ev.videoTimeMs,
-      outputPath: clipPath,
-      cache,
-    })
-    const y = config.position === 'top' ? margin : outRes.height - height - margin
-    const escapedPath = filterGraphPath(clipPath)
-    statements.push(`movie=${escapedPath},setpts=PTS+${(ev.videoTimeMs / 1000).toFixed(3)}/TB,format=rgba[ubSrc${i}]`)
-    statements.push(`[${prevLabel}][ubSrc${i}]overlay=(W-w)/2:${y}:eof_action=pass:format=yuv420[ubOut${i}]`)
-    prevLabel = `ubOut${i}`
-    count++
-  })
-  if (count === 0) return null
-  console.log(`  URL bar: ${count} appearance(s) via movie+overlay`)
-  return { statements, outLabel: prevLabel }
+  const items = events.map((ev) => ({ text: ev.text, startMs: ev.videoTimeMs, endMs: ev.endTimeMs ?? videoEndMs }))
+  const style = pillStyle(config, { fontSize: 28, backgroundOpacity: 0.8 }, outRes)
+  const track = buildPillTrack('ub', inLabel, items, style, config.position ?? 'bottom', 0, outRes, videoEndMs, tmpDir)
+  if (!track) return null
+  console.log(`  URL bar: ${track.count} appearance(s) via movie+overlay`)
+  return track.stage
+}
+
+/** Burned-in subtitles sit at the bottom and draw on top: the keycap moves to the top unless placed. */
+export function keyOverlayPosition(config: KeyOverlayConfig, burnSubtitles: boolean): 'top' | 'bottom' {
+  return config.position ?? (burnSubtitles ? 'top' : 'bottom')
+}
+
+/**
+ * Key overlay: a keycap per shown press, for at least `minShowMs`, on the
+ * output-resolution video. Above a URL bar on the same edge.
+ */
+function buildKeyOverlayStage(
+  inLabel: string,
+  events: KeyOverlayEvent[],
+  config: KeyOverlayConfig,
+  urlBar: UrlBarConfig | undefined,
+  burnSubtitles: boolean,
+  outRes: { width: number; height: number },
+  videoEndMs: number,
+  tmpDir: string,
+): GraphStage | null {
+  const minMs = config.minShowMs ?? 1200
+  const items = events.map((ev) => ({ text: ev.text, startMs: ev.videoTimeMs, endMs: Math.max(ev.endTimeMs, ev.videoTimeMs + minMs) }))
+  const base = pillStyle(config, { fontSize: 32, backgroundOpacity: 0.85 }, outRes)
+  const style = { ...base, radius: Math.round(pillHeight(base) * 0.22) }
+  const position = keyOverlayPosition(config, burnSubtitles)
+  const inset = urlBar && (urlBar.position ?? 'bottom') === position
+    ? pillHeight(pillStyle(urlBar, { fontSize: 28, backgroundOpacity: 0.8 }, outRes)) + Math.round(outRes.height * 0.015)
+    : 0
+  const track = buildPillTrack('keys', inLabel, items, style, position, inset, outRes, videoEndMs, tmpDir)
+  if (!track) return null
+  console.log(`  Key overlay: ${track.count} press(es) via movie+overlay`)
+  return track.stage
 }
 
 /** One speed segment to encode, with its exact output frame count. */
@@ -791,10 +940,10 @@ function mergeFreezes(
  * `trace`.
  */
 export function shiftOverlaysForHolds(
-  trace: Pick<RenderableTrace, 'clickEvents' | 'cursorKeyframes' | 'highlightEvents' | 'highlightsOnFreezeClock' | 'urlBarEvents'>,
+  trace: Pick<RenderableTrace, 'clickEvents' | 'cursorKeyframes' | 'highlightEvents' | 'highlightsOnFreezeClock' | 'urlBarEvents' | 'mouseInputEvents' | 'keyOverlayEvents'>,
   holds: Array<{ atVideoMs: number; durationMs: number; sourceMs?: number; sourceTraceMs?: number }>,
 ): void {
-  for (const ev of trace.urlBarEvents ?? []) {
+  for (const ev of [...trace.urlBarEvents ?? [], ...trace.mouseInputEvents ?? [], ...trace.keyOverlayEvents ?? []]) {
     const start = shiftForFreezes(ev.videoTimeMs, holds, ev.traceMs)
     // A fixed-length bar keeps its length; one that lasts until the next URL ends with it.
     if (ev.endTimeMs !== undefined) {
@@ -1024,6 +1173,18 @@ export function renderVideo(
       graphInputRes,
       tmpDir,
     ))
+    if (trace.mouseInputEvents && trace.mouseInputEvents.length > 0) {
+      const indicatorStage = buildMouseIndicatorStage(
+        vLabel,
+        trace.mouseInputEvents,
+        trace.cursorKeyframes,
+        trace.cursorOverlayConfig,
+        trace.metadata.viewport,
+        graphInputRes,
+        tmpDir,
+      )
+      if (indicatorStage) addStage(indicatorStage)
+    }
   }
 
   // Click ripples use the already-shifted videoTimeMs.
@@ -1164,12 +1325,26 @@ export function renderVideo(
   }
 
   // On the output frame: after zoom and scale, before subtitles.
+  const urlBarShown = Boolean(trace.urlBarEvents && trace.urlBarEvents.length > 0)
+  if ((urlBarShown || (trace.keyOverlayEvents && trace.keyOverlayEvents.length > 0)) && vFilters.length > 0) {
+    graph.push(`[${vLabel}]${vFilters.join(',')}[urlBarIn]`)
+    vLabel = 'urlBarIn'
+    vFilters.length = 0
+  }
+  if (trace.keyOverlayEvents && trace.keyOverlayEvents.length > 0) {
+    const keyStage = buildKeyOverlayStage(
+      vLabel,
+      trace.keyOverlayEvents,
+      trace.keyOverlayConfig ?? {},
+      urlBarShown ? trace.urlBarConfig ?? {} : undefined,
+      Boolean(config.burnSubtitles && renderableSubtitles.length > 0),
+      resolution,
+      (graphInputDur + tpadDuration) * 1000,
+      tmpDir,
+    )
+    if (keyStage) addStage(keyStage)
+  }
   if (trace.urlBarEvents && trace.urlBarEvents.length > 0) {
-    if (vFilters.length > 0) {
-      graph.push(`[${vLabel}]${vFilters.join(',')}[urlBarIn]`)
-      vLabel = 'urlBarIn'
-      vFilters.length = 0
-    }
     const urlBarStage = buildUrlBarStage(
       vLabel,
       trace.urlBarEvents,

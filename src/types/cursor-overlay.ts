@@ -1,5 +1,6 @@
 // src/types/cursor-overlay.ts
 import type { TraceAction } from './trace.js'
+import type { MouseIndicatorConfig } from './input-overlay.js'
 
 /** Configuration for the cursor overlay pipeline stage */
 export interface CursorOverlayConfig {
@@ -24,6 +25,12 @@ export interface CursorOverlayConfig {
   approachMs?: number
   /** Filter which actions generate cursor positions. Default: all actions with coordinates */
   filter?: (action: TraceAction) => boolean
+  /**
+   * A small mouse icon beside the cursor showing the pressed button or the
+   * wheel's direction. `true`: right and middle button and the wheel. Unset:
+   * only inside `withMouseIndicator()` steps.
+   */
+  mouseIndicator?: boolean | MouseIndicatorConfig
 }
 
 /** A cursor position at a specific point in video time */

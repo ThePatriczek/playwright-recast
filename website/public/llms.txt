@@ -26,10 +26,11 @@ playwright-recast is a fluent pipeline library that turns Playwright trace files
 - [Voiceover](https://thepatriczek.github.io/playwright-recast/docs/pipeline/voiceover): TTS audio generation from subtitles
 - [Auto Zoom](https://thepatriczek.github.io/playwright-recast/docs/pipeline/auto-zoom): Animated zoom to user actions with easing
 - [Visual Direction (Jev)](https://thepatriczek.github.io/playwright-recast/docs/pipeline/direct): AI-directed camera, emphasis and pacing from observed video
-- [Cursor Overlay](https://thepatriczek.github.io/playwright-recast/docs/pipeline/cursor-overlay): Animated cursor at click positions
+- [Cursor Overlay](https://thepatriczek.github.io/playwright-recast/docs/pipeline/cursor-overlay): Animated cursor at click positions, with an optional mouse-button indicator
 - [Click Effect](https://thepatriczek.github.io/playwright-recast/docs/pipeline/click-effect): Ripple animation and sound at clicks
 - [Text Highlight](https://thepatriczek.github.io/playwright-recast/docs/pipeline/text-highlight): Animated marker overlay on text
 - [URL Bar](https://thepatriczek.github.io/playwright-recast/docs/pipeline/url-bar): Show the URL of the page on screen, with redaction
+- [Key Overlay](https://thepatriczek.github.io/playwright-recast/docs/pipeline/key-overlay): Show shortcuts and held modifiers as a keycap
 - [Frame Interpolation](https://thepatriczek.github.io/playwright-recast/docs/pipeline/frame-interpolation): Smooth out choppy recordings (minterpolate)
 - [Background Music](https://thepatriczek.github.io/playwright-recast/docs/pipeline/background-music): Background music with auto-ducking
 - [Intro/Outro](https://thepatriczek.github.io/playwright-recast/docs/pipeline/intro-outro): Branded clips with crossfade transitions
@@ -46,6 +47,7 @@ playwright-recast is a fluent pipeline library that turns Playwright trace files
 - [zoom() Helper](https://thepatriczek.github.io/playwright-recast/docs/helpers/zoom): Capture zoom targets during tests
 - [pace() Helper](https://thepatriczek.github.io/playwright-recast/docs/helpers/pace): Control pacing in step definitions
 - [showUrl() Helper](https://thepatriczek.github.io/playwright-recast/docs/helpers/show-url): Show the page's URL at a marked point
+- [withMouseIndicator() / withKeyOverlay() Helpers](https://thepatriczek.github.io/playwright-recast/docs/helpers/input-overrides): Choose per interaction which mouse and key inputs show
 - [typeText() Helper](https://thepatriczek.github.io/playwright-recast/docs/helpers/type-text): Type visible text with naturally varied, configurable timing
 - [highlight() Helper](https://thepatriczek.github.io/playwright-recast/docs/helpers/highlight): Mark text for highlight overlay
 - [setupRecast() Helper](https://thepatriczek.github.io/playwright-recast/docs/helpers/setup-recast): Register recast fixtures with Playwright

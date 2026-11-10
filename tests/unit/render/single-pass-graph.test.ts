@@ -327,6 +327,37 @@ describe('overlay and zoom stages render in a single pass', () => {
       expect(at(withCursor, 2.05, 324, 186)).not.toEqual(at(bare, 2.05, 324, 186))
     })
 
+    it('draws the mouse indicator beside the cursor while its button is down', () => {
+      const cursor = {
+        cursorKeyframes: [
+          { x: 320, y: 180, videoTimeSec: 1.0, held: true },
+          { x: 320, y: 180, videoTimeSec: 2.4 },
+        ],
+      }
+      const plain = render('cursor-held', baseTrace({ ...cursor, cursorOverlayConfig: resolveCursorOverlayConfig({}) })).output
+      const withIndicator = render('mouse-indicator', baseTrace({
+        ...cursor,
+        cursorOverlayConfig: resolveCursorOverlayConfig({ mouseIndicator: { size: 120, offset: { x: 30, y: 30 }, accentColor: '#0000FF' } }),
+        mouseInputEvents: [{ input: 'right', videoTimeMs: 1000, endTimeMs: 2400 }],
+      })).output
+      // Icon 40px high at the source, 10px right of and below the tip: its right button.
+      const pressed = at(withIndicator, 1.8, 348, 202)
+      expect(pressed[2]).toBeGreaterThan(pressed[0] + 80)
+      // Gone with the cursor once released and hidden.
+      expect(at(withIndicator, 3.5, 348, 202)).toEqual(at(plain, 3.5, 348, 202))
+    })
+
+    it('draws a key press as a keycap at the bottom center for its duration', () => {
+      const withKeys = render('key-overlay', baseTrace({
+        keyOverlayEvents: [{ text: 'Ctrl + Z', input: 'combos', videoTimeMs: 1000, endTimeMs: 1000 }],
+        keyOverlayConfig: { minShowMs: 1000, background: '#000000', backgroundOpacity: 1 },
+      })).output
+      const differs = (sec: number) => [-30, -20, 20, 30].some((dx) =>
+        pixelAt(withKeys, sec, 160 + dx, 164).join() !== pixelAt(bare, sec, 160 + dx, 164).join())
+      expect(differs(1.5)).toBe(true)
+      expect(differs(3.5)).toBe(false)
+    })
+
     it('zoom crops to the centre, doubling the on-screen size of a centred box', () => {
       // The source's red box spans x 280..360 of 640, so at 1:1 it covers
       // output x 140..180 — half-width 20 around centre 160. A 2x centre zoom
