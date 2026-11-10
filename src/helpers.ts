@@ -81,7 +81,8 @@ export const HIGHLIGHT_TITLE_PREFIX = '__recast_highlight__: '
  *  the center as (x, y) viewport fractions and the zoom level. */
 export const ZOOM_TITLE_PREFIX = '__recast_zoom__: '
 /** Title prefix written to a trace step by `markClick()` / `click()`. JSON
- *  payload carries the element-center {x, y} in viewport pixels. The renderer
+ *  payload carries the click point {x, y} in viewport pixels: the element's
+ *  center, or the click's `position`. The renderer
  *  prefers these markers over auto-detected clicks and gives them a held
  *  cursor approach. */
 export const CLICK_TITLE_PREFIX = '__recast_click__: '
@@ -529,9 +530,15 @@ export async function waitForNarration(): Promise<void> {
   }
 }
 
+/** The element's left and top border width, as Playwright's `getElementBorderWidth()` reads it. */
+function borderWidth(el: Element): { left: number; top: number } {
+  const style = getComputedStyle(el)
+  return { left: parseInt(style.borderLeftWidth, 10) || 0, top: parseInt(style.borderTopWidth, 10) || 0 }
+}
+
 /**
  * Write a click marker into the trace at the element's center, or at
- * `opts.position` (relative to the element's top-left, as in
+ * `opts.position` (relative to the element's padding box, as in
  * `locator.click({ position })`). Records a marker-prefixed `test.step` (like
  * `highlight()`/`zoom()`); performs no real click and no wait. The pipeline
  * prefers these markers over auto-detected clicks and gives them a held
@@ -541,8 +548,11 @@ export async function markClick(locator: Locator, opts?: { position?: { x: numbe
   if (!_step) return
   const box = await locator.boundingBox()
   if (!box) return
-  const x = box.x + (opts?.position ? opts.position.x : box.width / 2)
-  const y = box.y + (opts?.position ? opts.position.y : box.height / 2)
+  const position = opts?.position
+  // Playwright adds the left/top border to `position` (padding box); boundingBox() is the border box
+  const border = position ? await locator.evaluate(borderWidth).catch(() => ({ left: 0, top: 0 })) : { left: 0, top: 0 }
+  const x = box.x + (position ? border.left + position.x : box.width / 2)
+  const y = box.y + (position ? border.top + position.y : box.height / 2)
   await _step(`${CLICK_TITLE_PREFIX}${JSON.stringify({ x, y, ...pageIdOf(() => locator.page()) })}`, async () => {})
 }
 

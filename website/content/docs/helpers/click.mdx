@@ -5,7 +5,7 @@ description: Mark a click in the trace so the rendered video plays a polished, h
 
 ## What it does
 
-`click(locator)` performs a real Playwright click **and** records a click marker into the trace zip at the element's center. During video generation the renderer prefers these markers over auto-detected clicks and gives them a **held cursor approach** — it freezes the painted frame at the click and lets the cursor glide all the way in over it, then fires the ripple.
+`click(locator)` performs a real Playwright click **and** records a click marker into the trace zip where the click lands: the element's center, or `options.position`. During video generation the renderer prefers these markers over auto-detected clicks and gives them a **held cursor approach** — it freezes the painted frame at the click and lets the cursor glide all the way in over it, then fires the ripple.
 
 This fixes the "the mouse moves before there's anything to click on" problem. For clicks that wait on a page load, the screencast lags Playwright's "actionable" moment, so an auto-detected cursor approach can glide over a still-loading screen. `click()` settles briefly so the recorder captures a painted frame of the target, marks that point, and the renderer synthesises the full approach in post over the real target.
 
@@ -45,13 +45,14 @@ Order of operations:
 
 The settle is the only real-time cost added by default. Tune or disable it globally with [`setupRecast(test, { clickSettleMs })`](/docs/helpers/setup-recast#clicksettlems--the-click-settle). To record hover-only UI, opt into [`setupRecast(test, { hoverDwellMs })`](/docs/helpers/setup-recast#hoverdwellms--capture-the-hover-state). Pass `0` to disable either wait.
 
-## `markClick(locator)`
+## `markClick(locator, opts?)`
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `locator` | `Locator` | (required) | Playwright Locator whose center is marked |
+| `locator` | `Locator` | (required) | Playwright Locator to mark |
+| `opts.position` | `{ x: number; y: number }` | element center | Point to mark, relative to the element's padding box like `locator.click({ position })` |
 
-Reads the element center via `locator.boundingBox()` and writes one `__recast_click__` marker step (JSON `{ x, y }` in viewport pixels, exactly like [`highlight()`](/docs/helpers/highlight) / [`zoom()`](/docs/helpers/zoom)). It performs **no** real click and **no** settle — standalone callers own their timing. If the element is not visible (`boundingBox()` is `null`), it no-ops.
+Reads the element's box via `locator.boundingBox()` and writes one `__recast_click__` marker step (JSON `{ x, y }` in viewport pixels, exactly like [`highlight()`](/docs/helpers/highlight) / [`zoom()`](/docs/helpers/zoom)). It performs **no** real click and **no** settle — standalone callers own their timing. If the element is not visible (`boundingBox()` is `null`), it no-ops.
 
 ## How the approach is rendered
 
