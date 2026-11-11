@@ -8,6 +8,8 @@ import { ffmpeg, mixClickIntoVoiceover } from '../../../src/render/renderer'
 
 const VOICE_SEC = 4
 const CLICK_SEC = 0.5
+const CLICK_AT_SEC = 0.3
+const CLICK_END = CLICK_AT_SEC + CLICK_SEC
 const TAIL_START = 2
 
 let dir: string
@@ -36,7 +38,7 @@ describe('mixClickIntoVoiceover', () => {
       '-af', 'aformat=channel_layouts=stereo', path.join(dir, 'click-source.wav'),
     ])
     generateClickSoundTrack({
-      clicks: [{ videoTimeMs: 300 }],
+      clicks: [{ videoTimeMs: CLICK_AT_SEC * 1000 }],
       soundPath: path.join(dir, 'click-source.wav'),
       outputPath: path.join(dir, 'click.mp3'),
       volume: 1,
@@ -48,10 +50,13 @@ describe('mixClickIntoVoiceover', () => {
     const out = path.join(dir, 'mixed.wav')
     mixClickIntoVoiceover(path.join(dir, 'voice.wav'), path.join(dir, 'click.mp3'), out)
 
-    const expectedDb = rmsDb(path.join(dir, 'voice.wav'), TAIL_START, VOICE_SEC - 0.2)
-    const tailDb = rmsDb(out, TAIL_START, VOICE_SEC - 0.2)
-    expect(tailDb).toBeGreaterThan(expectedDb - 1)
-    expect(tailDb).toBeLessThan(expectedDb + 1)
+    // Right after the click ends, where the bug cut the voice, and the late tail
+    for (const [from, to] of [[CLICK_END + 0.1, TAIL_START], [TAIL_START, VOICE_SEC - 0.2]] as const) {
+      const expectedDb = rmsDb(path.join(dir, 'voice.wav'), from, to)
+      const mixedDb = rmsDb(out, from, to)
+      expect(mixedDb, `${from}-${to} s`).toBeGreaterThan(expectedDb - 1)
+      expect(mixedDb, `${from}-${to} s`).toBeLessThan(expectedDb + 1)
+    }
   })
 
   it('output length follows the voiceover', () => {
