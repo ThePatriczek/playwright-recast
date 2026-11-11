@@ -24,7 +24,7 @@ import {
   shiftHighlightsForFreezes,
 } from '../text-highlight/exclusivity.js'
 import { writeDefaultClickSound } from '../click-effect/defaults.js'
-import { generateClickSoundTrack, getAudioDurationMs as getClickAudioDurationMs } from '../click-effect/sound-track.js'
+import { generateClickSoundTrack } from '../click-effect/sound-track.js'
 import { writeSrt } from '../subtitles/srt-writer.js'
 import { writeAss } from '../subtitles/ass-writer.js'
 import { chunkSubtitles } from '../subtitles/subtitle-chunker.js'
@@ -118,6 +118,22 @@ export interface RenderableTrace extends ParsedTrace {
 
 export function ffmpeg(args: string[]): void {
   runFfmpeg(args)
+}
+
+/**
+ * Mix a click track into the voiceover; output length follows the voiceover.
+ * Padding happens in the graph (`apad`), so the click file's channel layout and
+ * sample rate never matter. normalize=0 keeps the voice at unity gain when the
+ * click track ends. Float PCM: the final mux encodes once, to AAC, and the voice
+ * plus a click can sum past full scale without clipping here.
+ */
+export function mixClickIntoVoiceover(voicePath: string, clickPath: string, outPath: string): void {
+  const fmt = 'aresample=44100,aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo'
+  ffmpeg([
+    '-y', '-i', voicePath, '-i', clickPath,
+    '-filter_complex', `[0:a]${fmt}[a0];[1:a]${fmt},apad[a1];[a0][a1]amix=inputs=2:duration=first:dropout_transition=0:normalize=0`,
+    '-c:a', 'pcm_f32le', '-rf64', 'auto', outPath,
+  ])
 }
 
 /**
@@ -1254,34 +1270,8 @@ export function renderVideo(
   }
 
   if (clickSoundTrackPath && finalAudioPath) {
-    // Pad click sound track to match voiceover length via concat (no re-encoding).
-    // Without this, amix doubles voiceover volume when the shorter click track ends.
-    const voDurMs = getClickAudioDurationMs(finalAudioPath)
-    const clickDurMs = getClickAudioDurationMs(clickSoundTrackPath)
-    let clickInput = clickSoundTrackPath
-    if (clickDurMs < voDurMs - 100) {
-      const padDurSec = ((voDurMs - clickDurMs) / 1000).toFixed(3)
-      const silencePath = path.join(tmpDir, 'click-tail-silence.mp3')
-      ffmpeg([
-        '-y', '-f', 'lavfi', '-i', `anullsrc=r=44100:cl=mono`,
-        '-t', padDurSec, '-c:a', 'libmp3lame', '-q:a', '9', silencePath,
-      ])
-      const concatList = path.join(tmpDir, 'click-pad-concat.txt')
-      fs.writeFileSync(concatList, `file '${path.basename(clickSoundTrackPath)}'\nfile '${path.basename(silencePath)}'`)
-      const paddedPath = path.join(tmpDir, 'click-sound-padded.mp3')
-      ffmpeg(['-y', '-f', 'concat', '-safe', '0', '-i', concatList, '-c', 'copy', paddedPath])
-      clickInput = paddedPath
-    }
-
-    // Mix click sound into voiceover track
-    // Float PCM: the final mux encodes once, to AAC, and the voice plus a
-    // click can sum past full scale without clipping here
     const mixedPath = path.join(tmpDir, 'mixed-audio.wav')
-    ffmpeg([
-      '-y', '-i', finalAudioPath, '-i', clickInput,
-      '-filter_complex', '[0:a]aresample=44100,aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo[a0];[1:a]aresample=44100,aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo[a1];[a0][a1]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0',
-      '-c:a', 'pcm_f32le', '-rf64', 'auto', mixedPath,
-    ])
+    mixClickIntoVoiceover(finalAudioPath, clickSoundTrackPath, mixedPath)
     finalAudioPath = mixedPath
   } else if (clickSoundTrackPath && !finalAudioPath) {
     finalAudioPath = clickSoundTrackPath
